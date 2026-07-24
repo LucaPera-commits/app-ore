@@ -3,11 +3,11 @@ import Head from 'next/head';
 
 // --- CONFIGURAZIONE UTENTI E PASSWORD ---
 const UTENTI = {
-  'luca': { nome: 'Luca Pera', pass: 'luca123', ruolo: 'admin' },
-  'giampaolo': { nome: 'Giampaolo Lauro', pass: 'giampaolo123', ruolo: 'user' },
-  'federico': { nome: 'Federico Boagno', pass: 'federico123', ruolo: 'user' },
-  'alessandro': { nome: 'Alessandro Ciule', pass: 'alessandro123', ruolo: 'user' },
-  'davide': { nome: 'Davide Procopio', pass: 'davide123', ruolo: 'user' }
+  'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
+  'giampaolo': { nome: 'Giampaolo Lauro', pass: '!giampaolo123?', ruolo: 'user' },
+  'federico': { nome: 'Federico Boagno', pass: '!federico123?', ruolo: 'user' },
+  'alessandro': { nome: 'Alessandro Ciule', pass: '!alessandro123?', ruolo: 'user' },
+  'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
 };
 
 // --- DATABASE CLIENTE ---
