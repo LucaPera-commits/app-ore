@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
+// --- CONFIGURAZIONE UTENTI E PASSWORD ---
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
   'giampaolo': { nome: 'Giampaolo Lauro', pass: '!giampaolo123?', ruolo: 'user' },
@@ -9,6 +10,7 @@ const UTENTI = {
   'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
 };
 
+// --- DATABASE CLIENTE ---
 const LISTA_CLIENTI = [
   '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 
   'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
@@ -59,6 +61,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('nuovo');
   
   const getTodayStr = () => new Date().toISOString().split('T')[0];
+  const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7); // "YYYY-MM"
   const getTomorrowStr = () => {
     const t = new Date(); t.setDate(t.getDate() + 1);
     return t.toISOString().split('T')[0];
@@ -87,6 +90,11 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
+
+  // Filtri Cruscotto
+  const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
+  const [filtroCruscottoDip, setFiltroCruscottoDip] = useState('Tutti');
+  const [filtroCruscottoCliente, setFiltroCruscottoCliente] = useState('Tutti');
 
   const [modalItem, setModalItem] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
@@ -137,7 +145,6 @@ export default function Home() {
     }
   };
 
-  // RIASSEGNAZIONE RAPIDA TRAMITE TAG
   const handleQuickReassign = async (item, nuovoDipendente) => {
     if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
     setLoading(true);
@@ -149,7 +156,7 @@ export default function Home() {
           id: item.id,
           calendar_event_id: item.calendar_event_id,
           dipendente: nuovoDipendente,
-          chiudi_consuntivo: false // <--- Solo riassegnazione!
+          chiudi_consuntivo: false
         })
       });
       if (res.ok) {
@@ -187,7 +194,6 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
-  // CONFEMA E CHIUSURA CONSUNTIVO
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
     setLoading(true);
@@ -201,7 +207,7 @@ export default function Home() {
           ore_backoffice: oreBackofficeEffettive, 
           ore_trasferta: oreTrasfertaEffettive,
           dipendente: dipendenteEffettivo || modalItem.dipendente,
-          chiudi_consuntivo: true // <--- Chiusura e spunta verde!
+          chiudi_consuntivo: true
         })
       });
       if (res.ok) { setModalItem(null); fetchProgrammati(); }
@@ -220,6 +226,24 @@ export default function Home() {
       if (res.ok) fetchProgrammati();
     } catch (e) {} 
     finally { setLoading(false); }
+  };
+
+  // ESPORTAZIONE CSV / EXCEL PER IL CRUSCOTTO
+  const exportCSV = (datiDaEsportare) => {
+    let csv = "Data;Dipendente;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
+    datiDaEsportare.forEach(row => {
+      const tot = Number(row.ore || 0) + Number(row.ore_backoffice || 0) + Number(row.ore_trasferta || 0);
+      csv += `"${row.data}";"${row.dipendente}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+    });
+    
+    const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Report_Ore_${filtroMese}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (!currentUser) {
@@ -270,6 +294,39 @@ export default function Home() {
   );
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
+
+  // ELABORAZIONE DATI PER IL CRUSCOTTO MENSILE
+  const consuntiviMese = storicoCompleto.filter(item => {
+    const isConsuntivo = item.stato === 'consuntivo';
+    const isInMese = item.data && item.data.startsWith(filtroMese);
+    const matchDip = filtroCruscottoDip === 'Tutti' || item.dipendente === filtroCruscottoDip;
+    const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
+    return isConsuntivo && isInMese && matchDip && matchCliente;
+  });
+
+  // Aggregazione per Buste Paga (Dipendenti)
+  const riepilogoDipendenti = listaDipendenti.map(nomeDip => {
+    const voci = consuntiviMese.filter(c => c.dipendente === nomeDip);
+    const cantiere = voci.reduce((a, b) => a + Number(b.ore || 0), 0);
+    const backoffice = voci.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+    const trasferta = voci.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+    return { nome: nomeDip, cantiere, backoffice, trasferta, totale: cantiere + backoffice + trasferta, count: voci.length };
+  });
+
+  // Aggregazione per Fatturazione (Clienti)
+  const clientiUnici = Array.from(new Set(consuntiviMese.map(c => c.cliente))).sort();
+  const riepilogoClienti = clientiUnici.map(nomeCli => {
+    const voci = consuntiviMese.filter(c => c.cliente === nomeCli);
+    const cantiere = voci.reduce((a, b) => a + Number(b.ore || 0), 0);
+    const backoffice = voci.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+    const trasferta = voci.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+    return { cliente: nomeCli, cantiere, backoffice, trasferta, totale: cantiere + backoffice + trasferta, count: voci.length };
+  });
+
+  const totMeseCantiere = consuntiviMese.reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseBackoffice = consuntiviMese.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+  const totMeseTrasferta = consuntiviMese.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+  const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta;
 
   const renderDipendenteBadge = (item) => {
     const isDaAssegnare = item.dipendente === 'Da Assegnare';
@@ -342,7 +399,10 @@ export default function Home() {
               {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full text-[10px]">{daConfermare.length}</span>}
             </button>
             {currentUser.ruolo === 'admin' && (
-              <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📊 Performance &amp; Report</button>
+              <>
+                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📊 Cruscotto Mensile</button>
+                <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>⚡ Performance</button>
+              </>
             )}
           </nav>
 
@@ -365,7 +425,7 @@ export default function Home() {
         </div>
       )}
 
-      <main className="max-w-3xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-4 py-8">
 
         {/* TAB 1: NUOVO INSERIMENTO */}
         {activeTab === 'nuovo' && (
@@ -436,7 +496,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON TAG INTERATTIVI */}
+        {/* TAB 2: GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
@@ -488,7 +548,6 @@ export default function Home() {
                                 <div className="flex items-center space-x-2 mb-1">
                                   <span className="text-xs font-bold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-lg">{item.data}</span>
                                   {isInRitardo && <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-md font-bold uppercase">SCADUTO (&gt;24h)</span>}
-                                  
                                   {renderDipendenteBadge(item)}
                                 </div>
                                 <h3 className="font-bold text-slate-900 text-base">{item.cliente}</h3>
@@ -537,14 +596,210 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: PERFORMANCE & REPORT (ADMIN) */}
+        {/* TAB 3: CRUSCOTTO MENSILE (ADMIN) */}
+        {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
+          <div className="space-y-6">
+            
+            {/* INTESTAZIONE E FILTRI */}
+            <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Riepilogo ore per fatturazione clienti e calcolo buste paga dipendenti.</p>
+                </div>
+                
+                <button 
+                  onClick={() => exportCSV(consuntiviMese)} 
+                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2"
+                >
+                  <span>📥 Esporta per Excel (CSV)</span>
+                </button>
+              </div>
+
+              {/* SELEZIONE MESE E FILTRI */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Mese &amp; Anno di Riferimento</label>
+                  <input 
+                    type="month" 
+                    value={filtroMese} 
+                    onChange={e => setFiltroMese(e.target.value)} 
+                    className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Dipendente</label>
+                  <select 
+                    value={filtroCruscottoDip} 
+                    onChange={e => setFiltroCruscottoDip(e.target.value)} 
+                    className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-sky-400"
+                  >
+                    <option value="Tutti">Tutti i Dipendenti</option>
+                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Cliente</label>
+                  <select 
+                    value={filtroCruscottoCliente} 
+                    onChange={e => setFiltroCruscottoCliente(e.target.value)} 
+                    className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-sky-400"
+                  >
+                    <option value="Tutti">Tutti i Clienti</option>
+                    {LISTA_CLIENTI.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* CARTELLINI TOTALI DEL MESE */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                <div className="bg-slate-800/80 border border-slate-700/80 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Cantiere / Lavoro</span>
+                  <span className="text-lg font-bold text-white">{totMeseCantiere} h</span>
+                </div>
+                <div className="bg-slate-800/80 border border-sky-500/30 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-sky-400 block">Backoffice</span>
+                  <span className="text-lg font-bold text-sky-300">{totMeseBackoffice} h</span>
+                </div>
+                <div className="bg-slate-800/80 border border-purple-500/30 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-purple-400 block">Trasferta</span>
+                  <span className="text-lg font-bold text-purple-300">{totMeseTrasferta} h</span>
+                </div>
+                <div className="bg-emerald-950/60 border border-emerald-500/40 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-emerald-400 block">Totale Ore Mese</span>
+                  <span className="text-lg font-extrabold text-emerald-300">{totMeseComplessivo} h</span>
+                </div>
+              </div>
+            </div>
+
+            {/* SEZIONE BUSTE PAGA (DIPENDENTI) */}
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <span>💼</span>
+                  <span>Riepilogo per Buste Paga (Dipendenti)</span>
+                </h3>
+                <span className="text-xs text-slate-400 font-medium">{filtroMese}</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase bg-slate-50">
+                      <th className="py-3 px-3 rounded-l-xl">Dipendente</th>
+                      <th className="py-3 px-3 text-center">Interventi</th>
+                      <th className="py-3 px-3 text-center">Ore Cantiere</th>
+                      <th className="py-3 px-3 text-center text-sky-600">Backoffice</th>
+                      <th className="py-3 px-3 text-center text-purple-600">Trasferta</th>
+                      <th className="py-3 px-3 text-center font-bold text-slate-900 rounded-r-xl">Totale Ore</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {riepilogoDipendenti.map(row => (
+                      <tr key={row.nome} className="hover:bg-slate-50/80 transition-all">
+                        <td className="py-3 px-3 font-bold text-slate-800 flex items-center gap-2">
+                          <span>👤</span> {row.nome}
+                        </td>
+                        <td className="py-3 px-3 text-center font-medium text-slate-500">{row.count}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-slate-700">{row.cantiere} h</td>
+                        <td className="py-3 px-3 text-center font-semibold text-sky-700 bg-sky-50/30">{row.backoffice} h</td>
+                        <td className="py-3 px-3 text-center font-semibold text-purple-700 bg-purple-50/30">{row.trasferta} h</td>
+                        <td className="py-3 px-3 text-center font-bold text-emerald-700 text-sm bg-emerald-50/40">{row.totale} h</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* SEZIONE FATTURAZIONE (CLIENTI) */}
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <span>🏢</span>
+                  <span>Riepilogo per Fatturazione (Clienti)</span>
+                </h3>
+                <span className="text-xs text-slate-400 font-medium">{clientiUnici.length} clienti serviti</span>
+              </div>
+
+              {riepilogoClienti.length === 0 ? (
+                <p className="text-center text-slate-400 py-6 text-xs">Nessuna attività registrata nel mese selezionato.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase bg-slate-50">
+                        <th className="py-3 px-3 rounded-l-xl">Cliente</th>
+                        <th className="py-3 px-3 text-center">N. Interventi</th>
+                        <th className="py-3 px-3 text-center">Ore Cantiere</th>
+                        <th className="py-3 px-3 text-center text-sky-600">Backoffice</th>
+                        <th className="py-3 px-3 text-center font-bold text-slate-900 rounded-r-xl">Totale da Fatturare</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {riepilogoClienti.map(row => (
+                        <tr key={row.cliente} className="hover:bg-slate-50/80 transition-all">
+                          <td className="py-3 px-3 font-bold text-slate-900">{row.cliente}</td>
+                          <td className="py-3 px-3 text-center font-medium text-slate-500">{row.count}</td>
+                          <td className="py-3 px-3 text-center font-semibold text-slate-700">{row.cantiere} h</td>
+                          <td className="py-3 px-3 text-center font-semibold text-sky-700">{row.backoffice} h</td>
+                          <td className="py-3 px-3 text-center font-bold text-slate-900 text-sm bg-slate-100/60">{row.totale} h</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* REGISTRO DETTAGLIATO INTERVENTI DEL MESE */}
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+              <h3 className="font-bold text-slate-900 text-base">Registro Dettagliato Interventi ({consuntiviMese.length})</h3>
+              <div className="overflow-x-auto max-h-96">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 bg-white shadow-sm">
+                    <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase">
+                      <th className="py-3 px-2">Data</th>
+                      <th className="py-3 px-2">Tecnico</th>
+                      <th className="py-3 px-2">Cliente</th>
+                      <th className="py-3 px-2">Progetto</th>
+                      <th className="py-3 px-2 text-center">Ore Cant.</th>
+                      <th className="py-3 px-2 text-center">Backoff.</th>
+                      <th className="py-3 px-2 text-center">Trasf.</th>
+                      <th className="py-3 px-2">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {consuntiviMese.map(item => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{item.data}</td>
+                        <td className="py-2.5 px-2 font-medium text-slate-800 whitespace-nowrap">{item.dipendente}</td>
+                        <td className="py-2.5 px-2 font-bold text-slate-900 whitespace-nowrap">{item.cliente}</td>
+                        <td className="py-2.5 px-2 text-slate-600">{item.progetto}</td>
+                        <td className="py-2.5 px-2 text-center font-bold text-slate-800">{item.ore || 0}h</td>
+                        <td className="py-2.5 px-2 text-center font-bold text-sky-700">{item.ore_backoffice || 0}h</td>
+                        <td className="py-2.5 px-2 text-center font-bold text-purple-700">{item.ore_trasferta || 0}h</td>
+                        <td className="py-2.5 px-2 text-slate-400 italic max-w-xs truncate">{item.note || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB 4: REPORT PERFORMANCE (ADMIN) */}
         {activeTab === 'report' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
               <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight">Performance &amp; Riepilogo Team</h2>
-                  <p className="text-xs text-slate-300 mt-0.5">Valuta la tempestività di consuntivazione e il carico ore per dipendente.</p>
+                  <h2 className="text-xl font-bold tracking-tight">Performance &amp; Reattività Team</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Valuta la tempestività di consuntivazione delle schede ore.</p>
                 </div>
                 <button onClick={fetchProgrammati} className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/20 font-medium">🔄 Aggiorna</button>
               </div>
@@ -586,7 +841,7 @@ export default function Home() {
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                         <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Ore Svolte</p>
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Ore Svolte Totali</p>
                           <p className="text-lg font-bold text-slate-800">{totOreLavorate} h</p>
                         </div>
                         <div className="bg-white p-3 rounded-2xl border border-sky-200 shadow-sm">
@@ -615,45 +870,6 @@ export default function Home() {
                     </div>
                   );
                 })}
-              </div>
-            </div>
-
-            {/* TABELLA STORICO COMPLETO */}
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
-              <h3 className="font-bold text-slate-900 text-base">Storico Dettagliato Attività</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase">
-                      <th className="py-3 px-2">Data</th>
-                      <th className="py-3 px-2">Tecnico</th>
-                      <th className="py-3 px-2">Cliente</th>
-                      <th className="py-3 px-2">Commessa</th>
-                      <th className="py-3 px-2 text-center">Ore</th>
-                      <th className="py-3 px-2 text-center">Stato</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {storicoCompleto.map(item => (
-                      <tr key={item.id} className="hover:bg-slate-50/80">
-                        <td className="py-3 px-2 font-semibold">{item.data}</td>
-                        <td className="py-3 px-2 font-medium text-slate-700">{item.dipendente}</td>
-                        <td className="py-3 px-2 font-bold text-slate-900">{item.cliente}</td>
-                        <td className="py-3 px-2 text-slate-600">{item.progetto}</td>
-                        <td className="py-3 px-2 text-center font-bold text-slate-800">{item.ore}h</td>
-                        <td className="py-3 px-2 text-center">
-                          {item.stato === 'consuntivo' ? (
-                            <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">Chiuso ✅</span>
-                          ) : item.data < ieriStr ? (
-                            <span className="bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full font-bold">Scaduto 🚨</span>
-                          ) : (
-                            <span className="bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full font-bold">Pianificato ⏳</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             </div>
           </div>
