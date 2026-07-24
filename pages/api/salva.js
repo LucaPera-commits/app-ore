@@ -3,10 +3,8 @@ import { google } from 'googleapis';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Mappa delle email aziendali dei dipendenti
 const emailDipendenti = {
   'Giampaolo Lauro': 'g.lauro@zoeanna.it',
   'Luca Pera': 'l.pera@zoeanna.it',
@@ -16,26 +14,24 @@ const emailDipendenti = {
 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Metodo non consentito.' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ message: 'Metodo non consentito.' });
 
-  const { dipendente, cliente, progetto, data, ore, note } = req.body;
+  const { dipendente, cliente, progetto, data, ore, note, stato } = req.body;
+  const statoEvento = stato || 'consuntivo'; // Default a "consuntivo" se non specificato
 
   if (!dipendente || !cliente || !progetto || !data || !ore) {
-    return res.status(400).json({ message: 'Compilare tutti i campi obbligatori del modulo.' });
+    return res.status(400).json({ message: 'Compila tutti i campi obbligatori.' });
   }
 
   try {
-    // 1. SALVATAGGIO SU SUPABASE
-    const { error: dbError } = await supabase
+    // 1. SALVA SU SUPABASE (e recupera l'ID della riga)
+    const { data: insertedData, error: dbError } = await supabase
       .from('ore_lavorative')
-      .insert([{ dipendente, cliente, progetto, data, ore, note }]);
+      .insert([{ dipendente, cliente, progetto, data, ore, note, stato: statoEvento }])
+      .select(); // Fondamentale per ottenere l'ID
 
-    if (dbError) {
-      console.error('Errore Supabase:', dbError);
-      return res.status(500).json({ message: `Errore Database Supabase: ${dbError.message}` });
-    }
+    if (dbError) throw new Error(`Errore Database: ${dbError.message}`);
+    const rowId = insertedData[0].id;
 
     // 2. TENTATIVO GOOGLE CALENDAR
     let calendarSaved = false;
@@ -47,12 +43,9 @@ export default async function handler(req, res) {
 
       if (clientEmail && privateKeyRaw) {
         const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
-
-        // Calcolo data fine (+1 giorno per eventi tutto il giorno)
         const startDateObj = new Date(data);
         const endDateObj = new Date(startDateObj);
         endDateObj.setDate(endDateObj.getDate() + 1);
-        const endDateStr = endDateObj.toISOString().split('T')[0];
 
         const auth = new google.auth.JWT({
           email: clientEmail,
@@ -62,51 +55,45 @@ export default async function handler(req, res) {
         });
 
         const calendar = google.calendar({ version: 'v3', auth });
-        const calendarId = process.env.GOOGLE_CALENDAR_ID || 'info@zoeanna.it';
+        
+        // Costruisci il titolo: se è pianificato metti un'icona diversa
+        const prefisso = statoEvento === 'pianificato' ? '⏳ [PIANIFICATO]' : '✅';
+        const titoloEvento = `${prefisso} ${dipendente} - ${cliente} (${ore}h)`;
 
-        // Determina gli invitati (sempre Luca Pera + l'eventuale dipendente selezionato)
         const listaInvitati = [{ email: 'l.pera@zoeanna.it' }];
         const emailTecnico = emailDipendenti[dipendente];
         if (emailTecnico && emailTecnico !== 'l.pera@zoeanna.it') {
           listaInvitati.push({ email: emailTecnico });
         }
 
-        await calendar.events.insert({
-          calendarId: calendarId,
-          sendUpdates: 'all', // Forza Google a notificare e mostrare l'invito nei calendari personali
+        const calendarRes = await calendar.events.insert({
+          calendarId: process.env.GOOGLE_CALENDAR_ID || 'info@zoeanna.it',
+          sendUpdates: 'all',
           requestBody: {
-            summary: `${dipendente} - ${cliente} (${ore}h)`,
-            description: `Progetto/Commessa: ${progetto}\nNote: ${note || 'Nessuna nota'}`,
+            summary: titoloEvento,
+            description: `Progetto: ${progetto}\nNote: ${note || '-'}`,
             start: { date: data },
-            end: { date: endDateStr },
+            end: { date: endDateObj.toISOString().split('T')[0] },
             attendees: listaInvitati
           }
         });
 
+        // 3. AGGIORNA SUPABASE CON L'ID DEL CALENDARIO
+        const calendarEventId = calendarRes.data.id;
+        await supabase.from('ore_lavorative').update({ calendar_event_id: calendarEventId }).eq('id', rowId);
+        
         calendarSaved = true;
-      } else {
-        calendarErrorDetails = 'Chiavi d\'ambiente Google mancanti su Vercel.';
       }
     } catch (calErr) {
-      console.error('Errore Google Calendar:', calErr);
-      calendarErrorDetails = calErr.message || JSON.stringify(calErr);
+      calendarErrorDetails = calErr.message;
     }
 
-    // 3. RISPOSTA
-    if (calendarSaved) {
-      return res.status(200).json({
-        success: true,
-        message: 'Ore salvate con successo sia nel Database che su Google Calendar! 🎉'
-      });
-    } else {
-      return res.status(200).json({
-        success: true,
-        message: `Ore salvate nel Database! 💾 (Calendar: ${calendarErrorDetails})`
-      });
-    }
+    return res.status(200).json({
+      success: true,
+      message: calendarSaved ? 'Salvato su Database e Calendar! 🎉' : `Salvato su DB! (Calendar err: ${calendarErrorDetails})`
+    });
 
   } catch (err) {
-    console.error('Errore Generale:', err);
-    return res.status(500).json({ message: err.message || 'Errore interno del server' });
+    return res.status(500).json({ message: err.message });
   }
 }
