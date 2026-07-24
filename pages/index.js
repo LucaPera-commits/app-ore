@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
-// --- CONFIGURAZIONE UTENTI E PASSWORD ---
+// --- CONFIGURAZIONE UTENTI E NUOVE PASSWORD SICURE ---
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
   'giampaolo': { nome: 'Giampaolo Lauro', pass: '!giampaolo123?', ruolo: 'user' },
@@ -10,7 +10,7 @@ const UTENTI = {
   'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
 };
 
-// --- DATABASE CLIENTE ---
+// --- DATABASE CLIENTE (90 AZIENDE) ---
 const LISTA_CLIENTI = [
   '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 
   'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
@@ -94,6 +94,7 @@ export default function Home() {
   const [oreEffettive, setOreEffettive] = useState(8);
   const [oreBackofficeEffettive, setOreBackofficeEffettive] = useState(0);
   const [oreTrasfertaEffettive, setOreTrasfertaEffettive] = useState(0);
+  const [dipendenteEffettivo, setDipendenteEffettivo] = useState('');
 
   useEffect(() => {
     const today = getTodayStr();
@@ -119,6 +120,25 @@ export default function Home() {
   useEffect(() => {
     if (currentUser) fetchProgrammati();
   }, [activeTab, currentUser]);
+
+  // FUNZIONE DI SINCRONIZZAZIONE DA GOOGLE CALENDAR
+  const handleSyncCalendar = async () => {
+    if (currentUser?.ruolo !== 'admin') {
+      alert("Solo l'amministratore può avviare la sincronizzazione manuale.");
+      return;
+    }
+    setLoadingProgrammati(true);
+    try {
+      const res = await fetch('/api/sync', { method: 'POST' });
+      const data = await res.json();
+      alert(data.message);
+      fetchProgrammati();
+    } catch (e) {
+      alert("Errore durante la connessione a Google Calendar.");
+    } finally {
+      setLoadingProgrammati(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -150,8 +170,12 @@ export default function Home() {
       const res = await fetch('/api/gestisci', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
-          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive, ore_trasferta: oreTrasfertaEffettive
+          id: modalItem.id, 
+          calendar_event_id: modalItem.calendar_event_id,
+          ore_effettive: oreEffettive, 
+          ore_backoffice: oreBackofficeEffettive, 
+          ore_trasferta: oreTrasfertaEffettive,
+          dipendente: dipendenteEffettivo || modalItem.dipendente
         })
       });
       if (res.ok) { setModalItem(null); fetchProgrammati(); }
@@ -172,20 +196,15 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
-  // --- INTERFACCIA LOGIN PULITA CON LOGHI IN TESTO STILIZZATO ---
+  // --- SCHERMATA LOGIN ---
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
-        
         <div className="w-full max-w-md">
-          
           <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-200/80 space-y-6">
             
-            {/* INTESTAZIONE LOGIN TESTUALE */}
             <div className="flex flex-col items-center text-center space-y-3 pb-5 border-b border-slate-100">
-              
               <div className="flex items-center justify-center space-x-3">
-                {/* Badge bw */}
                 <div className="bg-sky-600 text-white font-extrabold text-xl px-3.5 py-1.5 rounded-xl shadow-md tracking-wider">
                   bw
                 </div>
@@ -194,11 +213,9 @@ export default function Home() {
                   <span className="text-[11px] text-emerald-600 font-bold tracking-wide uppercase block">Zo&amp;annA S.R.L.</span>
                 </div>
               </div>
-
               <p className="text-xs text-slate-500 font-medium">Gestione Ore &amp; Attività Lavorative</p>
             </div>
 
-            {/* FORM LOGIN */}
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
@@ -275,7 +292,6 @@ export default function Home() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           
-          {/* LOGO DI TESTO HEADER */}
           <div className="flex items-center space-x-3">
             <div className="bg-sky-600 text-white font-bold text-base px-2.5 py-1 rounded-lg tracking-wider shadow-sm">
               bw
@@ -286,7 +302,6 @@ export default function Home() {
             </div>
           </div>
           
-          {/* NAVIGAZIONE SCHEDE */}
           <nav className="flex space-x-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-semibold">
             <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'nuovo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
               📝 Nuovo Inserimento
@@ -307,7 +322,6 @@ export default function Home() {
             )}
           </nav>
 
-          {/* UTENTE LOGGATO */}
           <div className="flex items-center space-x-3 text-xs bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
             <span className="text-slate-700 font-semibold">👤 {currentUser.nome}</span>
             <button onClick={handleLogout} className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-0.5 rounded-lg transition-all font-bold border border-rose-200">
@@ -318,7 +332,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* BANNER SOLLECITO */}
+      {/* BANNER SOLLECITO RITARDI */}
       {attivitaInScadenzaRitardo.length > 0 && (
         <div className="bg-rose-600 text-white text-xs font-semibold px-4 py-2.5 shadow-sm">
           <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -413,7 +427,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ */}
+        {/* TAB 2: GESTIONE ATTIVITÀ CON TASTO SYNC */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
@@ -421,13 +435,28 @@ export default function Home() {
                 <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
                 <p className="text-xs text-slate-300 mt-0.5">Conferma o modifica le ore dei lavori pianificati.</p>
               </div>
-              <div className="flex space-x-3">
-                {currentUser.ruolo === 'admin' && (
-                  <select value={filtroDipendente} onChange={e => setFiltroDipendente(e.target.value)} className="bg-white/10 text-white text-xs px-3 py-1.5 rounded-xl border border-white/20 font-medium">
-                    {['Tutti', ...listaDipendenti].map(d => <option key={d} value={d} className="text-black">{d}</option>)}
+            </div>
+
+            {/* BARRA DI STRUMENTI (FILTRI + SYNC CALENDAR) */}
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+              {currentUser.ruolo === 'admin' ? (
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase">Filtra:</span>
+                  <select value={filtroDipendente} onChange={e => setFiltroDipendente(e.target.value)} className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200">
+                    {['Tutti', 'Da Assegnare', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
+                </div>
+              ) : <div></div>}
+
+              <div className="flex items-center space-x-2">
+                {currentUser.ruolo === 'admin' && (
+                  <button onClick={handleSyncCalendar} className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold transition-all shadow-sm">
+                    ⬇️ Sincronizza Calendar
+                  </button>
                 )}
-                <button onClick={fetchProgrammati} className="text-xs bg-white/10 text-white px-3 py-1.5 rounded-xl border border-white/20 font-medium">🔄 Aggiorna</button>
+                <button onClick={fetchProgrammati} className="text-xs bg-white text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 font-bold transition-all shadow-sm">
+                  🔄 Aggiorna
+                </button>
               </div>
             </div>
 
@@ -445,19 +474,29 @@ export default function Home() {
                       <div className="space-y-3">
                         {daConfermare.map(item => {
                           const isInRitardo = item.data < ieriStr;
+                          const isDaAssegnare = item.dipendente === 'Da Assegnare';
                           return (
                             <div key={item.id} className={`p-4 rounded-2xl border flex flex-col md:flex-row justify-between gap-4 transition-all ${isInRitardo ? 'bg-rose-50/80 border-rose-300' : 'bg-slate-50 border-slate-200'}`}>
                               <div>
                                 <div className="flex items-center space-x-2 mb-1">
                                   <span className="text-xs font-bold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-lg">{item.data}</span>
                                   {isInRitardo && <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-md font-bold uppercase">SCADUTO (&gt;24h)</span>}
-                                  <span className="text-xs font-semibold text-sky-700">{item.dipendente}</span>
+                                  
+                                  <span className={`text-xs font-semibold ${isDaAssegnare ? 'text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-lg' : 'text-sky-700'}`}>
+                                    {isDaAssegnare ? 'Da Assegnare' : item.dipendente}
+                                  </span>
                                 </div>
                                 <h3 className="font-bold text-slate-900 text-base">{item.cliente}</h3>
                                 <p className="text-xs text-slate-600 font-medium">{item.progetto} — <b className="text-slate-800">{item.ore}h previste</b></p>
                               </div>
                               <div className="flex space-x-2 items-center">
-                                <button onClick={() => { setModalItem(item); setOreEffettive(item.ore || 8); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); }} className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">✅ Conferma Ore</button>
+                                <button onClick={() => { 
+                                  setModalItem(item); 
+                                  setOreEffettive(item.ore || 8); 
+                                  setOreBackofficeEffettive(item.ore_backoffice || 0); 
+                                  setOreTrasfertaEffettive(item.ore_trasferta || 0);
+                                  setDipendenteEffettivo(isDaAssegnare ? currentUser.nome : item.dipendente);
+                                }} className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">✅ Conferma Ore</button>
                                 <button onClick={() => handleElimina(item)} className="px-3 py-2 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-all">🗑️ Annulla</button>
                               </div>
                             </div>
@@ -471,17 +510,22 @@ export default function Home() {
                     <div>
                       <h3 className="text-xs font-bold text-sky-600 uppercase tracking-wider mb-3 flex items-center">⏳ Programmati per il Futuro</h3>
                       <div className="space-y-3">
-                        {futuri.map(item => (
-                          <div key={item.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 flex justify-between gap-4">
-                            <div>
-                              <span className="text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded-lg mr-2">{item.data}</span>
-                              <span className="text-xs font-semibold text-slate-700">{item.dipendente}</span>
-                              <h3 className="font-bold text-slate-900 text-base">{item.cliente}</h3>
-                              <p className="text-xs text-slate-600 font-medium">{item.progetto}</p>
+                        {futuri.map(item => {
+                          const isDaAssegnare = item.dipendente === 'Da Assegnare';
+                          return (
+                            <div key={item.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 flex justify-between gap-4">
+                              <div>
+                                <span className="text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded-lg mr-2">{item.data}</span>
+                                <span className={`text-xs font-semibold ${isDaAssegnare ? 'text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-lg mr-2' : 'text-slate-700'}`}>
+                                  {isDaAssegnare ? 'Da Assegnare' : item.dipendente}
+                                </span>
+                                <h3 className="font-bold text-slate-900 text-base">{item.cliente}</h3>
+                                <p className="text-xs text-slate-600 font-medium">{item.progetto}</p>
+                              </div>
+                              <button onClick={() => handleElimina(item)} className="px-3 py-2 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-all">🗑️ Annulla</button>
                             </div>
-                            <button onClick={() => handleElimina(item)} className="px-3 py-2 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-all">🗑️ Annulla</button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -621,10 +665,19 @@ export default function Home() {
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
             <h3 className="text-lg font-bold text-slate-900">Conferma Consuntivo</h3>
             <p className="text-xs text-slate-500">
-              Stai completando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong> ({modalItem.progetto}).
+              Stai completando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong>.
             </p>
 
             <div className="grid grid-cols-2 gap-4">
+              {(modalItem.dipendente === 'Da Assegnare' || currentUser.ruolo === 'admin') && (
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
+                  <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3 py-2 border rounded-xl bg-indigo-50 border-indigo-200 text-sm font-bold text-indigo-800">
+                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Lavorate</label>
                 <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold" />
@@ -633,7 +686,8 @@ export default function Home() {
                 <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
                 <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800" />
               </div>
-              {modalItem.dipendente === 'Alessandro Ciule' && (
+              
+              {(modalItem.dipendente === 'Alessandro Ciule' || dipendenteEffettivo === 'Alessandro Ciule') && (
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-purple-600 mb-1 uppercase">🚗 Ore Trasferta</label>
                   <input type="number" step="0.5" value={oreTrasfertaEffettive} onChange={e => setOreTrasfertaEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-purple-50 border-purple-200 text-sm font-bold text-purple-800" />
