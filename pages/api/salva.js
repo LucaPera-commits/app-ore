@@ -1,48 +1,72 @@
 import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+// Inizializzazione Supabase con supporto a vari nomi di variabili d'ambiente
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ message: 'Metodo non consentito' });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Metodo non consentito' });
+  }
 
   const { dipendente, cliente, progetto, data, ore, note } = req.body;
 
   try {
-    // 1. Salvataggio su Supabase
-    await supabase
-      .from('registrazione_ore')
-      .insert([{ dipendente, cliente, progetto, data, ore: parseFloat(ore), note }]);
+    // 1. SALVATAGGIO SU SUPABASE (Priorità Assoluta)
+    const { error: dbError } = await supabase
+      .from('ore_lavorative')
+      .insert([{ dipendente, cliente, progetto, data, ore, note }]);
 
-    // 2. Invio a Google Calendar
-    if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-      const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
-      const auth = new google.auth.JWT(
-        process.env.GOOGLE_CLIENT_EMAIL,
-        null,
-        privateKey,
-        ['https://www.googleapis.com/auth/calendar']
-      );
-
-      const calendar = google.calendar({ version: 'v3', auth });
-
-      await calendar.events.insert({
-        calendarId: process.env.GOOGLE_CALENDAR_ID,
-        requestBody: {
-          summary: `${dipendente} - ${cliente} (${ore}h)`,
-          description: `Progetto: ${progetto || '-'}\nNote: ${note || '-'}`,
-          start: { date: data },
-          end: { date: data },
-        },
-      });
+    if (dbError) {
+      console.error('Errore Supabase:', dbError);
+      return res.status(500).json({ message: `Errore Database: ${dbError.message}` });
     }
 
-    return res.status(200).json({ success: true });
+    // 2. TENTATIVO GOOGLE CALENDAR (Non bloccante)
+    let calendarSaved = false;
+    try {
+      if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+        const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+        
+        const auth = new google.auth.JWT({
+          email: process.env.GOOGLE_CLIENT_EMAIL,
+          key: privateKey,
+          scopes: ['https://www.googleapis.com/auth/calendar'],
+          subject: 'info@zoeanna.it' // Impersona l'account aziendale principale
+        });
+
+        const calendar = google.calendar({ version: 'v3', auth });
+        const calendarId = process.env.GOOGLE_CALENDAR_ID || 'info@zoeanna.it';
+
+        await calendar.events.insert({
+          calendarId: calendarId,
+          requestBody: {
+            summary: `${dipendente} - ${cliente} (${ore}h)`,
+            description: `Progetto: ${progetto}\nNote: ${note || '-'}`,
+            start: { date: data },
+            end: { date: data }
+          }
+        });
+        calendarSaved = true;
+      }
+    } catch (calErr) {
+      console.warn('Avviso Google Calendar (in attesa di delega dominio):', calErr.message);
+    }
+
+    // Risposta di successo
+    return res.status(200).json({
+      success: true,
+      message: calendarSaved 
+        ? 'Ore salvate con successo sia nel Database che su Google Calendar! 🎉' 
+        : 'Ore salvate con successo nel Database! 💾 (In attesa sblocco autorizzazione Calendar)',
+      calendarSaved
+    });
+
   } catch (err) {
-    console.error('Errore:', err);
-    return res.status(500).json({ error: err.message });
+    console.error('Errore Generale:', err);
+    return res.status(500).json({ message: err.message || 'Errore interno del server' });
   }
 }
