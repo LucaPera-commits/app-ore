@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 
-// Inizializzazione Supabase con supporto a vari nomi di variabili d'ambiente
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -35,7 +34,7 @@ export default async function handler(req, res) {
           email: process.env.GOOGLE_CLIENT_EMAIL,
           key: privateKey,
           scopes: ['https://www.googleapis.com/auth/calendar'],
-          subject: 'info@zoeanna.it' // Impersona l'account aziendale principale
+          subject: 'info@zoeanna.it'
         });
 
         const calendar = google.calendar({ version: 'v3', auth });
@@ -53,20 +52,19 @@ export default async function handler(req, res) {
         calendarSaved = true;
       }
     } catch (calErr) {
-      console.warn('Avviso Google Calendar (in attesa di delega dominio):', calErr.message);
+      console.warn('Calendar in attesa di autorizzazione:', calErr.message);
     }
 
-    // Risposta di successo
     return res.status(200).json({
       success: true,
       message: calendarSaved 
-        ? 'Ore salvate con successo sia nel Database che su Google Calendar! 🎉' 
-        : 'Ore salvate con successo nel Database! 💾 (In attesa sblocco autorizzazione Calendar)',
+        ? 'Ore salvate su Supabase e Google Calendar!' 
+        : 'Ore salvate con successo nel Database!',
       calendarSaved
     });
 
   } catch (err) {
     console.error('Errore Generale:', err);
-    return res.status(500).json({ message: err.message || 'Errore interno del server' });
+    return res.status(500).json({ message: err.message || 'Errore interno' });
   }
 }
