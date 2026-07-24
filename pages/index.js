@@ -228,6 +228,15 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
+  // Funzione per aprire la modale di modifica da qualsiasi riga
+  const openEditModal = (item) => {
+    setModalItem(item);
+    setOreEffettive(item.ore || 0);
+    setOreBackofficeEffettive(item.ore_backoffice || 0);
+    setOreTrasfertaEffettive(item.ore_trasferta || 0);
+    setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser.nome : item.dipendente);
+  };
+
   // ESPORTAZIONE CSV / EXCEL PER IL CRUSCOTTO
   const exportCSV = (datiDaEsportare) => {
     let csv = "Data;Dipendente;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
@@ -296,15 +305,17 @@ export default function Home() {
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
   // ELABORAZIONE DATI PER IL CRUSCOTTO MENSILE
-  const consuntiviMese = storicoCompleto.filter(item => {
-    const isConsuntivo = item.stato === 'consuntivo';
+  // Mostra nel cruscotto anche quelli "pianificati" ma non ancora consuntivati per poterli correggere
+  const tuttiEventiMese = storicoCompleto.filter(item => {
     const isInMese = item.data && item.data.startsWith(filtroMese);
     const matchDip = filtroCruscottoDip === 'Tutti' || item.dipendente === filtroCruscottoDip;
     const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
-    return isConsuntivo && isInMese && matchDip && matchCliente;
+    return isInMese && matchDip && matchCliente;
   });
 
-  // Aggregazione per Buste Paga (Dipendenti)
+  const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
+
+  // Aggregazione per Buste Paga (Solo Consuntivati)
   const riepilogoDipendenti = listaDipendenti.map(nomeDip => {
     const voci = consuntiviMese.filter(c => c.dipendente === nomeDip);
     const cantiere = voci.reduce((a, b) => a + Number(b.ore || 0), 0);
@@ -313,7 +324,7 @@ export default function Home() {
     return { nome: nomeDip, cantiere, backoffice, trasferta, totale: cantiere + backoffice + trasferta, count: voci.length };
   });
 
-  // Aggregazione per Fatturazione (Clienti)
+  // Aggregazione per Fatturazione (Solo Consuntivati)
   const clientiUnici = Array.from(new Set(consuntiviMese.map(c => c.cliente))).sort();
   const riepilogoClienti = clientiUnici.map(nomeCli => {
     const voci = consuntiviMese.filter(c => c.cliente === nomeCli);
@@ -554,13 +565,7 @@ export default function Home() {
                                 <p className="text-xs text-slate-600 font-medium">{item.progetto} — <b className="text-slate-800">{item.ore}h previste</b></p>
                               </div>
                               <div className="flex space-x-2 items-center">
-                                <button onClick={() => { 
-                                  setModalItem(item); 
-                                  setOreEffettive(item.ore || 8); 
-                                  setOreBackofficeEffettive(item.ore_backoffice || 0); 
-                                  setOreTrasfertaEffettive(item.ore_trasferta || 0);
-                                  setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser.nome : item.dipendente);
-                                }} className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">✅ Conferma Ore</button>
+                                <button onClick={() => openEditModal(item)} className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">✅ Conferma Ore</button>
                                 <button onClick={() => handleElimina(item)} className="px-3 py-2 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-all">🗑️ Annulla</button>
                               </div>
                             </div>
@@ -674,116 +679,62 @@ export default function Home() {
               </div>
             </div>
 
-            {/* SEZIONE BUSTE PAGA (DIPENDENTI) */}
+            {/* REGISTRO DETTAGLIATO INTERVENTI DEL MESE (INTERATTIVO) */}
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                  <span>💼</span>
-                  <span>Riepilogo per Buste Paga (Dipendenti)</span>
-                </h3>
-                <span className="text-xs text-slate-400 font-medium">{filtroMese}</span>
-              </div>
-
-              <div className="overflow-x-auto">
+              <h3 className="font-bold text-slate-900 text-base flex justify-between items-center">
+                <span>Registro Dettagliato Interventi ({tuttiEventiMese.length})</span>
+                <span className="text-xs font-normal text-slate-500 italic">Clicca l'icona della matita per modificare</span>
+              </h3>
+              <div className="overflow-x-auto max-h-[500px] border border-slate-200 rounded-xl">
                 <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase bg-slate-50">
-                      <th className="py-3 px-3 rounded-l-xl">Dipendente</th>
-                      <th className="py-3 px-3 text-center">Interventi</th>
-                      <th className="py-3 px-3 text-center">Ore Cantiere</th>
-                      <th className="py-3 px-3 text-center text-sky-600">Backoffice</th>
-                      <th className="py-3 px-3 text-center text-purple-600">Trasferta</th>
-                      <th className="py-3 px-3 text-center font-bold text-slate-900 rounded-r-xl">Totale Ore</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {riepilogoDipendenti.map(row => (
-                      <tr key={row.nome} className="hover:bg-slate-50/80 transition-all">
-                        <td className="py-3 px-3 font-bold text-slate-800 flex items-center gap-2">
-                          <span>👤</span> {row.nome}
-                        </td>
-                        <td className="py-3 px-3 text-center font-medium text-slate-500">{row.count}</td>
-                        <td className="py-3 px-3 text-center font-semibold text-slate-700">{row.cantiere} h</td>
-                        <td className="py-3 px-3 text-center font-semibold text-sky-700 bg-sky-50/30">{row.backoffice} h</td>
-                        <td className="py-3 px-3 text-center font-semibold text-purple-700 bg-purple-50/30">{row.trasferta} h</td>
-                        <td className="py-3 px-3 text-center font-bold text-emerald-700 text-sm bg-emerald-50/40">{row.totale} h</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* SEZIONE FATTURAZIONE (CLIENTI) */}
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                  <span>🏢</span>
-                  <span>Riepilogo per Fatturazione (Clienti)</span>
-                </h3>
-                <span className="text-xs text-slate-400 font-medium">{clientiUnici.length} clienti serviti</span>
-              </div>
-
-              {riepilogoClienti.length === 0 ? (
-                <p className="text-center text-slate-400 py-6 text-xs">Nessuna attività registrata nel mese selezionato.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase bg-slate-50">
-                        <th className="py-3 px-3 rounded-l-xl">Cliente</th>
-                        <th className="py-3 px-3 text-center">N. Interventi</th>
-                        <th className="py-3 px-3 text-center">Ore Cantiere</th>
-                        <th className="py-3 px-3 text-center text-sky-600">Backoffice</th>
-                        <th className="py-3 px-3 text-center font-bold text-slate-900 rounded-r-xl">Totale da Fatturare</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {riepilogoClienti.map(row => (
-                        <tr key={row.cliente} className="hover:bg-slate-50/80 transition-all">
-                          <td className="py-3 px-3 font-bold text-slate-900">{row.cliente}</td>
-                          <td className="py-3 px-3 text-center font-medium text-slate-500">{row.count}</td>
-                          <td className="py-3 px-3 text-center font-semibold text-slate-700">{row.cantiere} h</td>
-                          <td className="py-3 px-3 text-center font-semibold text-sky-700">{row.backoffice} h</td>
-                          <td className="py-3 px-3 text-center font-bold text-slate-900 text-sm bg-slate-100/60">{row.totale} h</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* REGISTRO DETTAGLIATO INTERVENTI DEL MESE */}
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
-              <h3 className="font-bold text-slate-900 text-base">Registro Dettagliato Interventi ({consuntiviMese.length})</h3>
-              <div className="overflow-x-auto max-h-96">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 bg-white shadow-sm">
-                    <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase">
+                  <thead className="sticky top-0 bg-slate-100 z-10">
+                    <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase">
+                      <th className="py-3 px-3">Stato</th>
                       <th className="py-3 px-2">Data</th>
                       <th className="py-3 px-2">Tecnico</th>
-                      <th className="py-3 px-2">Cliente</th>
-                      <th className="py-3 px-2">Progetto</th>
+                      <th className="py-3 px-2">Cliente / Progetto</th>
                       <th className="py-3 px-2 text-center">Ore Cant.</th>
                       <th className="py-3 px-2 text-center">Backoff.</th>
                       <th className="py-3 px-2 text-center">Trasf.</th>
-                      <th className="py-3 px-2">Note</th>
+                      <th className="py-3 px-2 text-center">Azione</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {consuntiviMese.map(item => (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{item.data}</td>
-                        <td className="py-2.5 px-2 font-medium text-slate-800 whitespace-nowrap">{item.dipendente}</td>
-                        <td className="py-2.5 px-2 font-bold text-slate-900 whitespace-nowrap">{item.cliente}</td>
-                        <td className="py-2.5 px-2 text-slate-600">{item.progetto}</td>
-                        <td className="py-2.5 px-2 text-center font-bold text-slate-800">{item.ore || 0}h</td>
-                        <td className="py-2.5 px-2 text-center font-bold text-sky-700">{item.ore_backoffice || 0}h</td>
-                        <td className="py-2.5 px-2 text-center font-bold text-purple-700">{item.ore_trasferta || 0}h</td>
-                        <td className="py-2.5 px-2 text-slate-400 italic max-w-xs truncate">{item.note || '-'}</td>
-                      </tr>
-                    ))}
+                    {tuttiEventiMese.map(item => {
+                      const isDaAssegnare = item.dipendente === 'Da Assegnare';
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50 group">
+                          <td className="py-2.5 px-3">
+                            {item.stato === 'consuntivo' ? (
+                              <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">Chiuso</span>
+                            ) : (
+                              <span className="text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100 animate-pulse">In Sospeso</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{item.data}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap">
+                            <span className={`font-semibold px-2 py-0.5 rounded-lg border ${isDaAssegnare ? 'bg-indigo-100 text-indigo-700 border-indigo-200 animate-pulse' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                              {item.dipendente}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2">
+                            <div className="font-bold text-slate-900">{item.cliente}</div>
+                            <div className="text-slate-500 text-[10px] truncate max-w-[150px]">{item.progetto}</div>
+                          </td>
+                          <td className="py-2.5 px-2 text-center font-bold text-slate-800">{item.ore || 0}h</td>
+                          <td className="py-2.5 px-2 text-center font-bold text-sky-700">{item.ore_backoffice || 0}h</td>
+                          <td className="py-2.5 px-2 text-center font-bold text-purple-700">{item.ore_trasferta || 0}h</td>
+                          <td className="py-2.5 px-2 text-center">
+                            <button 
+                              onClick={() => openEditModal(item)}
+                              className="bg-white border border-slate-300 text-slate-600 hover:text-sky-700 hover:border-sky-300 hover:bg-sky-50 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-sm"
+                            >
+                              ✏️ Modifica
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -877,13 +828,15 @@ export default function Home() {
 
       </main>
 
-      {/* MODALE CONFERMA CHIUSURA */}
+      {/* MODALE CONFERMA CHIUSURA E MODIFICA INTERVENTI */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Conferma Consuntivo</h3>
+            <h3 className="text-lg font-bold text-slate-900">
+              {modalItem.stato === 'consuntivo' ? 'Modifica Dati Intervento' : 'Conferma Consuntivo'}
+            </h3>
             <p className="text-xs text-slate-500">
-              Stai completando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong>.
+              Stai modificando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong>.
             </p>
 
             <div className="grid grid-cols-2 gap-4">
@@ -891,6 +844,7 @@ export default function Home() {
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
                   <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3 py-2 border rounded-xl bg-indigo-50 border-indigo-200 text-sm font-bold text-indigo-800">
+                    <option value="Da Assegnare" disabled>❓ Da Assegnare</option>
                     {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
@@ -915,7 +869,9 @@ export default function Home() {
 
             <div className="flex space-x-2 pt-2">
               <button onClick={() => setModalItem(null)} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">Annulla</button>
-              <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all">{loading ? '...' : 'Conferma e Salva ✅'}</button>
+              <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all">
+                {loading ? '...' : (modalItem.stato === 'consuntivo' ? 'Salva Modifiche ✅' : 'Conferma e Salva ✅')}
+              </button>
             </div>
           </div>
         </div>
