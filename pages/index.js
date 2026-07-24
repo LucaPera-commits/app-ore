@@ -1,41 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
-// --- COMPONENTI LOGHI VETTORIALI AD ALTA DEFINIZIONE ---
-const LogoBW = ({ className = "h-10" }) => (
-  <div className={`flex items-center ${className}`}>
-    <svg viewBox="0 0 240 150" className="h-full w-auto" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Punto arancione del logo bw */}
-      <circle cx="24" cy="132" r="11" fill="#F99F48" />
-      {/* Tratto vettoriale della "bw" */}
-      <path 
-        d="M 20 128 C 38 75, 75 30, 105 14 C 112 10, 118 16, 114 24 C 95 60, 75 100, 72 106 C 85 80, 105 55, 125 55 C 138 55, 148 70, 150 90 C 160 65, 180 16, 210 14 C 228 12, 230 36, 205 85 C 180 135, 150 115, 120 85 C 100 65, 90 85, 80 110" 
-        stroke="#1E293B" 
-        strokeWidth="13" 
-        strokeLinecap="round" 
-        strokeLinejoin="round"
-      />
-      {/* Testo bw solutions */}
-      <text x="52" y="142" fontFamily="'Inter', system-ui, sans-serif" fontWeight="500" fontSize="28" fill="#1E293B" letterSpacing="-0.5">bw solutions</text>
-    </svg>
-  </div>
-);
-
-const LogoZoeAnna = ({ className = "h-8" }) => (
-  <div className={`flex items-center ${className}`}>
-    <svg viewBox="0 0 280 140" className="h-full w-auto" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Foglia Superiore Verde */}
-      <path d="M 90 60 C 90 15, 180 10, 205 55 C 160 25, 110 40, 90 60 Z" fill="#22C55E"/>
-      <path d="M 110 55 C 130 30, 170 25, 200 45 C 160 28, 125 40, 110 55 Z" fill="#16A34A"/>
-      {/* Foglia Inferiore Rossa */}
-      <path d="M 190 80 C 190 125, 100 130, 75 85 C 120 115, 170 100, 190 80 Z" fill="#EF4444"/>
-      <path d="M 170 85 C 150 110, 110 115, 80 95 C 120 112, 155 100, 170 85 Z" fill="#DC2626"/>
-      {/* Testo Zo&annA S.R.L */}
-      <text x="140" y="78" textAnchor="middle" fontFamily="Georgia, 'Times New Roman', serif" fontWeight="bold" fontSize="28" fill="#0F172A">Zo&amp;annA S.R.L</text>
-    </svg>
-  </div>
-);
-
 // --- CONFIGURAZIONE UTENTI E PASSWORD ---
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: 'luca123', ruolo: 'admin' },
@@ -83,7 +48,7 @@ export default function Home() {
       localStorage.setItem('bw_user', JSON.stringify(user));
       setFormData(prev => ({ ...prev, dipendente: user.nome }));
     } else {
-      alert("Credenziali non valide! Verifica utente e password.");
+      alert("Credenziali non valide.");
     }
   };
 
@@ -174,7 +139,7 @@ export default function Home() {
         setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, data: formData.stato === 'pianificato' ? getTomorrowStr() : getTodayStr() }));
         fetchProgrammati();
       } else { setStatusMessage({ type: 'error', text: data.message }); }
-    } catch (err) { setStatusMessage({ type: 'error', text: 'Errore di connessione al server.' }); } 
+    } catch (err) { setStatusMessage({ type: 'error', text: 'Errore server.' }); } 
     finally { setLoading(false); }
   };
 
@@ -190,12 +155,12 @@ export default function Home() {
         })
       });
       if (res.ok) { setModalItem(null); fetchProgrammati(); }
-    } catch (e) { alert("Errore durante il salvataggio."); } 
+    } catch (e) { alert("Errore"); } 
     finally { setLoading(false); }
   };
 
   const handleElimina = async (item) => {
-    if (!confirm(`Sei sicuro di voler annullare l'attività per "${item.cliente}"?`)) return;
+    if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
     setLoading(true);
     try {
       const res = await fetch('/api/gestisci', {
@@ -207,84 +172,68 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
-  // --- SCHERMATA LOGIN ELEGANTE ---
+  // --- INTERFACCIA LOGIN PULITA CON LOGHI IN TESTO STILIZZATO ---
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
         
-        {/* Elementi Decorativi di Sfondo */}
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-sky-600/20 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none"></div>
-
-        <div className="w-full max-w-md relative z-10">
+        <div className="w-full max-w-md">
           
-          {/* Card Glassmorphic */}
-          <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-8 shadow-2xl space-y-6">
+          <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-200/80 space-y-6">
             
-            {/* LOGHI PRINCIPALI */}
-            <div className="flex flex-col items-center text-center space-y-4 pb-2 border-b border-slate-800/80">
+            {/* INTESTAZIONE LOGIN TESTUALE */}
+            <div className="flex flex-col items-center text-center space-y-3 pb-5 border-b border-slate-100">
               
-              {/* Logo BW Solutions */}
-              <div className="bg-white px-6 py-3 rounded-2xl shadow-md border border-slate-100 flex items-center justify-center">
-                <LogoBW className="h-12" />
+              <div className="flex items-center justify-center space-x-3">
+                {/* Badge bw */}
+                <div className="bg-sky-600 text-white font-extrabold text-xl px-3.5 py-1.5 rounded-xl shadow-md tracking-wider">
+                  bw
+                </div>
+                <div className="text-left">
+                  <span className="text-xl font-bold text-slate-900 tracking-tight block leading-tight">bw solutions</span>
+                  <span className="text-[11px] text-emerald-600 font-bold tracking-wide uppercase block">Zo&amp;annA S.R.L.</span>
+                </div>
               </div>
 
-              <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">Gestionale Ore &amp; Attività</h1>
-                <p className="text-xs text-slate-400 mt-1">Accedi al portale per la consuntivazione delle ore</p>
-              </div>
+              <p className="text-xs text-slate-500 font-medium">Gestione Ore &amp; Attività Lavorative</p>
             </div>
 
-            {/* FORM DI LOGIN */}
+            {/* FORM LOGIN */}
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">Utente</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500 text-sm">👤</span>
-                  <input 
-                    type="text" 
-                    required 
-                    value={loginForm.username} 
-                    onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} 
-                    className="w-full pl-10 pr-4 py-3 bg-slate-950/60 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all" 
-                    placeholder="Es. luca" 
-                  />
-                </div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={loginForm.username} 
+                  onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" 
+                  placeholder="Inserisci nome utente" 
+                />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">Password</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500 text-sm">🔒</span>
-                  <input 
-                    type="password" 
-                    required 
-                    value={loginForm.password} 
-                    onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} 
-                    className="w-full pl-10 pr-4 py-3 bg-slate-950/60 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all" 
-                  />
-                </div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
+                <input 
+                  type="password" 
+                  required 
+                  value={loginForm.password} 
+                  onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" 
+                />
               </div>
 
               <button 
                 type="submit" 
-                className="w-full bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-sky-600/25 transition-all text-sm mt-2"
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2"
               >
                 Accedi al Portale ➔
               </button>
             </form>
 
-            {/* LOGO PARENT ZO&ANNA */}
-            <div className="pt-2 flex flex-col items-center justify-center text-center">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mb-1.5">Azienda Licenziataria</span>
-              <div className="bg-white/95 px-4 py-2 rounded-xl shadow-inner border border-white/20">
-                <LogoZoeAnna className="h-7" />
-              </div>
-            </div>
-
           </div>
 
-          <p className="text-center text-[11px] text-slate-600 mt-6">
+          <p className="text-center text-[11px] text-slate-400 mt-6 font-medium">
             © {new Date().getFullYear()} bw solutions • Powered by Zo&amp;annA S.R.L.
           </p>
         </div>
@@ -309,7 +258,7 @@ export default function Home() {
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-12">
+    <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-12">
       <Head>
         <title>Gestionale Ore | bw solutions</title>
         <script src="https://cdn.tailwindcss.com"></script>
@@ -322,27 +271,27 @@ export default function Home() {
         ))}
       </datalist>
 
-      {/* HEADER PRINCIPALE DELL'APP */}
-      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-xl">
-        <div className="max-w-6xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      {/* HEADER NAVBAR INTERNO */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           
-          {/* BRANDING DUAL-LOGO */}
+          {/* LOGO DI TESTO HEADER */}
           <div className="flex items-center space-x-3">
-            <div className="bg-white px-3 py-1 rounded-xl shadow-sm">
-              <LogoBW className="h-7" />
+            <div className="bg-sky-600 text-white font-bold text-base px-2.5 py-1 rounded-lg tracking-wider shadow-sm">
+              bw
             </div>
-            <div className="hidden sm:block h-6 w-px bg-slate-800"></div>
-            <div className="hidden sm:block bg-white/95 px-2.5 py-1 rounded-lg">
-              <LogoZoeAnna className="h-5" />
+            <div>
+              <span className="font-bold text-base text-slate-900 tracking-tight block leading-none">bw solutions</span>
+              <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block mt-0.5">Zo&amp;annA S.R.L.</span>
             </div>
           </div>
           
-          {/* MENU DI NAVIGAZIONE */}
-          <nav className="flex space-x-1 bg-slate-800/90 p-1 rounded-2xl border border-slate-700/60 text-xs font-semibold">
-            <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'nuovo' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}>
+          {/* NAVIGAZIONE SCHEDE */}
+          <nav className="flex space-x-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-semibold">
+            <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'nuovo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
               📝 Nuovo Inserimento
             </button>
-            <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-1.5 ${activeTab === 'programmati' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all flex items-center space-x-1.5 ${activeTab === 'programmati' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
               <span>⏳ Gestione Attività</span>
               {daConfermare.length > 0 && (
                 <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full text-[10px]">
@@ -352,16 +301,16 @@ export default function Home() {
             </button>
 
             {currentUser.ruolo === 'admin' && (
-              <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'report' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}>
+              <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
                 📊 Performance &amp; Report
               </button>
             )}
           </nav>
 
-          {/* BADGE UTENTE LOGGATO */}
-          <div className="flex items-center space-x-3 text-xs bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60">
-            <span className="text-slate-200 font-medium">👤 {currentUser.nome}</span>
-            <button onClick={handleLogout} className="bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white px-2 py-0.5 rounded-lg transition-all font-semibold">
+          {/* UTENTE LOGGATO */}
+          <div className="flex items-center space-x-3 text-xs bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+            <span className="text-slate-700 font-semibold">👤 {currentUser.nome}</span>
+            <button onClick={handleLogout} className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-0.5 rounded-lg transition-all font-bold border border-rose-200">
               Esci
             </button>
           </div>
@@ -369,15 +318,15 @@ export default function Home() {
         </div>
       </header>
 
-      {/* BANNER NOTIFICA RITARDI (>24 ORE) */}
+      {/* BANNER SOLLECITO */}
       {attivitaInScadenzaRitardo.length > 0 && (
-        <div className="bg-gradient-to-r from-rose-600 to-red-700 text-white text-xs font-semibold px-4 py-3 shadow-md border-b border-rose-800">
+        <div className="bg-rose-600 text-white text-xs font-semibold px-4 py-2.5 shadow-sm">
           <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <span className="text-base">🚨</span>
               <span><strong>SOLLECITO CONSUNTIVAZIONE:</strong> Ci sono <strong>{attivitaInScadenzaRitardo.length}</strong> attività concluse da oltre 24 ore in attesa di conferma!</span>
             </div>
-            <button onClick={() => setActiveTab('programmati')} className="bg-white text-rose-800 px-3 py-1 rounded-xl text-xs font-bold shadow hover:bg-rose-50 transition-all">
+            <button onClick={() => setActiveTab('programmati')} className="bg-white text-rose-700 px-3 py-1 rounded-xl text-xs font-bold shadow hover:bg-rose-50 transition-all">
               Vedi Attività ➔
             </button>
           </div>
@@ -388,13 +337,13 @@ export default function Home() {
 
         {/* TAB 1: NUOVO INSERIMENTO */}
         {activeTab === 'nuovo' && (
-          <div className="bg-white rounded-3xl shadow-xl border border-slate-200/80 overflow-hidden">
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 p-6 text-white flex justify-between items-center">
+          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+            <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Nuova Registrazione</h2>
                 <p className="text-xs text-slate-300 mt-0.5">Inserisci le ore lavorate o pianifica un evento futuro.</p>
               </div>
-              <span className="text-3xl bg-white/10 p-2.5 rounded-2xl backdrop-blur-md">📅</span>
+              <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">📅</span>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
@@ -457,7 +406,7 @@ export default function Home() {
 
               {statusMessage && <div className={`p-4 rounded-xl text-sm font-semibold ${statusMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>{statusMessage.text}</div>}
               
-              <button type="submit" disabled={loading} className={`w-full text-white font-bold py-3.5 rounded-xl shadow-lg transition-all ${formData.stato === 'pianificato' ? 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-amber-500/20' : 'bg-gradient-to-r from-sky-600 to-blue-700 shadow-sky-600/20'}`}>
+              <button type="submit" disabled={loading} className={`w-full text-white font-bold py-3.5 rounded-xl shadow-md transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-slate-900 hover:bg-slate-800'}`}>
                 {loading ? 'Salvataggio in corso...' : (formData.stato === 'pianificato' ? 'Pianifica Evento ⏳' : 'Salva Consuntivo 🚀')}
               </button>
             </form>
@@ -466,8 +415,8 @@ export default function Home() {
 
         {/* TAB 2: GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
-          <div className="bg-white rounded-3xl shadow-xl border border-slate-200/80 overflow-hidden">
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 p-6 flex items-center justify-between text-white">
+          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+            <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
                 <p className="text-xs text-slate-300 mt-0.5">Conferma o modifica le ore dei lavori pianificati.</p>
@@ -542,11 +491,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: PERFORMANCE & REPORT (ADMIN LUCA) */}
+        {/* TAB 3: PERFORMANCE & REPORT (ADMIN) */}
         {activeTab === 'report' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-3xl shadow-xl border border-slate-200/80 overflow-hidden">
-              <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 p-6 text-white flex justify-between items-center">
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+              <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight">Performance &amp; Riepilogo Team</h2>
                   <p className="text-xs text-slate-300 mt-0.5">Valuta la tempestività di consuntivazione e il carico ore per dipendente.</p>
@@ -624,7 +573,7 @@ export default function Home() {
             </div>
 
             {/* TABELLA STORICO COMPLETO */}
-            <div className="bg-white rounded-3xl shadow-xl border border-slate-200/80 p-6 space-y-4">
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
               <h3 className="font-bold text-slate-900 text-base">Storico Dettagliato Attività</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
@@ -668,7 +617,7 @@ export default function Home() {
 
       {/* MODALE CONFERMA CHIUSURA */}
       {modalItem && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
             <h3 className="text-lg font-bold text-slate-900">Conferma Consuntivo</h3>
             <p className="text-xs text-slate-500">
