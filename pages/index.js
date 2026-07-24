@@ -45,6 +45,8 @@ export default function Home() {
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
       <Head>
         <title>Gestionale Ore | bw solutions</title>
+        {/* Caricamento diretto di Tailwind CSS per attivare la grafica all'istante */}
+        <script src="https://cdn.tailwindcss.com"></script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -59,14 +61,14 @@ export default function Home() {
             </div>
             <div>
               <h1 className="font-bold text-lg leading-none text-white tracking-tight">bw solutions</h1>
-              <p className="text-[10px] text-sky-400 font-medium tracking-wide uppercase mt-0.5">Powered by Zo&annA s.r.l.</p>
+              <p className="text-[10px] text-sky-400 font-medium tracking-wide uppercase mt-0.5">Powered by Zo&amp;annA s.r.l.</p>
             </div>
           </div>
           <nav className="flex space-x-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/50 text-xs font-medium">
-            <button className="px-3 py-1.5 rounded-lg bg-sky-600 text-white shadow-sm transition-all">
+            <button type="button" className="px-3 py-1.5 rounded-lg bg-sky-600 text-white shadow-sm transition-all">
               ⏱️ Registro Ore
             </button>
-            <button className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all opacity-60 cursor-not-allowed">
+            <button type="button" className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all opacity-60 cursor-not-allowed">
               📄 Preventivi (Presto)
             </button>
           </nav>
@@ -178,7 +180,7 @@ export default function Home() {
 
             {/* Note / Descrizione */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Note & Dettagli Attività</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Note &amp; Dettagli Attività</label>
               <textarea
                 rows={3}
                 placeholder="Descrivi brevemente l'attività svolta..."
@@ -190,7 +192,7 @@ export default function Home() {
 
             {/* Messaggio Stato */}
             {statusMessage && (
-              <div className={`p-4 rounded-xl text-sm font-medium flex items-center space-x-2 animate-fade-in ${
+              <div className={`p-4 rounded-xl text-sm font-medium flex items-center space-x-2 ${
                 statusMessage.type === 'success' 
                   ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
                   : 'bg-rose-50 text-rose-800 border border-rose-200'
