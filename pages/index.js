@@ -10,11 +10,31 @@ const UTENTI = {
   'davide': { nome: 'Davide Procopio', pass: 'davide123', ruolo: 'user' }
 };
 
+// --- DATABASE AZIENDE / CLIENTE ---
+const LISTA_CLIENTI = [
+  '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 
+  'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
+  'BARBERO ROBERTO IMPIANTI TERMOSANITARI', 'BORELLI', 'BOSCO ITALIA S.P.A', 'BUCHER MUNICIPAL', 
+  'C.T.L. s.r.l.', 'CAGLIERO S.R.L', 'CAGNAZZO s.n.c', 'CAMA 1 s.p.a', 'CASTIM 2000', 
+  'CDR ITALIA S.P.A', 'CHERCHISYSTEM', 'CIEMMEBI', 'COGORNO SERGIO', 'COLMAR Technik Spa', 
+  'COMET', 'COMETAL s.r.l', 'COMETTO', 'COSPAL COMPOSITES S.P.A', 'COSTA RODOLFO s.r.l', 
+  'DAVIDE BERNARDI', 'DEMONT', 'DIGITALISO', 'DMB', 'ECOTECH', 'EMMEGI SCS', 
+  'ENOMECCANICA BOSIO', 'ERREPI', 'FARID', 'GIOLITO', 'GIORDANO LUCA e C. s.a.s', 
+  'GT GESTIONI TECNOLOGICHE', 'Hitachi Rail', 'HYDRO', 'ICOSE', 'IDEO TECNICA', 
+  'IIS', 'IIS CERT', 'IMI s.r.l', 'Ing. Bertolotti', 'IPV', 'IRIDE', 'ISAF BUS COMPONENTS', 
+  'ISOCLIMA', 'Jilin QIXING', 'LIZ ITALIANA', 'MA s.r.l', 'MANPOWER', 'MERLO S.P.A', 
+  'MICHELE SALE', 'MONDINO', 'MOVINTER S.R.L', 'MSA DAMPER', 'NKB s.r.l', 'NORD ENGINEERING', 
+  'OM3', 'ONN WATER', 'OPERVAL', 'PERANO BRUNO S.R.L', 'PERANO SPA', 'PRINCIPI s.r.l', 
+  'PROMETES SISTEMI', 'RECIF', 'RG TECH', 'RI.ME.BO', 'ROLFO', 'S.C.A.M.I.C', 
+  'SARACINO COSTRUZIONI', 'SAVINO', 'SICMA', 'SIMIC S.P.A', 'SPEICH s.r.l', 'STAT', 
+  'STAT_BENACCHIO GROUP', 'STUDIO POLIGEO', 'T.M.C', 'TPL_Borgo S.Dalmazzo', 'TSM', 
+  'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
+];
+
 export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
 
-  // Controllo login salvato
   useEffect(() => {
     const saved = localStorage.getItem('bw_user');
     if (saved) setCurrentUser(JSON.parse(saved));
@@ -47,13 +67,12 @@ export default function Home() {
   };
 
   const [formData, setFormData] = useState({
-    dipendente: '', // impostato dopo il login
+    dipendente: '',
     cliente: '', progetto: '', data: getTodayStr(),
     ore: 8, ore_backoffice: 0, ore_trasferta: 0,
     note: '', stato: 'consuntivo'
   });
 
-  // Aggiorna dipendente nel form quando cambia utente
   useEffect(() => {
     if (currentUser) {
       setFormData(prev => ({ ...prev, dipendente: currentUser.nome }));
@@ -169,9 +188,7 @@ export default function Home() {
     );
   }
 
-  // LOGICA FILTRI (L'Admin vede tutto, il dipendente vede solo se stesso)
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
-  
   const dipendenteFiltro = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
   const eventiFiltrati = dipendenteFiltro === 'Tutti' ? programmati : programmati.filter(p => p.dipendente === dipendenteFiltro);
   
@@ -186,6 +203,13 @@ export default function Home() {
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       </Head>
+
+      {/* COMPONENTE DATALIST PER LA RICERCA PER LETTERA/NOME */}
+      <datalist id="lista-aziende">
+        {LISTA_CLIENTI.map((azienda, index) => (
+          <option key={index} value={azienda} />
+        ))}
+      </datalist>
 
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -214,7 +238,7 @@ export default function Home() {
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
             <div className="bg-gradient-to-r from-slate-900 to-sky-900 p-6 text-white">
-              <h2 className="text-xl font-bold">Registro & Programmazione</h2>
+              <h2 className="text-xl font-bold">Registro &amp; Programmazione</h2>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               
@@ -242,8 +266,17 @@ export default function Home() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">Cliente</label>
-                  <input type="text" required value={formData.cliente} onChange={e => setFormData({ ...formData, cliente: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border" />
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">Cliente (Digita la prima lettera)</label>
+                  {/* INPUT CON AUTOCOMPLETAMENTO */}
+                  <input 
+                    type="text" 
+                    list="lista-aziende" 
+                    placeholder="Es. C (mostra C.T.L, COMETAL...)" 
+                    required 
+                    value={formData.cliente} 
+                    onChange={e => setFormData({ ...formData, cliente: e.target.value })} 
+                    className="w-full px-3 py-2.5 rounded-xl border focus:ring-2 focus:ring-sky-200" 
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1.5">Progetto</label>
@@ -261,7 +294,6 @@ export default function Home() {
                   <input type="number" step="0.5" min="0" value={formData.ore_backoffice} onChange={e => setFormData({ ...formData, ore_backoffice: parseFloat(e.target.value) })} className="w-full px-3 py-2.5 rounded-xl border border-sky-200 bg-sky-50" />
                 </div>
                 
-                {/* MOSTRATO SOLO SE IL DIPENDENTE E' ALESSANDRO */}
                 {isAlessandro && (
                   <div>
                     <label className="block text-xs font-semibold text-purple-600 mb-1.5">🚗 Ore Trasferta</label>
