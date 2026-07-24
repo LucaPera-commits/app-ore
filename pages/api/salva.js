@@ -12,7 +12,7 @@ const emailDipendenti = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Metodo non consentito.' });
 
-  const { dipendente, cliente, progetto, data, ore, note, stato, ore_backoffice } = req.body;
+  const { dipendente, cliente, progetto, data, ore, note, stato, ore_backoffice, ore_trasferta } = req.body;
   const statoEvento = stato || 'consuntivo';
 
   if (!dipendente || !cliente || !progetto || !data || !ore) {
@@ -22,14 +22,17 @@ export default async function handler(req, res) {
   try {
     const { data: insertedData, error: dbError } = await supabase
       .from('ore_lavorative')
-      .insert([{ dipendente, cliente, progetto, data, ore, note, stato: statoEvento, ore_backoffice: ore_backoffice || 0 }])
-      .select();
+      .insert([{ 
+        dipendente, cliente, progetto, data, ore, note, 
+        stato: statoEvento, 
+        ore_backoffice: ore_backoffice || 0,
+        ore_trasferta: ore_trasferta || 0
+      }]).select();
 
     if (dbError) throw new Error(`Errore DB: ${dbError.message}`);
     const rowId = insertedData[0].id;
 
     let calendarSaved = false;
-    let calendarErrorDetails = null;
 
     try {
       if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
@@ -46,6 +49,7 @@ export default async function handler(req, res) {
         
         let desc = `Progetto: ${progetto}\nNote: ${note || '-'}`;
         if (ore_backoffice > 0) desc += `\n🏠 Ore Backoffice: ${ore_backoffice}h`;
+        if (ore_trasferta > 0) desc += `\n🚗 Ore Trasferta: ${ore_trasferta}h`; // Aggiunge info su Calendar
 
         const listaInvitati = [{ email: 'l.pera@zoeanna.it' }];
         if (emailDipendenti[dipendente] && emailDipendenti[dipendente] !== 'l.pera@zoeanna.it') {
@@ -60,10 +64,8 @@ export default async function handler(req, res) {
           calendarId: process.env.GOOGLE_CALENDAR_ID || 'info@zoeanna.it',
           sendUpdates: 'all',
           requestBody: {
-            summary: titoloEvento,
-            description: desc,
-            start: { date: data },
-            end: { date: endDateObj.toISOString().split('T')[0] },
+            summary: titoloEvento, description: desc,
+            start: { date: data }, end: { date: endDateObj.toISOString().split('T')[0] },
             attendees: listaInvitati
           }
         });
@@ -71,8 +73,8 @@ export default async function handler(req, res) {
         await supabase.from('ore_lavorative').update({ calendar_event_id: calendarRes.data.id }).eq('id', rowId);
         calendarSaved = true;
       }
-    } catch (calErr) { calendarErrorDetails = calErr.message; }
+    } catch (calErr) { console.log(calErr); }
 
-    return res.status(200).json({ success: true, message: calendarSaved ? 'Salvato su DB e Calendar! 🎉' : `Salvato su DB! (Calendar err: ${calendarErrorDetails})` });
+    return res.status(200).json({ success: true, message: calendarSaved ? 'Salvato con successo! 🎉' : `Salvato solo su Database.` });
   } catch (err) { return res.status(500).json({ message: err.message }); }
 }
