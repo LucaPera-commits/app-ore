@@ -18,12 +18,22 @@ export default async function handler(req, res) {
     }
   } catch (e) {}
 
+  // GET: Recupera attività
   if (req.method === 'GET') {
-    const { data, error } = await supabase.from('ore_lavorative').select('*').eq('stato', 'pianificato').order('data', { ascending: true });
+    const { mode } = req.query;
+    let query = supabase.from('ore_lavorative').select('*').order('data', { ascending: false });
+    
+    // Se mode non è 'all', recupera solo quelle da consuntivare o pianificate
+    if (mode !== 'all') {
+      query = query.eq('stato', 'pianificato').order('data', { ascending: true });
+    }
+    
+    const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json(data);
   }
 
+  // PUT: Chiusura consuntivo
   if (req.method === 'PUT') {
     const { id, calendar_event_id, ore_effettive, ore_backoffice, ore_trasferta } = req.body;
     
@@ -50,6 +60,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, message: 'Evento chiuso a consuntivo!' });
   }
 
+  // DELETE: Annullamento evento
   if (req.method === 'DELETE') {
     const { id, calendar_event_id } = req.body;
     await supabase.from('ore_lavorative').delete().eq('id', id);
