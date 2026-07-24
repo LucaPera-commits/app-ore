@@ -4,11 +4,19 @@ import Head from 'next/head';
 export default function Home() {
   const [activeTab, setActiveTab] = useState('nuovo'); // 'nuovo' | 'programmati'
   
+  // Calcolo delle date (Oggi e Domani)
+  const getTodayStr = () => new Date().toISOString().split('T')[0];
+  const getTomorrowStr = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  };
+
   const [formData, setFormData] = useState({
     dipendente: 'Giampaolo Lauro',
     cliente: '',
     progetto: '',
-    data: new Date().toISOString().split('T')[0],
+    data: getTodayStr(),
     ore: 8,
     note: '',
     stato: 'consuntivo' // 'consuntivo' oppure 'pianificato'
@@ -16,16 +24,23 @@ export default function Home() {
 
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
-  
-  // Lista eventi programmati
   const [programmati, setProgrammati] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
-
-  // Modal / Stato per chiusura consuntivo
   const [modalItem, setModalItem] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
 
-  // Carica eventi programmati
+  // Auto-correzione data quando si cambia lo stato in "Pianificato"
+  useEffect(() => {
+    const today = getTodayStr();
+    const tomorrow = getTomorrowStr();
+    
+    if (formData.stato === 'pianificato' && formData.data <= today) {
+      setFormData(prev => ({ ...prev, data: tomorrow }));
+    }
+    // Opzionale: se torna a consuntivo e la data era nel futuro, si potrebbe rimettere a oggi
+    // ma lasciamo la libertà di registrare consuntivi passati.
+  }, [formData.stato]);
+
   const fetchProgrammati = async () => {
     setLoadingProgrammati(true);
     try {
@@ -42,16 +57,25 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (activeTab === 'programmati') {
-      fetchProgrammati();
-    }
+    if (activeTab === 'programmati') fetchProgrammati();
   }, [activeTab]);
 
-  // Invio nuovo evento / registrazione
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setStatusMessage(null);
+
+    const todayStr = getTodayStr();
+
+    // 🔒 Controllo di sicurezza Server/Client sulle date pianificate
+    if (formData.stato === 'pianificato' && formData.data <= todayStr) {
+      setStatusMessage({ 
+        type: 'error', 
+        text: 'Errore: Gli eventi pianificati possono essere registrati solo per date future (da domani in poi).' 
+      });
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await fetch('/api/salva', {
@@ -64,7 +88,13 @@ export default function Home() {
 
       if (res.ok) {
         setStatusMessage({ type: 'success', text: data.message });
-        setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '' }));
+        setFormData(prev => ({ 
+          ...prev, 
+          cliente: '', 
+          progetto: '', 
+          note: '',
+          data: formData.stato === 'pianificato' ? getTomorrowStr() : getTodayStr() 
+        }));
         if (activeTab === 'programmati') fetchProgrammati();
       } else {
         setStatusMessage({ type: 'error', text: data.message || 'Errore durante il salvataggio.' });
@@ -76,7 +106,6 @@ export default function Home() {
     }
   };
 
-  // Chiudi evento a Consuntivo
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
     setLoading(true);
@@ -102,7 +131,6 @@ export default function Home() {
     }
   };
 
-  // Annulla / Elimina evento
   const handleElimina = async (item) => {
     if (!confirm(`Sei sicuro di voler annullare l'evento "${item.cliente} - ${item.progetto}"?\nVerrà rimosso anche da Google Calendar.`)) return;
     
@@ -117,9 +145,7 @@ export default function Home() {
         })
       });
 
-      if (res.ok) {
-        fetchProgrammati();
-      }
+      if (res.ok) fetchProgrammati();
     } catch (e) {
       alert("Errore durante l'eliminazione dell'evento.");
     } finally {
@@ -150,7 +176,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* TAB BUTTONS */}
           <nav className="flex space-x-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/50 text-xs font-medium">
             <button
               type="button"
@@ -189,7 +214,6 @@ export default function Home() {
         {/* TAB 1: NUOVO INSERIMENTO */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden transition-all">
-            
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-900 p-6 text-white">
               <div className="flex items-center justify-between">
                 <div>
@@ -201,8 +225,6 @@ export default function Home() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
-
-              {/* TIPO INSERIMENTO (Consuntivo vs Pianificato) */}
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Tipologia Inserimento</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -231,7 +253,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Dipendente & Data */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Dipendente / Tecnico</label>
@@ -251,12 +272,14 @@ export default function Home() {
                     required
                     value={formData.data}
                     onChange={(e) => setFormData({ ...formData, data: e.target.value })}
+                    /* 👇 QUI IL BLOCCO SUL CALENDARIO UI */
+                    min={formData.stato === 'pianificato' ? getTomorrowStr() : undefined} 
+                    max={formData.stato === 'consuntivo' ? getTodayStr() : undefined}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all text-sm font-medium bg-slate-50/50"
                   />
                 </div>
               </div>
 
-              {/* Cliente & Progetto */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Cliente</label>
@@ -283,7 +306,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Ore */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
                   {formData.stato === 'pianificato' ? 'Ore Stimate' : 'Ore Lavorate'}
@@ -318,7 +340,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Note */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Note &amp; Dettagli</label>
                 <textarea
@@ -330,7 +351,6 @@ export default function Home() {
                 ></textarea>
               </div>
 
-              {/* Stato Message */}
               {statusMessage && (
                 <div className={`p-4 rounded-xl text-sm font-medium flex items-center space-x-2 ${
                   statusMessage.type === 'success' 
@@ -342,7 +362,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Submit */}
               <button
                 type="submit"
                 disabled={loading}
@@ -430,7 +449,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
       </main>
 
       {/* MODALE DI CHIUSURA CONSUNTIVO */}
