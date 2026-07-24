@@ -25,24 +25,24 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, calendar_event_id, ore_effettive, ore_backoffice } = req.body;
+    const { id, calendar_event_id, ore_effettive, ore_backoffice, ore_trasferta } = req.body;
     
-    // Aggiorna DB includendo le ore di backoffice modificate
     await supabase.from('ore_lavorative').update({ 
       stato: 'consuntivo', 
       ore: ore_effettive,
-      ore_backoffice: ore_backoffice || 0 
+      ore_backoffice: ore_backoffice || 0,
+      ore_trasferta: ore_trasferta || 0 
     }).eq('id', id);
 
-    // Aggiorna Calendar
     if (calendar && calendar_event_id) {
       try {
         const ev = await calendar.events.get({ calendarId, eventId: calendar_event_id });
         let newSummary = ev.data.summary.replace('⏳ [PIANIFICATO]', '✅ [CHIUSO]');
-        newSummary = newSummary.replace(/\([0-9.]+h\)/, `(${ore_effettive}h)`); // Aggiorna le ore nel titolo
+        newSummary = newSummary.replace(/\([0-9.]+h\)/, `(${ore_effettive}h)`);
         
         let newDesc = ev.data.description || '';
-        if (ore_backoffice > 0) newDesc += `\n🏠 Ore Backoffice Consuntivate: ${ore_backoffice}h`;
+        if (ore_backoffice > 0 && !newDesc.includes('Ore Backoffice')) newDesc += `\n🏠 Ore Backoffice Consuntivate: ${ore_backoffice}h`;
+        if (ore_trasferta > 0 && !newDesc.includes('Ore Trasferta')) newDesc += `\n🚗 Ore Trasferta: ${ore_trasferta}h`;
 
         await calendar.events.patch({ calendarId, eventId: calendar_event_id, requestBody: { summary: newSummary, description: newDesc } });
       } catch (e) {}
