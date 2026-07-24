@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
-// --- CONFIGURAZIONE UTENTI E PASSWORD ---
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
   'giampaolo': { nome: 'Giampaolo Lauro', pass: '!giampaolo123?', ruolo: 'user' },
@@ -10,7 +9,6 @@ const UTENTI = {
   'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
 };
 
-// --- DATABASE CLIENTE ---
 const LISTA_CLIENTI = [
   '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 
   'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
@@ -121,7 +119,6 @@ export default function Home() {
     if (currentUser) fetchProgrammati();
   }, [activeTab, currentUser]);
 
-  // SINCRONIZZAZIONE DA GOOGLE CALENDAR
   const handleSyncCalendar = async () => {
     if (currentUser?.ruolo !== 'admin') {
       alert("Solo l'amministratore può avviare la sincronizzazione.");
@@ -140,7 +137,7 @@ export default function Home() {
     }
   };
 
-  // ASSEGNAZIONE RAPIDA CLICCANDO SUL TAG
+  // RIASSEGNAZIONE RAPIDA TRAMITE TAG
   const handleQuickReassign = async (item, nuovoDipendente) => {
     if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
     setLoading(true);
@@ -152,9 +149,7 @@ export default function Home() {
           id: item.id,
           calendar_event_id: item.calendar_event_id,
           dipendente: nuovoDipendente,
-          ore_effettive: item.ore || 8,
-          ore_backoffice: item.ore_backoffice || 0,
-          ore_trasferta: item.ore_trasferta || 0
+          chiudi_consuntivo: false // <--- Solo riassegnazione!
         })
       });
       if (res.ok) {
@@ -192,6 +187,7 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
+  // CONFEMA E CHIUSURA CONSUNTIVO
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
     setLoading(true);
@@ -204,7 +200,8 @@ export default function Home() {
           ore_effettive: oreEffettive, 
           ore_backoffice: oreBackofficeEffettive, 
           ore_trasferta: oreTrasfertaEffettive,
-          dipendente: dipendenteEffettivo || modalItem.dipendente
+          dipendente: dipendenteEffettivo || modalItem.dipendente,
+          chiudi_consuntivo: true // <--- Chiusura e spunta verde!
         })
       });
       if (res.ok) { setModalItem(null); fetchProgrammati(); }
@@ -274,7 +271,6 @@ export default function Home() {
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
-  // RENDERING DEL TAG DIPENDENTE INTERATTIVO
   const renderDipendenteBadge = (item) => {
     const isDaAssegnare = item.dipendente === 'Da Assegnare';
 
@@ -289,7 +285,7 @@ export default function Home() {
                 ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700 animate-pulse' 
                 : 'bg-sky-100 text-sky-800 border-sky-300 hover:bg-sky-200'
             }`}
-            title="Clicca per assegnare a un altro operatore"
+            title="Clicca per riassegnare l'operatore"
           >
             <option value="Da Assegnare" disabled={!isDaAssegnare}>
               ❓ Da Assegnare
@@ -493,7 +489,6 @@ export default function Home() {
                                   <span className="text-xs font-bold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-lg">{item.data}</span>
                                   {isInRitardo && <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-md font-bold uppercase">SCADUTO (&gt;24h)</span>}
                                   
-                                  {/* TAG CLICCABILE PER RIASSEGNAZIONE RAPIDA */}
                                   {renderDipendenteBadge(item)}
                                 </div>
                                 <h3 className="font-bold text-slate-900 text-base">{item.cliente}</h3>
@@ -525,8 +520,6 @@ export default function Home() {
                             <div>
                               <div className="flex items-center space-x-2 mb-1">
                                 <span className="text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded-lg">{item.data}</span>
-                                
-                                {/* TAG CLICCABILE PER RIASSEGNAZIONE RAPIDA */}
                                 {renderDipendenteBadge(item)}
                               </div>
                               <h3 className="font-bold text-slate-900 text-base">{item.cliente}</h3>
