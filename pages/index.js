@@ -181,7 +181,10 @@ function HomeContent() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
+  
+  // --- NAVEGAZIONE CON STORICO ---
   const [activeTab, setActiveTab] = useState('home');
+  const [tabHistory, setTabHistory] = useState([]);
 
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
@@ -251,9 +254,17 @@ function HomeContent() {
     return matchNomeDipendente(item?.dipendente, currentUser.nome);
   }
 
-  function handleTabChange(tab) {
-    setActiveTab(tab);
-    if (tab === 'feedback' && safeFeedbackList.length > 0) {
+  // CAMBIO TAB CON REGISTRAZIONE NELLO STORICO
+  function handleTabChange(targetTab, isBackAzione = false) {
+    if (targetTab === activeTab) return;
+
+    if (!isBackAzione) {
+      setTabHistory(prev => [...prev, activeTab]);
+    }
+
+    setActiveTab(targetTab);
+
+    if (targetTab === 'feedback' && safeFeedbackList.length > 0) {
       const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
       if (keysToMark.length > 0) {
         setReadFeedbackIds(prev => {
@@ -266,6 +277,14 @@ function HomeContent() {
         });
       }
     }
+  }
+
+  // FUNZIONE PER TORNARE INDIETRO
+  function handleGoBack() {
+    if (tabHistory.length === 0) return;
+    const lastTab = tabHistory[tabHistory.length - 1];
+    setTabHistory(prev => prev.slice(0, prev.length - 1));
+    handleTabChange(lastTab, true);
   }
 
   useEffect(() => {
@@ -785,7 +804,6 @@ function HomeContent() {
 
   const safeRisultatiNC = Array.isArray(risultatiNC) ? risultatiNC : [];
 
-  // RENDER RIGA ATTIVITÀ CON INTERATTIVITÀ CLICCABILE SU TUTTA LA SCHEDA
   const renderRigaAttivita = (item, colorTheme, idx = 0) => {
     if (!item) return null;
     const normDate = getNormalizedDate(item.data);
@@ -963,7 +981,18 @@ function HomeContent() {
             </div>
           </div>
           
-          <nav className="flex space-x-1.5 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold overflow-x-auto">
+          <nav className="flex items-center space-x-1.5 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold overflow-x-auto">
+            {/* TASTO INDIETRO NELL'HEADER */}
+            {tabHistory.length > 0 && (
+              <button 
+                onClick={handleGoBack}
+                className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition-all flex items-center space-x-1 shadow-sm whitespace-nowrap"
+                title="Torna alla scheda precedente"
+              >
+                <span>⬅️ Indietro</span>
+              </button>
+            )}
+
             <button 
               onClick={() => handleTabChange('home')} 
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
@@ -1028,7 +1057,20 @@ function HomeContent() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+
+        {/* PULSANTE INDIETRO DI CORTESIA SOPRA IL CONTENUTO */}
+        {tabHistory.length > 0 && activeTab !== 'home' && (
+          <div>
+            <button
+              onClick={handleGoBack}
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs rounded-2xl border border-slate-200 shadow-sm transition-all group cursor-pointer"
+            >
+              <span className="group-hover:-translate-x-1 transition-transform">⬅️</span>
+              <span>Torna alla scheda precedente</span>
+            </button>
+          </div>
+        )}
 
         {/* TAB 0: HOME */}
         {activeTab === 'home' && (
@@ -2099,7 +2141,7 @@ function HomeContent() {
                         const tot = oreCantiere + oreBackoffice + oreStraordinario + oreFerie + orePermesso + oreMalattia;
 
                         return (
-                          <tr key={nomeDip} className="hover:bg-slate-50 cursor-pointer" onClick={() => toggleCartella(nomeDip)}>
+                          <tr key={nomeDip} className="hover:bg-slate-50 cursor-pointer" onClick={() => { handleTabChange('programmati'); toggleCartella(nomeDip); }}>
                             <td className="py-3 px-3 font-bold text-slate-900">{nomeDip}</td>
                             <td className="py-3 px-3 text-center font-bold">{oreCantiere} h</td>
                             <td className="py-3 px-3 text-center font-bold text-sky-700">{oreBackoffice} h</td>
@@ -2313,7 +2355,7 @@ function HomeContent() {
                   Scheda del <strong className="text-slate-800">{getNormalizedDate(modalItem.data)}</strong>
                 </p>
               </div>
-              <button onClick={() => setModalItem(null)} className="text-slate-400 hover:text-slate-600 font-black text-base p-1">✕</button>
+              <button onClick={() => setModalItem(null)} className="text-slate-400 hover:text-slate-600 font-black text-base p-1 cursor-pointer">✕</button>
             </div>
 
             <div className="space-y-2 bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs">
@@ -2349,8 +2391,8 @@ function HomeContent() {
             </div>
 
             <div className="flex space-x-2 pt-2">
-              <button onClick={() => setModalItem(null)} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">Annulla</button>
-              <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all">
+              <button onClick={() => setModalItem(null)} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer">Annulla</button>
+              <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer">
                 {loading ? '...' : (modalItem.stato === 'consuntivo' ? 'Salva Modifiche ✅' : 'Conferma e Salva ✅')}
               </button>
             </div>
