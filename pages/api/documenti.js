@@ -11,24 +11,27 @@ export default async function handler(req, res) {
 
   if (!ncUrl || !ncUser || !ncPass) {
     return res.status(500).json({ 
-      message: 'Configurazione Nextcloud mancante. Verificare le chiavi su Vercel.' 
+      message: 'Configurazione Nextcloud mancante su Vercel (NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASS).' 
     });
   }
 
   const baseUrl = ncUrl.replace(/\/$/, '');
   const authHeader = 'Basic ' + Buffer.from(`${ncUser}:${ncPass}`).toString('base64');
+  
+  // Intestazioni per superare i filtri WAF di Aruba
+  const commonHeaders = {
+    'Authorization': authHeader,
+    'User-Agent': 'BW-Solutions-App/1.0 (Nextcloud Client)',
+    'OCS-APIRequest': 'true'
+  };
 
   try {
-    // MODALITÀ 1: Ricerca Globale per Parola Chiave
+    // MODALITÀ 1: Ricerca Globale
     if (query && query.trim().length >= 2) {
       const searchApiUrl = `${baseUrl}/ocs/v2.php/search/providers/files/search?term=${encodeURIComponent(query)}`;
       const response = await fetch(searchApiUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': authHeader,
-          'OCS-APIRequest': 'true',
-          'Accept': 'application/json'
-        }
+        headers: { ...commonHeaders, 'Accept': 'application/json' }
       });
 
       if (!response.ok) throw new Error(`Status ${response.status}`);
@@ -46,26 +49,28 @@ export default async function handler(req, res) {
       return res.status(200).json({ risultati: fileTrovati, isSearch: true });
     }
 
-    // MODALITÀ 2: Esplorazione Istantanea Cartella (WebDAV Universale)
+    // MODALITÀ 2: Esplorazione Istantanea Cartelle (WebDAV)
     const cleanFolder = (folder || '').replace(/^\/+|\/+$/g, '');
     
-    // Usiamo l'endpoint webdav generico che non richiede l'ID utente esatto
-    const webdavUrl = `${baseUrl}/remote.php/webdav/${cleanFolder ? cleanFolder + '/' : ''}`;
+    // Prova 1: Endpoint specifico utente
+    let webdavUrl = `${baseUrl}/remote.php/dav/files/${encodeURIComponent(ncUser)}/${cleanFolder ? cleanFolder + '/' : ''}`;
 
-    const response = await fetch(webdavUrl, {
+    let response = await fetch(webdavUrl, {
       method: 'PROPFIND',
-      headers: {
-        'Authorization': authHeader,
-        'Depth': '1',
-        'Content-Type': 'application/xml'
-      }
+      headers: { ...commonHeaders, 'Depth': '1', 'Content-Type': 'application/xml' }
     });
 
+    // Prova 2: Endpoint generico se il primo restituisce 403/404
     if (!response.ok) {
-      // Se fallisce, stampiamo il vero motivo nella console di Vercel per debug
-      const errorText = await response.text();
-      console.error("Errore WebDAV Nextcloud:", response.status, errorText);
-      throw new Error(`Accesso negato al Cloud Aruba (Codice: ${response.status}). Verifica Utente e Password.`);
+      webdavUrl = `${baseUrl}/remote.php/webdav/${cleanFolder ? cleanFolder + '/' : ''}`;
+      response = await fetch(webdavUrl, {
+        method: 'PROPFIND',
+        headers: { ...commonHeaders, 'Depth': '1', 'Content-Type': 'application/xml' }
+      });
+    }
+
+    if (!response.ok) {
+      throw new Error(`Accesso negato al Cloud Aruba (Codice: ${response.status}). Verifica la password per le app e il nome utente.`);
     }
 
     const xmlText = await response.text();
@@ -79,27 +84,18 @@ export default async function handler(req, res) {
       let rawHref = decodeURIComponent(hrefMatch[1]);
       const isFolder = /<[a-zA-Z0-9]+:collection\s*\/?>/i.test(respXml);
 
-      // Nextcloud restituisce il percorso in due modi possibili
-      const prefix1 = `/remote.php/webdav/`.toLowerCase();
-      const prefix2 = `/remote.php/dav/files/`.toLowerCase();
-
       let relPath = rawHref;
-      const lowerHref = rawHref.toLowerCase();
-
-      if (lowerHref.startsWith(prefix1)) {
-        relPath = rawHref.substring(prefix1.length);
-      } else if (lowerHref.startsWith(prefix2)) {
-        // Se usa la sintassi dav/files/USERNAME/cartella, rimuoviamo tutta la parte iniziale inclusa l'username
-        const parts = rawHref.split('/');
-        const filesIndex = parts.findIndex(p => p.toLowerCase() === 'files');
-        if (filesIndex !== -1 && parts.length > filesIndex + 2) {
-          relPath = parts.slice(filesIndex + 2).join('/');
-        }
+      const parts = rawHref.split('/');
+      const filesIndex = parts.findIndex(p => p.toLowerCase() === 'files' || p.toLowerCase() === 'webdav');
+      
+      if (filesIndex !== -1 && parts.length > filesIndex + 1) {
+        // Rimuove i prefissi di sistema per isolare la cartella utente
+        const offset = parts[filesIndex].toLowerCase() === 'files' ? 2 : 1;
+        relPath = parts.slice(filesIndex + offset).join('/');
       }
 
       relPath = relPath.replace(/^\/+|\/+$/g, '');
 
-      // Ignora la cartella principale se stessa
       if (relPath.toLowerCase() === cleanFolder.toLowerCase()) return;
 
       let name = '';
@@ -107,8 +103,8 @@ export default async function handler(req, res) {
       if (nameMatch && nameMatch[1]) {
         name = nameMatch[1];
       } else {
-        const parts = relPath.split('/');
-        name = parts[parts.length - 1] || 'Elemento';
+        const pathParts = relPath.split('/');
+        name = pathParts[pathParts.length - 1] || 'Elemento';
       }
 
       const linkWeb = `${baseUrl}/index.php/apps/files/?dir=/${encodeURIComponent(relPath)}`;
