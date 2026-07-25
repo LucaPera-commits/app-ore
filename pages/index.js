@@ -266,15 +266,21 @@ export default function Home() {
     );
   }
 
-  // --- FUNZIONE DI MATCHING FLESSIBILE PER NOMI (Es: "Giampaolo" match con "Giampaolo Lauro") ---
+  // --- LOGICA DI CONFRONTO NOMI SENZA AMBIGUITÀ ---
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true;
     if (!nomeDb) return false;
     const db = nomeDb.toLowerCase().trim();
     const flt = filtro.toLowerCase().trim();
-    const primoNomeFiltro = flt.split(' ')[0];
-    const primoNomeDb = db.split(' ')[0];
-    return db === flt || db.includes(primoNomeFiltro) || flt.includes(primoNomeDb);
+
+    if (db === flt) return true;
+    if (flt === 'da assegnare') return db === 'da assegnare';
+    if (db === 'da assegnare') return flt === 'da assegnare';
+
+    const partiFiltro = flt.split(' ').filter(Boolean);
+    const partiDb = db.split(' ').filter(Boolean);
+
+    return partiFiltro[0] === partiDb[0];
   };
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
