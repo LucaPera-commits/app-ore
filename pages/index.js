@@ -54,16 +54,17 @@ export default function Home() {
   };
 
   const [formData, setFormData] = useState({
-    dipendente: '',
-    cliente: '', progetto: '', data: getTodayStr(),
-    ore: 8, ore_backoffice: 0, ore_trasferta: 0,
-    note: '', stato: 'consuntivo'
+    dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
+    ore: 8, ore_backoffice: 0, ore_trasferta: 0, note: '', stato: 'consuntivo'
   });
 
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
+  
+  // DOPPIO FILTRO
+  const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti'); // Tutti, Assegnate, Da Assegnare
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
 
   const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
@@ -285,7 +286,15 @@ export default function Home() {
     );
   }
 
-  // --- COMPARAZIONE NOMI TOLLERANTE ---
+  // --- LOGICA FILTRI ---
+  const matchAssegnazione = (dipDb, filtroAss) => {
+    if (!filtroAss || filtroAss === 'Tutti') return true;
+    const isDaAssegnare = !dipDb || dipDb === 'Da Assegnare' || dipDb === '';
+    if (filtroAss === 'Da Assegnare') return isDaAssegnare;
+    if (filtroAss === 'Assegnate') return !isDaAssegnare;
+    return true;
+  };
+
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true; 
     const db = nomeDb ? nomeDb.toLowerCase().trim() : 'da assegnare';
@@ -303,18 +312,25 @@ export default function Home() {
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
-  // Attività in corso
+  // Applicazione combinata dei due filtri
   const attivitaPianificateAttive = storicoCompleto.filter(p => {
     const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
     if (isChiuso) return false;
-    return matchNomeDipendente(p.dipendente, targetDipendente);
+
+    const passAssegnazione = matchAssegnazione(p.dipendente, filtroAssegnazione);
+    const passDipendente = matchNomeDipendente(p.dipendente, targetDipendente);
+
+    return passAssegnazione && passDipendente;
   });
 
-  // Attività archiviate
   const attivitaArchiviate = storicoCompleto.filter(p => {
     const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
     if (!isChiuso) return false;
-    return matchNomeDipendente(p.dipendente, targetDipendente);
+
+    const passAssegnazione = matchAssegnazione(p.dipendente, filtroAssegnazione);
+    const passDipendente = matchNomeDipendente(p.dipendente, targetDipendente);
+
+    return passAssegnazione && passDipendente;
   });
 
   const todayStr = getTodayStr();
@@ -339,7 +355,6 @@ export default function Home() {
   const totMeseTrasferta = consuntiviMese.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
   const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta;
 
-  // --- RENDER RIGA ATTIVITÀ ---
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
     return (
@@ -508,7 +523,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ */}
+        {/* TAB 2: GESTIONE ATTIVITÀ CON DOPPIO FILTRO */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
@@ -518,13 +533,35 @@ export default function Home() {
               </div>
             </div>
 
+            {/* BARRA DOPPI FILTRI */}
             <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
               {currentUser.ruolo === 'admin' ? (
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase">Filtra:</span>
-                  <select value={filtroDipendente} onChange={e => setFiltroDipendente(e.target.value)} className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200">
-                    {['Tutti', 'Da Assegnare', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Filtro Stato Assegnazione */}
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Stato:</span>
+                    <select 
+                      value={filtroAssegnazione} 
+                      onChange={e => setFiltroAssegnazione(e.target.value)} 
+                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200"
+                    >
+                      <option value="Tutti">Tutti gli stati</option>
+                      <option value="Assegnate">📌 Assegnate</option>
+                      <option value="Da Assegnare">❓ Da Assegnare</option>
+                    </select>
+                  </div>
+
+                  {/* Filtro Dipendente */}
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Dipendente:</span>
+                    <select 
+                      value={filtroDipendente} 
+                      onChange={e => setFiltroDipendente(e.target.value)} 
+                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200"
+                    >
+                      {['Tutti', 'Da Assegnare', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
                 </div>
               ) : <div></div>}
 
@@ -546,7 +583,7 @@ export default function Home() {
               ) : attivitaPianificateAttive.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
                   <span className="text-4xl block mb-2">🎉</span>
-                  <p className="text-sm font-medium">Nessuna attività in sospeso o da assegnare per questo filtro!</p>
+                  <p className="text-sm font-medium">Nessuna attività in sospeso per i filtri selezionati!</p>
                   <p className="text-xs text-slate-400 mt-1">Le attività completate si trovano nell'Archivio Storico in basso.</p>
                 </div>
               ) : (
