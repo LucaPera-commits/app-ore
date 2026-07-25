@@ -1,39 +1,5 @@
-import React, { useState, useEffect, Component } from 'react';
+import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-
-// COMPONENTE DI PROTEZIONE ANTI-SCHERMATA BIANCA
-class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error, errorInfo) {
-    console.error("Errore React intercettato:", error, errorInfo);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-slate-900 text-white p-8 flex flex-col items-center justify-center font-sans">
-          <div className="max-w-xl bg-slate-800 p-6 rounded-3xl border border-rose-500/50 shadow-2xl space-y-4 text-center">
-            <div className="text-4xl">⚠️</div>
-            <h2 className="text-xl font-bold text-rose-400">Si è verificato un errore nell'interfaccia</h2>
-            <p className="text-xs text-slate-300">Dettaglio tecnico dell'eccezione:</p>
-            <pre className="bg-black/60 p-4 rounded-2xl text-[11px] text-rose-300 text-left overflow-x-auto whitespace-pre-wrap font-mono border border-slate-700">
-              {this.state.error?.toString()}
-            </pre>
-            <button onClick={() => window.location.reload()} className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 font-bold rounded-xl text-xs transition-all shadow-md">
-              🔄 Ricarica l'Applicazione
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
@@ -63,7 +29,6 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
-// UTILITIES CON SINTASSI FUNCTION TRADIZIONALE (GARANZIA HOISTING JAVASCRIPT)
 function getTodayStr() {
   return new Date().toISOString().split('T')[0];
 }
@@ -155,12 +120,6 @@ function isAssenza(item) {
   return isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze');
 }
 
-function canEditItem(item, currentUser) {
-  if (!currentUser) return false;
-  if (currentUser.ruolo === 'admin') return true;
-  return matchNomeDipendente(item?.dipendente, currentUser.nome);
-}
-
 function getFeedbackKey(fb) {
   if (!fb || !fb.id) return null;
   return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
@@ -183,7 +142,7 @@ function getGiorniLavorativiMese(annoMeseStr) {
   }
 }
 
-function HomeContent() {
+export default function Home() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -247,19 +206,34 @@ function HomeContent() {
   const [oreStraordinarioEffettive, setOreStraordinarioEffettive] = useState(0);
   const [dipendenteEffettivo, setDipendenteEffettivo] = useState('');
 
+  const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
+  const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
+  const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
+  const safeReadIds = Array.isArray(readFeedbackIds) ? readFeedbackIds : [];
+
+  const canEditItem = (item) => {
+    if (!currentUser) return false;
+    if (currentUser.ruolo === 'admin') return true;
+    return matchNomeDipendente(item?.dipendente, currentUser.nome);
+  };
+
   useEffect(() => {
     setIsMounted(true);
-    const saved = localStorage.getItem('bw_user');
-    if (saved) {
-      try { setCurrentUser(JSON.parse(saved)); } catch (e) {}
+    try {
+      const saved = localStorage.getItem('bw_user');
+      if (saved) setCurrentUser(JSON.parse(saved));
+    } catch (e) {
+      localStorage.removeItem('bw_user');
     }
 
-    const savedRead = localStorage.getItem('bw_read_feedbacks');
-    if (savedRead) {
-      try {
+    try {
+      const savedRead = localStorage.getItem('bw_read_feedbacks');
+      if (savedRead) {
         const parsed = JSON.parse(savedRead);
         if (Array.isArray(parsed)) setReadFeedbackIds(parsed);
-      } catch (e) {}
+      }
+    } catch (e) {
+      localStorage.removeItem('bw_read_feedbacks');
     }
   }, []);
 
@@ -325,10 +299,6 @@ function HomeContent() {
       }
     }
   }, [currentUser, activeTab, filtroArchivioAdmin, isMounted]);
-
-  const safeReadIds = Array.isArray(readFeedbackIds) ? readFeedbackIds : [];
-  const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
-  const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
 
   useEffect(() => {
     if (activeTab === 'feedback' && safeFeedbackList.length > 0) {
@@ -660,7 +630,7 @@ function HomeContent() {
 
   const handleElimina = async (item) => {
     if (!item) return;
-    if (!canEditItem(item, currentUser)) return alert("Puoi annullare solo le tue attività.");
+    if (!canEditItem(item)) return alert("Puoi annullare solo le tue attività.");
     if (!confirm(`Vuoi annullare l'attività per "${toText(item.cliente)}"?`)) return;
     setLoading(true);
     try {
@@ -675,7 +645,7 @@ function HomeContent() {
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item, currentUser)) return alert("Puoi modificare solo le tue attività.");
+    if (!canEditItem(item)) return alert("Puoi modificare solo le tue attività.");
     setModalItem(item);
     setOreEffettive(item.ore || 0);
     setOreBackofficeEffettive(item.ore_backoffice || 0);
@@ -744,7 +714,6 @@ function HomeContent() {
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
 
-  const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
   const daAssegnareItems = safeStorico.filter(p => p && (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
   const dipendentiVisibili = listaDipendenti;
 
@@ -797,7 +766,7 @@ function HomeContent() {
     else if (Number(item.ore_trasferta || 0) > 0) { icona = '🚗'; etichetta = 'Trasferta'; badgeStyle = 'bg-purple-100 text-purple-800 border-purple-300'; }
     else if (Number(item.ore_backoffice || 0) > 0) { icona = '🖥️'; etichetta = 'Backoffice'; badgeStyle = 'bg-sky-100 text-sky-800 border-sky-300'; }
 
-    const isEditable = canEditItem(item, currentUser);
+    const isEditable = canEditItem(item);
     const keyVal = item.id || item.calendar_event_id || `att_${idx}`;
 
     return (
@@ -2322,13 +2291,5 @@ function HomeContent() {
         </div>
       )}
     </div>
-  );
-}
-
-export default function App() {
-  return (
-    <ErrorBoundary>
-      <HomeContent />
-    </ErrorBoundary>
   );
 }
