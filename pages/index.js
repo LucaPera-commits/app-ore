@@ -51,6 +51,22 @@ export default function Home() {
     return String(d).split('T')[0].split(' ')[0];
   };
 
+  // Calcola i giorni lavorativi (Lun-Ven) di un mese
+  const getGiorniLavorativiMese = (annoMeseStr) => {
+    if (!annoMeseStr) return 22;
+    const [year, month] = annoMeseStr.split('-').map(Number);
+    let count = 0;
+    const date = new Date(year, month - 1, 1);
+    while (date.getMonth() === month - 1) {
+      const day = date.getDay();
+      if (day !== 0 && day !== 6) count++;
+      date.setDate(date.getDate() + 1);
+    }
+    return count;
+  };
+
+  const [categoriaForm, setCategoriaForm] = useState('lavoro'); // lavoro, ferie, permesso, malattia
+
   const [formData, setFormData] = useState({
     dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
     ore: 8, ore_backoffice: 0, ore_trasferta: 0, note: '', stato: 'consuntivo'
@@ -85,6 +101,19 @@ export default function Home() {
     }
   }, [currentUser]);
 
+  // Gestione dinamica dei campi quando si seleziona Ferie / Permesso / Malattia
+  useEffect(() => {
+    if (categoriaForm === 'ferie') {
+      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Ferie', ore: 8, ore_backoffice: 0, ore_trasferta: 0 }));
+    } else if (categoriaForm === 'permesso') {
+      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Permesso', ore: 4, ore_backoffice: 0, ore_trasferta: 0 }));
+    } else if (categoriaForm === 'malattia') {
+      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Malattia', ore: 8, ore_backoffice: 0, ore_trasferta: 0 }));
+    } else if (categoriaForm === 'lavoro' && formData.cliente === 'ASSENZE / GIUSTIFICATIVI') {
+      setFormData(prev => ({ ...prev, cliente: '', progetto: '', ore: 8 }));
+    }
+  }, [categoriaForm]);
+
   const fetchProgrammati = async () => {
     try {
       const res = await fetch('/api/gestisci?mode=all');
@@ -99,12 +128,8 @@ export default function Home() {
     if (currentUser?.ruolo !== 'admin') return;
     try {
       const res = await fetch('/api/sync', { method: 'POST' });
-      if (res.ok) {
-        fetchProgrammati();
-      }
-    } catch (e) {
-      console.error("Errore Auto-Sync background:", e);
-    }
+      if (res.ok) fetchProgrammati();
+    } catch (e) {}
   };
 
   useEffect(() => {
@@ -113,10 +138,7 @@ export default function Home() {
 
       if (currentUser.ruolo === 'admin') {
         handleSilentSync();
-        const interval = setInterval(() => {
-          handleSilentSync();
-        }, 180000); // 3 minuti
-
+        const interval = setInterval(handleSilentSync, 180000);
         return () => clearInterval(interval);
       }
     }
@@ -142,10 +164,7 @@ export default function Home() {
   };
 
   const handleSyncCalendar = async () => {
-    if (currentUser?.ruolo !== 'admin') {
-      alert("Solo l'amministratore può avviare la sincronizzazione.");
-      return;
-    }
+    if (currentUser?.ruolo !== 'admin') return alert("Solo l'amministratore può sincronizzare.");
     setLoadingProgrammati(true);
     try {
       const res = await fetch('/api/sync', { method: 'POST' });
@@ -153,7 +172,7 @@ export default function Home() {
       alert(data.message || "Sincronizzazione completata.");
       fetchProgrammati();
     } catch (e) {
-      alert("Errore di rete durante la connessione a Google Calendar.");
+      alert("Errore di rete.");
     } finally {
       setLoadingProgrammati(false);
     }
@@ -166,20 +185,12 @@ export default function Home() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: item.id,
-          calendar_event_id: item.calendar_event_id,
-          dipendente: nuovoDipendente,
-          chiudi_consuntivo: false
+          id: item.id, calendar_event_id: item.calendar_event_id,
+          dipendente: nuovoDipendente, chiudi_consuntivo: false
         })
       });
-      if (res.ok) {
-        fetchProgrammati(); 
-      } else {
-        alert("Errore durante la riassegnazione.");
-      }
-    } catch (e) {
-      alert("Errore di rete durante la riassegnazione.");
-    } 
+      if (res.ok) fetchProgrammati();
+    } catch (e) {}
   };
 
   const handleSubmit = async (e) => {
@@ -195,6 +206,7 @@ export default function Home() {
       if (res.ok) {
         setStatusMessage({ type: 'success', text: data.message });
         setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0 }));
+        setCategoriaForm('lavoro');
         fetchProgrammati();
       } else { setStatusMessage({ type: 'error', text: data.message }); }
     } catch (err) { setStatusMessage({ type: 'error', text: 'Errore server.' }); } 
@@ -208,13 +220,9 @@ export default function Home() {
       const res = await fetch('/api/gestisci', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: modalItem.id, 
-          calendar_event_id: modalItem.calendar_event_id,
-          ore_effettive: oreEffettive, 
-          ore_backoffice: oreBackofficeEffettive, 
-          ore_trasferta: oreTrasfertaEffettive,
-          dipendente: dipendenteEffettivo || modalItem.dipendente,
-          chiudi_consuntivo: true
+          id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
+          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive, ore_trasferta: oreTrasfertaEffettive,
+          dipendente: dipendenteEffettivo || modalItem.dipendente, chiudi_consuntivo: true
         })
       });
       if (res.ok) { setModalItem(null); fetchProgrammati(); }
@@ -244,10 +252,11 @@ export default function Home() {
   };
 
   const exportCSV = (datiDaEsportare) => {
-    let csv = "Data;Dipendente;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
+    let csv = "Data;Dipendente;Categoria;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
     datiDaEsportare.forEach(row => {
       const tot = Number(row.ore || 0) + Number(row.ore_backoffice || 0) + Number(row.ore_trasferta || 0);
-      csv += `"${getNormalizedDate(row.data)}";"${row.dipendente}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+      const cat = isFerie(row) ? "Ferie" : isPermesso(row) ? "Permesso" : isMalattia(row) ? "Malattia" : "Lavoro";
+      csv += `"${getNormalizedDate(row.data)}";"${row.dipendente}";"${cat}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
     });
     
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
@@ -301,6 +310,12 @@ export default function Home() {
     );
   }
 
+  // --- HELPER CATEGORIE ASSENZE ---
+  const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
+  const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
+  const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
+  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
+
   // --- LOGICA FILTRI ---
   const matchAssegnazione = (dipDb, filtroAss) => {
     if (!filtroAss || filtroAss === 'Tutti') return true;
@@ -352,23 +367,64 @@ export default function Home() {
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
+  // --- CALCOLI CRUSCOTTO MENSILE ---
   const tuttiEventiMese = storicoCompleto.filter(item => {
     const dNorm = getNormalizedDate(item.data);
     const isInMese = dNorm && dNorm.startsWith(filtroMese);
     const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
     const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
-    return isInMese && matchDip && matchCliente;
+    return isInMese && matchDip && matchCliente && item.stato !== 'annullato';
   });
 
   const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
 
-  const totMeseCantiere = consuntiviMese.reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMeseBackoffice = consuntiviMese.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
-  const totMeseTrasferta = consuntiviMese.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
-  const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta;
+  // Ore divise per tipologia
+  const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+  const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+  
+  const totMeseFerie = consuntiviMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMesePermesso = consuntiviMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseMalattia = consuntiviMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+
+  const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta + totMeseFerie + totMesePermesso + totMeseMalattia;
+
+  // --- CALCOLO CAPENZA E DISPONIBILITÀ PER DIPENDENTE ---
+  const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMese);
+  const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
+
+  const riepilogoCapienzaDipendenti = listaDipendenti.map(nomeDip => {
+    // Prendi TUTTI gli eventi del mese (sia pianificati che consuntivati) per questo dipendente
+    const eventiDipMese = storicoCompleto.filter(item => {
+      const dNorm = getNormalizedDate(item.data);
+      return dNorm && dNorm.startsWith(filtroMese) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
+    });
+
+    const oreLavoro = eventiDipMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0) + Number(b.ore_backoffice || 0) + Number(b.ore_trasferta || 0), 0);
+    const oreFerie = eventiDipMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+    const orePermesso = eventiDipMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+    const oreMalattia = eventiDipMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+
+    const oreImpegnateTotali = oreLavoro + oreFerie + orePermesso + oreMalattia;
+    const oreDisponibiliResidue = oreLavorativeTotaliMese - oreImpegnateTotali;
+    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
+
+    return {
+      nome: nomeDip,
+      oreLavoro,
+      oreFerie,
+      orePermesso,
+      oreMalattia,
+      oreImpegnateTotali,
+      oreDisponibiliResidue,
+      giorniDisponibiliResidui
+    };
+  });
 
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
+    const badgeAssenza = isFerie(item) ? '🏖️ Ferie' : isPermesso(item) ? '⏱️ Permesso' : isMalattia(item) ? '🏥 Malattia' : null;
+
     return (
       <div key={item.id} className={`p-3 bg-${colorTheme}-50/30 border border-${colorTheme}-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4`}>
         <div className="flex-1">
@@ -376,7 +432,13 @@ export default function Home() {
             <span className="text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
               {normDate === todayStr ? 'Oggi' : normDate}
             </span>
-            <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
+            {badgeAssenza ? (
+              <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded border border-purple-200">
+                {badgeAssenza}
+              </span>
+            ) : (
+              <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
+            )}
           </div>
           <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
           
@@ -435,7 +497,7 @@ export default function Home() {
             </button>
             {currentUser.ruolo === 'admin' && (
               <>
-                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📊 Cruscotto Mensile</button>
+                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📊 Cruscotto &amp; Disponibilità</button>
                 <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>⚡ Performance</button>
                 <a href="/preventivi" className="px-3.5 py-2 ml-1 rounded-xl transition-all bg-sky-100 text-sky-800 hover:bg-sky-200 border border-sky-200 font-bold flex items-center space-x-1 shadow-sm whitespace-nowrap">
                   <span>💰 Preventivi</span>
@@ -465,21 +527,34 @@ export default function Home() {
 
       <main className="max-w-4xl mx-auto px-4 py-8">
 
-        {/* TAB 1: NUOVO INSERIMENTO */}
+        {/* TAB 1: NUOVO INSERIMENTO CON CATEGORIA ASSENZE */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Nuova Registrazione</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Inserisci le ore lavorate o pianifica un evento futuro.</p>
+                <p className="text-xs text-slate-300 mt-0.5">Inserisci le ore lavorate, pianifica eventi o registra ferie/permessi.</p>
               </div>
               <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">📅</span>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200">
-                <button type="button" onClick={() => setFormData({ ...formData, stato: 'consuntivo' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'consuntivo' ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>✅ Consuntivo (Ore Svolte)</button>
-                <button type="button" onClick={() => setFormData({ ...formData, stato: 'pianificato' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>⏳ Pianificato (Evento Futuro)</button>
+              
+              {/* TIPO CATEGORIA ATTIVITÀ / ASSENZA */}
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Tipologia Inserimento</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button type="button" onClick={() => setCategoriaForm('lavoro')} className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${categoriaForm === 'lavoro' ? 'bg-slate-900 text-white shadow-sm border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>💼 Lavoro</button>
+                  <button type="button" onClick={() => setCategoriaForm('ferie')} className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${categoriaForm === 'ferie' ? 'bg-amber-500 text-white shadow-sm border-amber-500' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>🏖️ Ferie</button>
+                  <button type="button" onClick={() => setCategoriaForm('permesso')} className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${categoriaForm === 'permesso' ? 'bg-indigo-600 text-white shadow-sm border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>⏱️ Permesso</button>
+                  <button type="button" onClick={() => setCategoriaForm('malattia')} className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${categoriaForm === 'malattia' ? 'bg-rose-600 text-white shadow-sm border-rose-600' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>🏥 Malattia</button>
+                </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200">
+                <button type="button" onClick={() => setFormData({ ...formData, stato: 'consuntivo' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'consuntivo' ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>✅ Consuntivo (Svolto)</button>
+                <button type="button" onClick={() => setFormData({ ...formData, stato: 'pianificato' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>⏳ Pianificato (Futuro)</button>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Dipendente / Tecnico</label>
@@ -494,62 +569,69 @@ export default function Home() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Data Attività</label>
-                  <input type="date" required value={formData.data} min={formData.stato === 'pianificato' ? getTomorrowStr() : undefined} max={formData.stato === 'consuntivo' ? getTodayStr() : undefined} onChange={(e) => setFormData({ ...formData, data: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-sm" />
+                  <input type="date" required value={formData.data} onChange={(e) => setFormData({ ...formData, data: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-sm" />
                 </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Cliente (Digita per cercare)</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Cliente</label>
                   <input type="text" list="lista-aziende" placeholder="Es. ERREPI s.r.l" required value={formData.cliente} onChange={e => setFormData({ ...formData, cliente: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:ring-2 focus:ring-sky-200 outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Progetto / Commessa</label>
-                  <input type="text" placeholder="Es. Qualifiche Saldatori" required value={formData.progetto} onChange={e => setFormData({ ...formData, progetto: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none" />
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Progetto / Dettaglio Assenza</label>
+                  <input type="text" placeholder="Es. Qualifiche / Ferie estive" required value={formData.progetto} onChange={e => setFormData({ ...formData, progetto: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none" />
                 </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore {formData.stato === 'pianificato' ? 'Stimate' : 'Lavorate'}</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore {categoriaForm !== 'lavoro' ? 'Giustificate' : 'Lavorate'}</label>
                   <input type="number" step="0.5" min="0" required value={formData.ore} onChange={e => setFormData({ ...formData, ore: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-bold text-sm" />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-sky-600 mb-1.5">Ore Backoffice</label>
-                  <input type="number" step="0.5" min="0" value={formData.ore_backoffice} onChange={e => setFormData({ ...formData, ore_backoffice: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50/50 font-bold text-sm text-sky-800" />
-                </div>
-                {isAlessandro && (
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-purple-600 mb-1.5">🚗 Ore Trasferta</label>
-                    <input type="number" step="0.5" min="0" value={formData.ore_trasferta} onChange={e => setFormData({ ...formData, ore_trasferta: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 bg-purple-50/50 font-bold text-sm text-purple-800" />
-                  </div>
+                {categoriaForm === 'lavoro' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-sky-600 mb-1.5">Ore Backoffice</label>
+                      <input type="number" step="0.5" min="0" value={formData.ore_backoffice} onChange={e => setFormData({ ...formData, ore_backoffice: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50/50 font-bold text-sm text-sky-800" />
+                    </div>
+                    {isAlessandro && (
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-purple-600 mb-1.5">🚗 Ore Trasferta</label>
+                        <input type="number" step="0.5" min="0" value={formData.ore_trasferta} onChange={e => setFormData({ ...formData, ore_trasferta: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 bg-purple-50/50 font-bold text-sm text-purple-800" />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
+
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Note &amp; Dettagli</label>
                 <textarea rows={2} placeholder="Note o descrizioni aggiuntive..." value={formData.note} onChange={e => setFormData({ ...formData, note: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none"></textarea>
               </div>
+
               {statusMessage && <div className={`p-4 rounded-xl text-sm font-semibold ${statusMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>{statusMessage.text}</div>}
+              
               <button type="submit" disabled={loading} className={`w-full text-white font-bold py-3.5 rounded-xl shadow-md transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-slate-900 hover:bg-slate-800'}`}>
-                {loading ? 'Salvataggio in corso...' : (formData.stato === 'pianificato' ? 'Pianifica Evento ⏳' : 'Salva Consuntivo 🚀')}
+                {loading ? 'Salvataggio in corso...' : 'Salva Registro 🚀'}
               </button>
             </form>
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON DOPPIO FILTRO PULITO */}
+        {/* TAB 2: GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Visualizza e gestisci le attività raggruppate per dipendente (Sincronizzazione Automatica 🔄)</p>
+                <p className="text-xs text-slate-300 mt-0.5">Sincronizzazione Automatica Attiva 🔄</p>
               </div>
             </div>
 
-            {/* BARRA FILTRI */}
             <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
               {currentUser.ruolo === 'admin' ? (
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* Filtro Stato Assegnazione */}
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-bold text-slate-500 uppercase">Stato:</span>
                     <select 
@@ -563,7 +645,6 @@ export default function Home() {
                     </select>
                   </div>
 
-                  {/* Filtro Dipendente (SOLO DIPENDENTI REALI) */}
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-bold text-slate-500 uppercase">Dipendente:</span>
                     <select 
@@ -596,7 +677,6 @@ export default function Home() {
                 <div className="text-center py-12 text-slate-400">
                   <span className="text-4xl block mb-2">🎉</span>
                   <p className="text-sm font-medium">Nessuna attività in sospeso per i filtri selezionati!</p>
-                  <p className="text-xs text-slate-400 mt-1">Le attività completate si trovano nell'Archivio Storico in basso.</p>
                 </div>
               ) : (
                 <div className="space-y-8">
@@ -654,7 +734,7 @@ export default function Home() {
             {/* ARCHIVIO STORICO */}
             <div className="bg-slate-50 border-t border-slate-200 p-6">
               <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci trovate)
+                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci)
               </h3>
               
               <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-xl bg-white shadow-inner">
@@ -664,14 +744,14 @@ export default function Home() {
                       <th className="py-2.5 px-3">Stato</th>
                       <th className="py-2.5 px-3">Data</th>
                       <th className="py-2.5 px-3">Dipendente</th>
-                      <th className="py-2.5 px-3">Cliente</th>
+                      <th className="py-2.5 px-3">Cliente / Tipo</th>
                       <th className="py-2.5 px-3">Dettagli / Ore</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {attivitaArchiviate.length === 0 ? (
                       <tr>
-                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività trovata per questo filtro nell'archivio.</td>
+                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività trovata nell'archivio.</td>
                       </tr>
                     ) : (
                       attivitaArchiviate
@@ -702,14 +782,16 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: CRUSCOTTO MENSILE */}
+        {/* TAB 3: CRUSCOTTO MENSILE & CAPACITÀ DISPONIBILE */}
         {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
+            
+            {/* INTESTAZIONE E SUMMARY */}
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile</h2>
-                  <p className="text-xs text-slate-300 mt-0.5">Riepilogo ore per fatturazione clienti e calcolo buste paga dipendenti.</p>
+                  <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile &amp; Presenze</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Riepilogo consuntivi e suddivisione ore di lavoro e assenze.</p>
                 </div>
                 <button onClick={() => exportCSV(consuntiviMese)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
                   <span>📥 Esporta per Excel (CSV)</span>
@@ -737,29 +819,92 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                <div className="bg-slate-800/80 border border-slate-700/80 p-3 rounded-2xl text-center">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Cantiere</span>
-                  <span className="text-lg font-bold text-white">{totMeseCantiere} h</span>
+              {/* SCHEDE ORE RIEPILOGATIVE */}
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2">
+                <div className="bg-slate-800/80 border border-slate-700 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-slate-400 block">Cantiere</span>
+                  <span className="text-base font-bold text-white">{totMeseCantiere} h</span>
                 </div>
-                <div className="bg-slate-800/80 border border-sky-500/30 p-3 rounded-2xl text-center">
-                  <span className="text-[10px] font-bold uppercase text-sky-400 block">Backoffice</span>
-                  <span className="text-lg font-bold text-sky-300">{totMeseBackoffice} h</span>
+                <div className="bg-slate-800/80 border border-sky-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-sky-400 block">Backoffice</span>
+                  <span className="text-base font-bold text-sky-300">{totMeseBackoffice} h</span>
                 </div>
-                <div className="bg-slate-800/80 border border-purple-500/30 p-3 rounded-2xl text-center">
-                  <span className="text-[10px] font-bold uppercase text-purple-400 block">Trasferta</span>
-                  <span className="text-lg font-bold text-purple-300">{totMeseTrasferta} h</span>
+                <div className="bg-slate-800/80 border border-purple-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-purple-400 block">Trasferta</span>
+                  <span className="text-base font-bold text-purple-300">{totMeseTrasferta} h</span>
                 </div>
-                <div className="bg-emerald-950/60 border border-emerald-500/40 p-3 rounded-2xl text-center">
-                  <span className="text-[10px] font-bold uppercase text-emerald-400 block">Totale Ore</span>
-                  <span className="text-lg font-extrabold text-emerald-300">{totMeseComplessivo} h</span>
+                <div className="bg-amber-950/40 border border-amber-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-amber-400 block">🏖️ Ferie</span>
+                  <span className="text-base font-bold text-amber-300">{totMeseFerie} h</span>
+                </div>
+                <div className="bg-indigo-950/40 border border-indigo-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-indigo-400 block">⏱️ Permessi</span>
+                  <span className="text-base font-bold text-indigo-300">{totMesePermesso} h</span>
+                </div>
+                <div className="bg-rose-950/40 border border-rose-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-rose-400 block">🏥 Malattia</span>
+                  <span className="text-base font-bold text-rose-300">{totMeseMalattia} h</span>
                 </div>
               </div>
             </div>
 
+            {/* SEZIONE NUOVA: DISPONIBILITÀ E CAPIENZA GIORNATE TEAM */}
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                    <span>📅</span> Disponibilità &amp; Giornate Lavorative Residue Mese
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Giorni lavorativi teorici nel mese: <strong className="text-slate-800">{giorniLavorativiTotaliMese} giorni ({oreLavorativeTotaliMese} ore)</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {riepilogoCapienzaDipendenti.map(dip => {
+                  const haDisponibilita = Number(dip.giorniDisponibiliResidui) > 0;
+                  return (
+                    <div key={dip.nome} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                        <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          <span>👤</span> {dip.nome}
+                        </span>
+                        <span className={`px-3 py-1 rounded-xl text-xs font-black shadow-sm ${
+                          haDisponibilita 
+                            ? 'bg-emerald-500 text-white' 
+                            : Number(dip.giorniDisponibiliResidui) === 0 
+                            ? 'bg-amber-500 text-white' 
+                            : 'bg-rose-600 text-white'
+                        }`}>
+                          {dip.giorniDisponibiliResidui} giorni liberi ({dip.oreDisponibiliResidue}h)
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="bg-white p-2 rounded-xl border border-slate-200">
+                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Lavoro</span>
+                          <span className="font-bold text-slate-800">{dip.oreLavoro}h</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-amber-200">
+                          <span className="text-[9px] uppercase font-bold text-amber-600 block">Ferie / Perm.</span>
+                          <span className="font-bold text-amber-800">{dip.oreFerie + dip.orePermesso}h</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-rose-200">
+                          <span className="text-[9px] uppercase font-bold text-rose-600 block">Malattia</span>
+                          <span className="font-bold text-rose-800">{dip.oreMalattia}h</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* TABELLA REGISTRO DETTAGLIATO */}
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
               <h3 className="font-bold text-slate-900 text-base flex justify-between items-center">
-                <span>Registro Dettagliato Interventi ({tuttiEventiMese.length})</span>
+                <span>Registro Dettagliato Interventi &amp; Assenze ({tuttiEventiMese.length})</span>
               </h3>
               <div className="overflow-x-auto max-h-[500px] border border-slate-200 rounded-xl">
                 <table className="w-full text-left text-xs border-collapse">
@@ -768,7 +913,7 @@ export default function Home() {
                       <th className="py-3 px-3">Stato</th>
                       <th className="py-3 px-2">Data</th>
                       <th className="py-3 px-2">Tecnico</th>
-                      <th className="py-3 px-2">Cliente / Progetto</th>
+                      <th className="py-3 px-2">Cliente / Tipo</th>
                       <th className="py-3 px-2 text-center">Ore Cant.</th>
                       <th className="py-3 px-2 text-center">Backoff.</th>
                       <th className="py-3 px-2 text-center">Trasf.</th>
@@ -827,9 +972,9 @@ export default function Home() {
                   const totaleRilevante = consuntivate.length + inRitardoScadute.length;
                   const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
 
-                  const totOreLavorate = consuntivate.reduce((acc, curr) => acc + Number(curr.ore || 0), 0);
-                  const totOreBackoffice = consuntivate.reduce((acc, curr) => acc + Number(curr.ore_backoffice || 0), 0);
-                  const totOreTrasferta = consuntivate.reduce((acc, curr) => acc + Number(curr.ore_trasferta || 0), 0);
+                  const totOreLavorate = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore || 0), 0);
+                  const totOreBackoffice = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_backoffice || 0), 0);
+                  const totOreTrasferta = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_trasferta || 0), 0);
 
                   return (
                     <div key={nomeDip} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-4">
@@ -904,7 +1049,7 @@ export default function Home() {
               )}
               
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Lavorate</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Lavorate / Assenza</label>
                 <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold" />
               </div>
               <div>
