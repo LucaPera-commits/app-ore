@@ -278,13 +278,6 @@ function HomeContent() {
     }
   }
 
-  function handleGoBack() {
-    if (tabHistory.length === 0) return;
-    const lastTab = tabHistory[tabHistory.length - 1];
-    setTabHistory(prev => prev.slice(0, prev.length - 1));
-    handleTabChange(lastTab, true);
-  }
-
   // GESTIONE CARTELLA SUPERIORE ARUBA NEXTCLOUD
   function handleCartellaSuperioreNC() {
     if (!pathNC) return;
@@ -293,6 +286,20 @@ function HomeContent() {
     const newPath = parti.join('/');
     setSearchQueryNC('');
     setPathNC(newPath);
+  }
+
+  // TASTO INDIETRO CONTESTUALE (SCHEDA O CARTELLA)
+  function handleGoBack() {
+    // 1. Se siamo nei documenti Aruba ed in una sottocartella, naviga alla cartella superiore
+    if (activeTab === 'documenti' && pathNC !== '') {
+      handleCartellaSuperioreNC();
+      return;
+    }
+    // 2. Altrimenti, naviga alla scheda precedente
+    if (tabHistory.length === 0) return;
+    const lastTab = tabHistory[tabHistory.length - 1];
+    setTabHistory(prev => prev.slice(0, prev.length - 1));
+    handleTabChange(lastTab, true);
   }
 
   useEffect(() => {
@@ -919,7 +926,9 @@ function HomeContent() {
     );
   };
 
-  if (!isMounted) return null;
+  if (!isMounted) {
+    return <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center font-sans text-xs">Caricamento in corso...</div>;
+  }
 
   if (!currentUser) {
     return (
@@ -990,12 +999,13 @@ function HomeContent() {
           </div>
 
           <nav className="flex md:flex-col space-x-1 md:space-x-0 md:space-y-1.5 overflow-x-auto md:overflow-x-visible text-xs font-semibold">
-            {tabHistory.length > 0 && (
+            {/* TASTO INDIETRO NELLA SIDEBAR */}
+            {(tabHistory.length > 0 || (activeTab === 'documenti' && pathNC !== '')) && (
               <button 
                 onClick={handleGoBack}
-                className="px-3.5 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition-all flex items-center space-x-2 shadow-sm whitespace-nowrap mb-2"
+                className="w-full px-3.5 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition-all flex items-center space-x-2 shadow-sm whitespace-nowrap mb-2 cursor-pointer"
               >
-                <span>⬅️ Torna Indietro</span>
+                <span>⬅️ {activeTab === 'documenti' && pathNC !== '' ? 'Cartella Superiore' : 'Torna Indietro'}</span>
               </button>
             )}
 
@@ -1099,7 +1109,20 @@ function HomeContent() {
       </aside>
 
       {/* AREA PRINCIPALE DI CONTENUTO */}
-      <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto space-y-6">
+      <main className="flex-1 p-4 md:p-8 w-full max-w-5xl mx-auto space-y-6">
+
+        {/* PULSANTE INDIETRO DI CORTESIA SOPRA IL CONTENUTO */}
+        {((tabHistory.length > 0 && activeTab !== 'home') || (activeTab === 'documenti' && pathNC !== '')) && (
+          <div className="md:hidden mb-4">
+            <button
+              onClick={handleGoBack}
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs rounded-2xl border border-slate-200 shadow-sm transition-all group cursor-pointer"
+            >
+              <span className="group-hover:-translate-x-1 transition-transform">⬅️</span>
+              <span>{activeTab === 'documenti' && pathNC !== '' ? 'Torna alla cartella superiore' : 'Torna alla scheda precedente'}</span>
+            </button>
+          </div>
+        )}
 
         {/* TAB 0: HOME */}
         {activeTab === 'home' && (
