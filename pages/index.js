@@ -48,6 +48,11 @@ export default function Home() {
     return t.toISOString().split('T')[0];
   };
 
+  const getNormalizedDate = (d) => {
+    if (!d) return getTodayStr();
+    return String(d).split('T')[0].split(' ')[0];
+  };
+
   const [formData, setFormData] = useState({
     dipendente: '',
     cliente: '', progetto: '', data: getTodayStr(),
@@ -81,13 +86,6 @@ export default function Home() {
       setFormData(prev => ({ ...prev, dipendente: currentUser.nome }));
     }
   }, [currentUser]);
-
-  useEffect(() => {
-    const today = getTodayStr();
-    if (formData.stato === 'pianificato' && formData.data <= today) {
-      setFormData(prev => ({ ...prev, data: getTomorrowStr() }));
-    }
-  }, [formData.stato, formData.data]);
 
   const fetchProgrammati = async () => {
     setLoadingProgrammati(true);
@@ -133,7 +131,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/sync', { method: 'POST' });
       const data = await res.json();
-      alert(data.message || "Errore sconosciuto dal server.");
+      alert(data.message || "Risposta dal server.");
       fetchProgrammati();
     } catch (e) {
       alert("Errore di rete durante la connessione a Google Calendar.");
@@ -171,10 +169,6 @@ export default function Home() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
-    if (formData.stato === 'pianificato' && formData.data <= getTodayStr()) {
-      setStatusMessage({ type: 'error', text: 'Gli eventi pianificati devono essere registrati per date future.' });
-      return;
-    }
     setLoading(true);
     try {
       const res = await fetch('/api/salva', {
@@ -184,7 +178,7 @@ export default function Home() {
       const data = await res.json();
       if (res.ok) {
         setStatusMessage({ type: 'success', text: data.message });
-        setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, data: formData.stato === 'pianificato' ? getTomorrowStr() : getTodayStr() }));
+        setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0 }));
         fetchProgrammati();
       } else { setStatusMessage({ type: 'error', text: data.message }); }
     } catch (err) { setStatusMessage({ type: 'error', text: 'Errore server.' }); } 
@@ -237,7 +231,7 @@ export default function Home() {
     let csv = "Data;Dipendente;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
     datiDaEsportare.forEach(row => {
       const tot = Number(row.ore || 0) + Number(row.ore_backoffice || 0) + Number(row.ore_trasferta || 0);
-      csv += `"${row.data}";"${row.dipendente}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+      csv += `"${getNormalizedDate(row.data)}";"${row.dipendente}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
     });
     
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
@@ -291,7 +285,7 @@ export default function Home() {
     );
   }
 
-  // --- LOGICA DI CONFRONTO NOMI INFALLIBILE ---
+  // --- COMPARAZIONE NOMI TOLLERANTE ---
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true; 
     const db = nomeDb ? nomeDb.toLowerCase().trim() : 'da assegnare';
@@ -309,28 +303,30 @@ export default function Home() {
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
-  // Filtriamo gli eventi APERTI (tutto tranne i consuntivati e annullati)
+  // Attività in corso
   const attivitaPianificateAttive = storicoCompleto.filter(p => {
     const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
     if (isChiuso) return false;
     return matchNomeDipendente(p.dipendente, targetDipendente);
   });
 
-  // Filtriamo gli eventi CHIUSI
+  // Attività archiviate
   const attivitaArchiviate = storicoCompleto.filter(p => {
     const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
     if (!isChiuso) return false;
     return matchNomeDipendente(p.dipendente, targetDipendente);
   });
 
-  const daConfermare = attivitaPianificateAttive.filter(p => p.data <= getTodayStr());
+  const todayStr = getTodayStr();
+  const daConfermare = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) <= todayStr);
   const ieriStr = getYesterdayStr();
-  const attivitaInScadenzaRitardo = attivitaPianificateAttive.filter(p => p.data < ieriStr);
+  const attivitaInScadenzaRitardo = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) < ieriStr);
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
   const tuttiEventiMese = storicoCompleto.filter(item => {
-    const isInMese = item.data && item.data.startsWith(filtroMese);
+    const dNorm = getNormalizedDate(item.data);
+    const isInMese = dNorm && dNorm.startsWith(filtroMese);
     const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
     const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
     return isInMese && matchDip && matchCliente;
@@ -343,41 +339,44 @@ export default function Home() {
   const totMeseTrasferta = consuntiviMese.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
   const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta;
 
-  // --- COMPONENTE PER RENDERIZZARE LA SINGOLA ATTIVITÀ ---
-  const renderRigaAttivita = (item, colorTheme) => (
-    <div key={item.id} className={`p-3 bg-${colorTheme}-50/30 border border-${colorTheme}-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4`}>
-      <div className="flex-1">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200`}>
-            {item.data === getTodayStr() ? 'Oggi' : item.data}
-          </span>
-          <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
-        </div>
-        <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
-        
-        {currentUser.ruolo === 'admin' && (
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
-            <select 
-              value={item.dipendente || 'Da Assegnare'} 
-              onChange={e => handleQuickReassign(item, e.target.value)}
-              className={`text-xs font-bold px-2 py-0.5 rounded border outline-none cursor-pointer ${
-                (!item.dipendente || item.dipendente === 'Da Assegnare') ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              <option value="Da Assegnare">❓ Da Assegnare</option>
-              {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
+  // --- RENDER RIGA ATTIVITÀ ---
+  const renderRigaAttivita = (item, colorTheme) => {
+    const normDate = getNormalizedDate(item.data);
+    return (
+      <div key={item.id} className={`p-3 bg-${colorTheme}-50/30 border border-${colorTheme}-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+              {normDate === todayStr ? 'Oggi' : normDate}
+            </span>
+            <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
           </div>
-        )}
-      </div>
+          <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
+          
+          {currentUser.ruolo === 'admin' && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
+              <select 
+                value={item.dipendente || 'Da Assegnare'} 
+                onChange={e => handleQuickReassign(item, e.target.value)}
+                className={`text-xs font-bold px-2 py-0.5 rounded border outline-none cursor-pointer ${
+                  (!item.dipendente || item.dipendente === 'Da Assegnare') ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <option value="Da Assegnare">❓ Da Assegnare</option>
+                {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
 
-      <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
-        <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 whitespace-nowrap">✅ Conferma</button>
-        <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50 whitespace-nowrap">🗑️ Annulla</button>
+        <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
+          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 whitespace-nowrap">✅ Conferma</button>
+          <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50 whitespace-nowrap">🗑️ Annulla</button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-12">
@@ -430,7 +429,7 @@ export default function Home() {
           <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <span className="text-base">🚨</span>
-              <span><strong>SOLLECITO CONSUNTIVAZIONE:</strong> Ci sono <strong>{attivitaInScadenzaRitardo.length}</strong> attività concluse da oltre 24 ore in attesa di conferma!</span>
+              <span><strong>SOLLECITO CONSUNTIVAZIONE:</strong> Ci sono <strong>{attivitaInScadenzaRitardo.length}</strong> attività concluse in attesa di conferma!</span>
             </div>
             <button onClick={() => setActiveTab('programmati')} className="bg-white text-rose-700 px-3 py-1 rounded-xl text-xs font-bold shadow hover:bg-rose-50 transition-all">Vedi Attività ➔</button>
           </div>
@@ -532,7 +531,7 @@ export default function Home() {
               <div className="flex items-center space-x-2">
                 {currentUser.ruolo === 'admin' && (
                   <button onClick={handleSyncCalendar} disabled={loadingProgrammati} className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold transition-all shadow-sm disabled:opacity-50">
-                    {loadingProgrammati ? '⏳ Sincronizzazione...' : '⬇️ Sincronizza Calendar'}
+                    {loadingProgrammati ? '⏳ In corso...' : '⬇️ Sincronizza Calendar'}
                   </button>
                 )}
                 <button onClick={fetchProgrammati} disabled={loadingProgrammati} className="text-xs bg-white text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 font-bold transition-all shadow-sm disabled:opacity-50">
@@ -543,7 +542,7 @@ export default function Home() {
 
             <div className="p-6">
               {loadingProgrammati ? (
-                <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso, attendere...</p>
+                <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso...</p>
               ) : attivitaPianificateAttive.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
                   <span className="text-4xl block mb-2">🎉</span>
@@ -552,12 +551,12 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {/* RAGGRUPPAMENTO DINAMICO */}
                   {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente || 'Da Assegnare'))).map(dipNome => {
                     const attivitaDip = attivitaPianificateAttive.filter(e => (e.dipendente || 'Da Assegnare') === dipNome);
-                    const inRitardo = attivitaDip.filter(e => e.data < getTodayStr());
-                    const oggi = attivitaDip.filter(e => e.data === getTodayStr());
-                    const future = attivitaDip.filter(e => e.data > getTodayStr());
+                    
+                    const inRitardo = attivitaDip.filter(e => getNormalizedDate(e.data) < todayStr);
+                    const oggi = attivitaDip.filter(e => getNormalizedDate(e.data) === todayStr);
+                    const future = attivitaDip.filter(e => getNormalizedDate(e.data) > todayStr);
 
                     return (
                       <div key={dipNome} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -627,7 +626,7 @@ export default function Home() {
                       </tr>
                     ) : (
                       attivitaArchiviate
-                        .sort((a, b) => new Date(b.data) - new Date(a.data))
+                        .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
                         .map(item => (
                         <tr key={item.id} className={`hover:bg-slate-50 ${item.stato === 'annullato' ? 'opacity-60' : ''}`}>
                           <td className="py-2 px-3">
@@ -637,7 +636,7 @@ export default function Home() {
                               <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">❌ Annullata</span>
                             )}
                           </td>
-                          <td className="py-2 px-3 font-medium text-slate-600">{item.data}</td>
+                          <td className="py-2 px-3 font-medium text-slate-600">{getNormalizedDate(item.data)}</td>
                           <td className="py-2 px-3 font-semibold text-slate-800">{item.dipendente}</td>
                           <td className="py-2 px-3 font-bold text-slate-900">{item.cliente}</td>
                           <td className="py-2 px-3">
@@ -737,7 +736,7 @@ export default function Home() {
                             <span className="text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100 animate-pulse">In Sospeso</span>
                           )}
                         </td>
-                        <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{item.data}</td>
+                        <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{getNormalizedDate(item.data)}</td>
                         <td className="py-2.5 px-2 whitespace-nowrap font-semibold">{item.dipendente}</td>
                         <td className="py-2.5 px-2">
                           <div className="font-bold text-slate-900">{item.cliente}</div>
@@ -774,7 +773,7 @@ export default function Home() {
                 {listaDipendenti.map(nomeDip => {
                   const attivitaDip = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, nomeDip));
                   const consuntivate = attivitaDip.filter(s => s.stato === 'consuntivo');
-                  const inRitardoScadute = attivitaDip.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && s.data < ieriStr);
+                  const inRitardoScadute = attivitaDip.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) < ieriStr);
 
                   const totaleRilevante = consuntivate.length + inRitardoScadute.length;
                   const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
