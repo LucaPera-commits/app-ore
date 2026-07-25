@@ -95,7 +95,6 @@ export default function Home() {
     } catch (e) { console.error("Errore fetch:", e); } 
   };
 
-  // --- SINCRONIZZAZIONE SILENZIOSA DI BACKGROUND ---
   const handleSilentSync = async () => {
     if (currentUser?.ruolo !== 'admin') return;
     try {
@@ -108,16 +107,15 @@ export default function Home() {
     }
   };
 
-  // TIMER AUTO-REFRESH OGNI 3 MINUTI (180.000 ms)
   useEffect(() => {
     if (currentUser) {
       fetchProgrammati();
 
       if (currentUser.ruolo === 'admin') {
-        handleSilentSync(); // Esegui subito al caricamento
+        handleSilentSync();
         const interval = setInterval(() => {
           handleSilentSync();
-        }, 180000); // Ripeti ogni 3 minuti
+        }, 180000); // 3 minuti
 
         return () => clearInterval(interval);
       }
@@ -303,7 +301,7 @@ export default function Home() {
     );
   }
 
-  // --- FILTRI ---
+  // --- LOGICA FILTRI ---
   const matchAssegnazione = (dipDb, filtroAss) => {
     if (!filtroAss || filtroAss === 'Tutti') return true;
     const isDaAssegnare = !dipDb || dipDb === 'Da Assegnare' || dipDb === '';
@@ -314,16 +312,14 @@ export default function Home() {
 
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true; 
-    const db = nomeDb ? nomeDb.toLowerCase().trim() : 'da assegnare';
+    const db = nomeDb ? nomeDb.toLowerCase().trim() : '';
     const flt = filtro.toLowerCase().trim();
 
     if (db === flt) return true;
-    if (flt === 'da assegnare' && (db === '' || db === 'da assegnare' || db === 'null')) return true;
-
     const partiFiltro = flt.split(' ').filter(Boolean);
     const partiDb = db.split(' ').filter(Boolean);
 
-    return partiFiltro[0] === partiDb[0];
+    return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
   };
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
@@ -539,20 +535,21 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON AUTO-SYNC SILENZIOSO */}
+        {/* TAB 2: GESTIONE ATTIVITÀ CON DOPPIO FILTRO PULITO */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Visualizza e gestisci le attività (Sincronizzazione Automatica Attiva 🔄)</p>
+                <p className="text-xs text-slate-300 mt-0.5">Visualizza e gestisci le attività raggruppate per dipendente (Sincronizzazione Automatica 🔄)</p>
               </div>
             </div>
 
-            {/* BARRA FILTRI E CONTROLLI */}
+            {/* BARRA FILTRI */}
             <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
               {currentUser.ruolo === 'admin' ? (
                 <div className="flex flex-wrap items-center gap-3">
+                  {/* Filtro Stato Assegnazione */}
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-bold text-slate-500 uppercase">Stato:</span>
                     <select 
@@ -566,6 +563,7 @@ export default function Home() {
                     </select>
                   </div>
 
+                  {/* Filtro Dipendente (SOLO DIPENDENTI REALI) */}
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-bold text-slate-500 uppercase">Dipendente:</span>
                     <select 
@@ -573,7 +571,7 @@ export default function Home() {
                       onChange={e => setFiltroDipendente(e.target.value)} 
                       className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200"
                     >
-                      {['Tutti', 'Da Assegnare', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
+                      {['Tutti', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </div>
                 </div>
