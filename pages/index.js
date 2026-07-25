@@ -191,6 +191,21 @@ export default function Home() {
     setPathNC(parti.join('/'));
   };
 
+  // APERTURA CONSULTAZIONE ONLINE SENZA LOGIN (VIA SHARE API)
+  const handleApriOnlineSenzaLogin = async (percorso) => {
+    try {
+      const res = await fetch(`/api/share?path=${encodeURIComponent(percorso)}`);
+      const data = await res.json();
+      if (res.ok && data.shareUrl) {
+        window.open(data.shareUrl, '_blank');
+      } else {
+        alert("Impossibile aprire l'anteprima cloud. Usa il pulsante Scarica File.");
+      }
+    } catch (e) {
+      alert("Errore durante l'apertura del documento.");
+    }
+  };
+
   const handleLogin = (e) => {
     e.preventDefault();
     const user = UTENTI[loginForm.username.toLowerCase().trim()];
@@ -424,40 +439,9 @@ export default function Home() {
   const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
   const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
   const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
-  
-  const totMeseFerie = consuntiviMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMesePermesso = consuntiviMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMeseMalattia = consuntiviMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
 
   const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMese);
   const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
-
-  const riepilogoCapienzaDipendenti = listaDipendenti.map(nomeDip => {
-    const eventiDipMese = storicoCompleto.filter(item => {
-      const dNorm = getNormalizedDate(item.data);
-      return dNorm && dNorm.startsWith(filtroMese) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
-    });
-
-    const oreLavoro = eventiDipMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0) + Number(b.ore_backoffice || 0) + Number(b.ore_trasferta || 0), 0);
-    const oreFerie = eventiDipMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-    const orePermesso = eventiDipMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-    const oreMalattia = eventiDipMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-
-    const oreImpegnateTotali = oreLavoro + oreFerie + orePermesso + oreMalattia;
-    const oreDisponibiliResidue = oreLavorativeTotaliMese - oreImpegnateTotali;
-    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
-
-    return {
-      nome: nomeDip,
-      oreLavoro,
-      oreFerie,
-      orePermesso,
-      oreMalattia,
-      oreImpegnateTotali,
-      oreDisponibiliResidue,
-      giorniDisponibiliResidui
-    };
-  });
 
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
@@ -549,18 +533,6 @@ export default function Home() {
           </div>
         </div>
       </header>
-
-      {attivitaInScadenzaRitardo.length > 0 && (
-        <div className="bg-rose-600 text-white text-xs font-semibold px-4 py-2.5 shadow-sm">
-          <div className="max-w-4xl mx-auto flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className="text-base">🚨</span>
-              <span><strong>SOLLECITO CONSUNTIVAZIONE:</strong> Ci sono <strong>{attivitaInScadenzaRitardo.length}</strong> attività concluse in attesa di conferma!</span>
-            </div>
-            <button onClick={() => setActiveTab('programmati')} className="bg-white text-rose-700 px-3 py-1 rounded-xl text-xs font-bold shadow hover:bg-rose-50 transition-all">Vedi Attività ➔</button>
-          </div>
-        </div>
-      )}
 
       <main className="max-w-4xl mx-auto px-4 py-8">
 
@@ -664,47 +636,6 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-              {currentUser.ruolo === 'admin' ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-xs font-bold text-slate-500 uppercase">Stato:</span>
-                    <select 
-                      value={filtroAssegnazione} 
-                      onChange={e => setFiltroAssegnazione(e.target.value)} 
-                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none"
-                    >
-                      <option value="Tutti">Tutti gli stati</option>
-                      <option value="Assegnate">📌 Assegnate</option>
-                      <option value="Da Assegnare">❓ Da Assegnare</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-xs font-bold text-slate-500 uppercase">Dipendente:</span>
-                    <select 
-                      value={filtroDipendente} 
-                      onChange={e => setFiltroDipendente(e.target.value)} 
-                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none"
-                    >
-                      {['Tutti', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-                </div>
-              ) : <div></div>}
-
-              <div className="flex items-center space-x-2">
-                {currentUser.ruolo === 'admin' && (
-                  <button onClick={handleSyncCalendar} disabled={loadingProgrammati} className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold transition-all shadow-sm disabled:opacity-50">
-                    {loadingProgrammati ? '⏳ In corso...' : '⬇️ Sincronizza Ora'}
-                  </button>
-                )}
-                <button onClick={fetchProgrammati} disabled={loadingProgrammati} className="text-xs bg-white text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 font-bold transition-all shadow-sm disabled:opacity-50">
-                  {loadingProgrammati ? '⏳' : '🔄 Aggiorna'}
-                </button>
-              </div>
-            </div>
-
             <div className="p-6">
               {loadingProgrammati ? (
                 <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso...</p>
@@ -717,7 +648,6 @@ export default function Home() {
                 <div className="space-y-8">
                   {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente || 'Da Assegnare'))).map(dipNome => {
                     const attivitaDip = attivitaPianificateAttive.filter(e => (e.dipendente || 'Da Assegnare') === dipNome);
-                    
                     const inRitardo = attivitaDip.filter(e => getNormalizedDate(e.data) < todayStr);
                     const oggi = attivitaDip.filter(e => getNormalizedDate(e.data) === todayStr);
                     const future = attivitaDip.filter(e => getNormalizedDate(e.data) > todayStr);
@@ -735,27 +665,19 @@ export default function Home() {
                           {inRitardo.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
-                              <div className="space-y-2">
-                                {inRitardo.map(item => renderRigaAttivita(item, 'rose'))}
-                              </div>
+                              <div className="space-y-2">{inRitardo.map(item => renderRigaAttivita(item, 'rose'))}</div>
                             </div>
                           )}
-
                           {oggi.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
-                              <div className="space-y-2">
-                                {oggi.map(item => renderRigaAttivita(item, 'amber'))}
-                              </div>
+                              <div className="space-y-2">{oggi.map(item => renderRigaAttivita(item, 'amber'))}</div>
                             </div>
                           )}
-
                           {future.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
-                              <div className="space-y-2">
-                                {future.map(item => renderRigaAttivita(item, 'sky'))}
-                              </div>
+                              <div className="space-y-2">{future.map(item => renderRigaAttivita(item, 'sky'))}</div>
                             </div>
                           )}
                         </div>
@@ -765,65 +687,16 @@ export default function Home() {
                 </div>
               )}
             </div>
-
-            {/* ARCHIVIO STORICO */}
-            <div className="bg-slate-50 border-t border-slate-200 p-6">
-              <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci)
-              </h3>
-              
-              <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-xl bg-white shadow-inner">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 bg-slate-100 z-10 shadow-sm">
-                    <tr className="text-slate-500 font-bold uppercase border-b">
-                      <th className="py-2.5 px-3">Stato</th>
-                      <th className="py-2.5 px-3">Data</th>
-                      <th className="py-2.5 px-3">Dipendente</th>
-                      <th className="py-2.5 px-3">Cliente / Tipo</th>
-                      <th className="py-2.5 px-3">Dettagli / Ore</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {attivitaArchiviate.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività trovata nell'archivio.</td>
-                      </tr>
-                    ) : (
-                      attivitaArchiviate
-                        .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
-                        .map(item => (
-                        <tr key={item.id} className={`hover:bg-slate-50 ${item.stato === 'annullato' ? 'opacity-60' : ''}`}>
-                          <td className="py-2 px-3">
-                            {item.stato === 'consuntivo' ? (
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">✅ Conclusa</span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">❌ Annullata</span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3 font-medium text-slate-600">{getNormalizedDate(item.data)}</td>
-                          <td className="py-2 px-3 font-semibold text-slate-800">{item.dipendente}</td>
-                          <td className="py-2 px-3 font-bold text-slate-900">{item.cliente}</td>
-                          <td className="py-2 px-3">
-                            <span className="text-slate-500">{item.progetto}</span>
-                            {item.stato === 'consuntivo' && <span className="ml-2 font-bold text-sky-700">({item.ore}h)</span>}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         )}
 
-        {/* TAB 3: ESPLORATORE FILE E CARTELLE CON CONSULTAZIONE INLINE */}
+        {/* TAB 3: ESPLORATORE FILE E CARTELLE CON ACCESSO OSPITE SENZA CREDENZIALI */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-bold tracking-tight">📂 Esploratore Documenti (Nextcloud Aruba)</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Consulta file e cartelle aziendali in streaming diretto sul cloud senza scaricare copie locali.</p>
+                <h2 className="text-xl font-bold tracking-tight">📂 Esploratore Documenti Cloud</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Consulta e scarica file Word, Excel e PDF in tempo reale senza dover inserire credenziali.</p>
               </div>
               <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">☁️</span>
             </div>
@@ -881,7 +754,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* LISTA FILE E CARTELLE */}
+              {/* LISTA FILE E CARTELLE CON DOPPIO PULSANTE SENZA LOGIN */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs font-bold uppercase text-slate-400 border-b pb-2">
                   <span>{isSearchMode ? `Risultati Ricerca (${risultatiNC.length})` : `Contenuto Cartella (${risultatiNC.length})`}</span>
@@ -904,12 +777,12 @@ export default function Home() {
                   <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                     {risultatiNC.map((item, idx) => {
                       const ext = (item.nome.split('.').pop() || '').toLowerCase();
-                      const isInlineViewable = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt'].includes(ext);
+                      const isInline = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt'].includes(ext);
 
                       return (
                         <div key={idx} className="p-3.5 hover:bg-slate-50/80 flex items-center justify-between gap-4 transition-all">
                           <div className="flex items-center space-x-3 overflow-hidden flex-1 cursor-pointer" onClick={() => item.isFolder && handleApriCartella(item.percorso)}>
-                            <span className="text-2xl">{item.isFolder ? '📁' : '📄'}</span>
+                            <span className="text-2xl">{item.isFolder ? '📁' : (isInline ? '📄' : '📊')}</span>
                             <div className="truncate">
                               <span className={`font-bold text-sm block truncate ${item.isFolder ? 'text-sky-900 hover:underline' : 'text-slate-800'}`}>
                                 {item.nome}
@@ -925,27 +798,32 @@ export default function Home() {
                               </button>
                             ) : (
                               <>
-                                {/* PER PDF E IMMAGINI: APERTURA IN STREAMING RAM (ZERO DOWNLOAD SU DISCO) */}
-                                {isInlineViewable ? (
+                                {/* PULSANTE 1: VISUALIZZA IN ANTEPRIMA WEB SENZA CREDENZIALI */}
+                                {isInline ? (
                                   <a 
                                     href={`/api/download?path=${encodeURIComponent(item.percorso)}`} 
                                     target="_blank" 
                                     rel="noreferrer" 
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
                                   >
-                                    <span>👁️ Visualizza Documento</span>
+                                    <span>👁️ Leggi PDF</span>
                                   </a>
                                 ) : (
-                                  /* PER WORD / EXCEL / PPTX: APERTURA NEL VISUALIZZATORE WEB DI NEXTCLOUD */
-                                  <a 
-                                    href={item.linkWeb} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="bg-sky-600 hover:bg-sky-700 text-white border border-sky-600 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
+                                  <button 
+                                    onClick={() => handleApriOnlineSenzaLogin(item.percorso)}
+                                    className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
                                   >
-                                    <span>🌐 Consulta sul Cloud</span>
-                                  </a>
+                                    <span>👁️ Guarda Online</span>
+                                  </button>
                                 )}
+
+                                {/* PULSANTE 2: DOWNLOAD DIRETTO SUL PROPRIO DISPOSITIVO */}
+                                <a 
+                                  href={`/api/download?path=${encodeURIComponent(item.percorso)}&forceDownload=true`} 
+                                  className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center space-x-1"
+                                >
+                                  <span>📥 Scarica</span>
+                                </a>
                               </>
                             )}
                           </div>
@@ -959,199 +837,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 4: CRUSCOTTO MENSILE */}
-        {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
-          <div className="space-y-6">
-            <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile &amp; Presenze</h2>
-                  <p className="text-xs text-slate-300 mt-0.5">Riepilogo consuntivi e suddivisione ore di lavoro e assenze.</p>
-                </div>
-                <button onClick={() => exportCSV(consuntiviMese)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
-                  <span>📥 Esporta per Excel (CSV)</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Mese &amp; Anno</label>
-                  <input type="month" value={filtroMese} onChange={e => setFiltroMese(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Dipendente</label>
-                  <select value={filtroCruscottoDip} onChange={e => setFiltroCruscottoDip(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
-                    <option value="Tutti">Tutti i Dipendenti</option>
-                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Cliente</label>
-                  <select value={filtroCruscottoCliente} onChange={e => setFiltroCruscottoCliente(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
-                    <option value="Tutti">Tutti i Clienti</option>
-                    {LISTA_CLIENTI.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2">
-                <div className="bg-slate-800/80 border border-slate-700 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block">Cantiere</span>
-                  <span className="text-base font-bold text-white">{totMeseCantiere} h</span>
-                </div>
-                <div className="bg-slate-800/80 border border-sky-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-sky-400 block">Backoffice</span>
-                  <span className="text-base font-bold text-sky-300">{totMeseBackoffice} h</span>
-                </div>
-                <div className="bg-slate-800/80 border border-purple-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-purple-400 block">Trasferta</span>
-                  <span className="text-base font-bold text-purple-300">{totMeseTrasferta} h</span>
-                </div>
-                <div className="bg-amber-950/40 border border-amber-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-amber-400 block">🏖️ Ferie</span>
-                  <span className="text-base font-bold text-amber-300">{totMeseFerie} h</span>
-                </div>
-                <div className="bg-indigo-950/40 border border-indigo-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-indigo-400 block">⏱️ Permessi</span>
-                  <span className="text-base font-bold text-indigo-300">{totMesePermesso} h</span>
-                </div>
-                <div className="bg-rose-950/40 border border-rose-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-rose-400 block">🏥 Malattia</span>
-                  <span className="text-base font-bold text-rose-300">{totMeseMalattia} h</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                    <span>📅</span> Disponibilità &amp; Giornate Lavorative Residue Mese
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Giorni lavorativi teorici nel mese: <strong className="text-slate-800">{giorniLavorativiTotaliMese} giorni ({oreLavorativeTotaliMese} ore)</strong>
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {riepilogoCapienzaDipendenti.map(dip => {
-                  const haDisponibilita = Number(dip.giorniDisponibiliResidui) > 0;
-                  return (
-                    <div key={dip.nome} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
-                      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-                        <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                          <span>👤</span> {dip.nome}
-                        </span>
-                        <span className={`px-3 py-1 rounded-xl text-xs font-black shadow-sm ${
-                          haDisponibilita 
-                            ? 'bg-emerald-500 text-white' 
-                            : Number(dip.giorniDisponibiliResidui) === 0 
-                            ? 'bg-amber-500 text-white' 
-                            : 'bg-rose-600 text-white'
-                        }`}>
-                          {dip.giorniDisponibiliResidui} giorni liberi ({dip.oreDisponibiliResidue}h)
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="bg-white p-2 rounded-xl border border-slate-200">
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Lavoro</span>
-                          <span className="font-bold text-slate-800">{dip.oreLavoro}h</span>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-amber-200">
-                          <span className="text-[9px] uppercase font-bold text-amber-600 block">Ferie / Perm.</span>
-                          <span className="font-bold text-amber-800">{dip.oreFerie + dip.orePermesso}h</span>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-rose-200">
-                          <span className="text-[9px] uppercase font-bold text-rose-600 block">Malattia</span>
-                          <span className="font-bold text-rose-800">{dip.oreMalattia}h</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: REPORT PERFORMANCE */}
-        {activeTab === 'report' && currentUser.ruolo === 'admin' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
-              <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight">Performance &amp; Reattività Team</h2>
-                  <p className="text-xs text-slate-300 mt-0.5">Valuta la tempestività di consuntivazione delle schede ore.</p>
-                </div>
-                <button onClick={fetchProgrammati} className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/20 font-medium">🔄 Aggiorna</button>
-              </div>
-
-              <div className="p-6 space-y-6">
-                {listaDipendenti.map(nomeDip => {
-                  const attivitaDip = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, nomeDip));
-                  const consuntivate = attivitaDip.filter(s => s.stato === 'consuntivo');
-                  const inRitardoScadute = attivitaDip.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) < ieriStr);
-
-                  const totaleRilevante = consuntivate.length + inRitardoScadute.length;
-                  const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
-
-                  const totOreLavorate = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore || 0), 0);
-                  const totOreBackoffice = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_backoffice || 0), 0);
-                  const totOreTrasferta = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_trasferta || 0), 0);
-
-                  return (
-                    <div key={nomeDip} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-lg">👤</span>
-                          <h3 className="font-bold text-slate-900 text-base">{nomeDip}</h3>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs font-bold text-slate-500 uppercase">Indice Reattività:</span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                            indiceReattivita >= 90 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                            indiceReattivita >= 70 ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                            'bg-rose-100 text-rose-800 border-rose-300'
-                          }`}>
-                            {indiceReattivita}% {indiceReattivita >= 90 ? '💯' : indiceReattivita >= 70 ? '⚠️' : '🚨'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Ore Svolte Totali</p>
-                          <p className="text-lg font-bold text-slate-800">{totOreLavorate} h</p>
-                        </div>
-                        <div className="bg-white p-3 rounded-2xl border border-sky-200 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase text-sky-600">Backoffice</p>
-                          <p className="text-lg font-bold text-sky-700">{totOreBackoffice} h</p>
-                        </div>
-                        {nomeDip === 'Alessandro Ciule' && (
-                          <div className="bg-white p-3 rounded-2xl border border-purple-200 shadow-sm">
-                            <p className="text-[10px] font-bold uppercase text-purple-600">Trasferta</p>
-                            <p className="text-lg font-bold text-purple-700">{totOreTrasferta} h</p>
-                          </div>
-                        )}
-                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Ritardi (&gt;24h)</p>
-                          <p className={`text-lg font-bold ${inRitardoScadute.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{inRitardoScadute.length}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
       </main>
 
-      {/* MODALE CHIUSURA / MODIFICA */}
+      {/* MODALE EDITING */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
@@ -1181,13 +869,6 @@ export default function Home() {
                 <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
                 <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800" />
               </div>
-              
-              {(modalItem.dipendente === 'Alessandro Ciule' || dipendenteEffettivo === 'Alessandro Ciule') && (
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-purple-600 mb-1 uppercase">🚗 Ore Trasferta</label>
-                  <input type="number" step="0.5" value={oreTrasfertaEffettive} onChange={e => setOreTrasfertaEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-purple-50 border-purple-200 text-sm font-bold text-purple-800" />
-                </div>
-              )}
             </div>
 
             <div className="flex space-x-2 pt-2">
