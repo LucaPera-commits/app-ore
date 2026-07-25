@@ -5,19 +5,21 @@ export default async function handler(req, res) {
 
   const { query, folder } = req.query;
 
-  const ncUrl = process.env.NEXTCLOUD_URL;
-  const ncUser = process.env.NEXTCLOUD_USER;
-  const ncPass = process.env.NEXTCLOUD_PASS;
+  const rawUrl = process.env.NEXTCLOUD_URL || '';
+  const rawUser = process.env.NEXTCLOUD_USER || '';
+  const rawPass = process.env.NEXTCLOUD_PASS || '';
 
-  if (!ncUrl || !ncUser || !ncPass) {
+  if (!rawUrl || !rawUser || !rawPass) {
     return res.status(500).json({ 
       message: 'Variabili mancanti su Vercel. Verifica NEXTCLOUD_URL, NEXTCLOUD_USER e NEXTCLOUD_PASS.' 
     });
   }
 
-  const baseUrl = ncUrl.replace(/\/$/, '');
-  const cleanUser = ncUser.trim();
-  const cleanPass = ncPass.trim();
+  // Pulizia automatica da virgolette, spazi e caratteri invisibili
+  const baseUrl = rawUrl.replace(/["']/g, '').replace(/\/$/, '').trim();
+  const cleanUser = rawUser.replace(/["']/g, '').trim();
+  const cleanPass = rawPass.replace(/["'\s]/g, '').trim(); // Rimuove spazi copiati per errore
+
   const authHeader = 'Basic ' + Buffer.from(`${cleanUser}:${cleanPass}`).toString('base64');
   
   const commonHeaders = {
@@ -49,11 +51,6 @@ export default async function handler(req, res) {
         }));
 
         return res.status(200).json({ risultati: fileTrovati, isSearch: true });
-      } else {
-        const errText = await searchRes.text();
-        return res.status(searchRes.status).json({ 
-          message: `Errore Ricerca (Codice ${searchRes.status}): ${errText.slice(0, 100)}` 
-        });
       }
     }
 
@@ -134,9 +131,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // Se tutti i tentativi falliscono, restituiamo il codice HTTP reale
     return res.status(lastStatus).json({ 
-      message: `Risposta Server Aruba (Codice ${lastStatus}): ${lastError ? lastError.slice(0, 100) : 'Connessione Rifiutata'}.` 
+      message: `Risposta Server Aruba (Codice ${lastStatus}): Verifica credenziali su Vercel (Utente provato: "${cleanUser}").` 
     });
 
   } catch (error) {
