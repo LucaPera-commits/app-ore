@@ -159,6 +159,15 @@ function getFeedbackKey(fb) {
   return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
 }
 
+function getParentPath(path) {
+  if (!path) return '';
+  const cleanPath = String(path).replace(/^\/+|\/+$/g, '');
+  const parts = cleanPath.split('/').filter(Boolean);
+  if (parts.length <= 1) return '';
+  parts.pop();
+  return parts.join('/');
+}
+
 function getGiorniLavorativiMese(annoMeseStr) {
   if (!annoMeseStr) return 22;
   try {
@@ -182,9 +191,10 @@ function HomeContent() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   
-  // --- NAVIGAZIONE CON STORICO ---
+  // --- STATI NAVIGAZIONE UNIFICATA (SCHEDE + CARTELLE FILE) ---
   const [activeTab, setActiveTab] = useState('home');
-  const [tabHistory, setTabHistory] = useState([]);
+  const [pathNC, setPathNC] = useState('');
+  const [navHistory, setNavHistory] = useState([]);
 
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
@@ -224,7 +234,6 @@ function HomeContent() {
   };
 
   // --- STATI NEXTCLOUD ARUBA ---
-  const [pathNC, setPathNC] = useState('');
   const [searchQueryNC, setSearchQueryNC] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
   const [loadingNC, setLoadingNC] = useState(false);
@@ -254,14 +263,18 @@ function HomeContent() {
     return matchNomeDipendente(item?.dipendente, currentUser.nome);
   }
 
-  function handleTabChange(targetTab, isBackAzione = false) {
-    if (targetTab === activeTab) return;
+  // FUNZIONE UNIFICATA DI NAVIGAZIONE CON HISTORICO GENERALE
+  function navigateTo(targetTab, targetPathNC = '') {
+    const cleanTargetFolder = targetPathNC ? String(targetPathNC).replace(/^\/+|\/+$/g, '') : '';
+    
+    // Evita duplicazioni se lo stato è identico
+    if (targetTab === activeTab && cleanTargetFolder === pathNC) return;
 
-    if (!isBackAzione) {
-      setTabHistory(prev => [...prev, activeTab]);
-    }
+    // Registra lo stato corrente nello storico
+    setNavHistory(prev => [...prev, { tab: activeTab, pathNC: pathNC }]);
 
     setActiveTab(targetTab);
+    setPathNC(cleanTargetFolder);
 
     if (targetTab === 'feedback' && safeFeedbackList.length > 0) {
       const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
@@ -278,28 +291,27 @@ function HomeContent() {
     }
   }
 
-  // GESTIONE CARTELLA SUPERIORE ARUBA NEXTCLOUD
-  function handleCartellaSuperioreNC() {
-    if (!pathNC) return;
-    const parti = pathNC.split('/').filter(Boolean);
-    parti.pop();
-    const newPath = parti.join('/');
+  // TASTO INDIETRO UNIFICATO (PULL DALLO STORICO)
+  function handleGoBack() {
+    if (navHistory.length === 0) return;
+    const lastState = navHistory[navHistory.length - 1];
+    setNavHistory(prev => prev.slice(0, prev.length - 1));
+
+    setActiveTab(lastState.tab);
+    setPathNC(lastState.pathNC || '');
     setSearchQueryNC('');
-    setPathNC(newPath);
   }
 
-  // TASTO INDIETRO CONTESTUALE (SCHEDA O CARTELLA)
-  function handleGoBack() {
-    // 1. Se siamo nei documenti Aruba ed in una sottocartella, naviga alla cartella superiore
-    if (activeTab === 'documenti' && pathNC !== '') {
-      handleCartellaSuperioreNC();
-      return;
-    }
-    // 2. Altrimenti, naviga alla scheda precedente
-    if (tabHistory.length === 0) return;
-    const lastTab = tabHistory[tabHistory.length - 1];
-    setTabHistory(prev => prev.slice(0, prev.length - 1));
-    handleTabChange(lastTab, true);
+  // NAVIGAZIONE PER LE CARTELLE ARUBA
+  function handleApriCartella(percorso) {
+    setSearchQueryNC('');
+    navigateTo('documenti', percorso);
+  }
+
+  function handleCartellaSuperioreNC() {
+    const parent = getParentPath(pathNC);
+    setSearchQueryNC('');
+    navigateTo('documenti', parent);
   }
 
   useEffect(() => {
@@ -534,11 +546,6 @@ function HomeContent() {
     }
   };
 
-  const handleApriCartella = (nuovoPercorso) => {
-    setSearchQueryNC('');
-    setPathNC(nuovoPercorso);
-  };
-
   const handleLogin = (e) => {
     e.preventDefault();
     const user = UTENTI[loginForm.username.toLowerCase().trim()];
@@ -546,7 +553,7 @@ function HomeContent() {
       setCurrentUser(user);
       localStorage.setItem('bw_user', JSON.stringify(user));
       setFormData(prev => ({ ...prev, dipendente: user.nome }));
-      handleTabChange('home');
+      navigateTo('home');
     } else {
       alert("Credenziali non valide.");
     }
@@ -926,9 +933,7 @@ function HomeContent() {
     );
   };
 
-  if (!isMounted) {
-    return <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center font-sans text-xs">Caricamento in corso...</div>;
-  }
+  if (!isMounted) return null;
 
   if (!currentUser) {
     return (
@@ -974,6 +979,41 @@ function HomeContent() {
     );
   }
 
+  // RENDER BREADCRUMBS IN STILE WINDOWS PER ARUBA NEXTCLOUD
+  const renderBreadcrumbs = () => {
+    const parts = pathNC ? pathNC.split('/').filter(Boolean) : [];
+    let accumulatedPath = '';
+
+    return (
+      <div className="flex flex-wrap items-center space-x-1.5 text-xs font-bold text-slate-700 truncate">
+        <button 
+          onClick={() => navigateTo('documenti', '')} 
+          className={`hover:text-sky-600 cursor-pointer ${parts.length === 0 ? 'text-sky-700 font-black' : 'underline'}`}
+        >
+          🏠 Root
+        </button>
+        {parts.map((part, idx) => {
+          accumulatedPath += (accumulatedPath ? '/' : '') + part;
+          const currentPartPath = accumulatedPath;
+          const isLast = idx === parts.length - 1;
+          return (
+            <React.Fragment key={idx}>
+              <span className="text-slate-400">/</span>
+              <button
+                onClick={() => !isLast && navigateTo('documenti', currentPartPath)}
+                className={`transition-colors ${
+                  isLast ? 'text-slate-900 font-extrabold cursor-default' : 'underline hover:text-sky-600 text-slate-600 cursor-pointer'
+                }`}
+              >
+                📁 {part}
+              </button>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-100/80 text-slate-800 font-sans flex flex-col md:flex-row">
       <Head>
@@ -987,10 +1027,10 @@ function HomeContent() {
         ))}
       </datalist>
 
-      {/* STRUTTURA A SIDEBAR LATERALE (COLONNA A SINISTRA) */}
+      {/* STRUTTURA SIDEBAR LATERALE (A SINISTRA) */}
       <aside className="w-full md:w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col justify-between p-4 sticky top-0 md:h-screen shadow-xl z-40 border-r border-slate-800">
         <div className="space-y-6">
-          <div className="flex items-center space-x-3 p-2 cursor-pointer border-b border-slate-800 pb-4" onClick={() => handleTabChange('home')}>
+          <div className="flex items-center space-x-3 p-2 cursor-pointer border-b border-slate-800 pb-4" onClick={() => navigateTo('home')}>
             <div className="bg-sky-500 text-slate-950 font-black text-lg px-3 py-1 rounded-xl shadow-sm">bw</div>
             <div>
               <span className="font-bold text-base text-white leading-none block">bw solutions</span>
@@ -999,18 +1039,19 @@ function HomeContent() {
           </div>
 
           <nav className="flex md:flex-col space-x-1 md:space-x-0 md:space-y-1.5 overflow-x-auto md:overflow-x-visible text-xs font-semibold">
-            {/* TASTO INDIETRO NELLA SIDEBAR */}
-            {(tabHistory.length > 0 || (activeTab === 'documenti' && pathNC !== '')) && (
+            {/* TASTO INDIETRO IN STILE EXPLORER */}
+            {navHistory.length > 0 && (
               <button 
                 onClick={handleGoBack}
                 className="w-full px-3.5 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition-all flex items-center space-x-2 shadow-sm whitespace-nowrap mb-2 cursor-pointer"
+                title="Torna indietro nello storico"
               >
-                <span>⬅️ {activeTab === 'documenti' && pathNC !== '' ? 'Cartella Superiore' : 'Torna Indietro'}</span>
+                <span>⬅️ Torna Indietro</span>
               </button>
             )}
 
             <button 
-              onClick={() => handleTabChange('home')} 
+              onClick={() => navigateTo('home')} 
               className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
                 activeTab === 'home' ? 'bg-sky-500 text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
@@ -1019,7 +1060,7 @@ function HomeContent() {
             </button>
 
             <button 
-              onClick={() => handleTabChange('nuovo')} 
+              onClick={() => navigateTo('nuovo')} 
               className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
                 activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
@@ -1028,7 +1069,7 @@ function HomeContent() {
             </button>
 
             <button 
-              onClick={() => handleTabChange('programmati')} 
+              onClick={() => navigateTo('programmati')} 
               className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
                 activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
@@ -1051,7 +1092,7 @@ function HomeContent() {
             </a>
 
             <button 
-              onClick={() => handleTabChange('feedback')} 
+              onClick={() => navigateTo('feedback')} 
               className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
                 activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
@@ -1065,7 +1106,7 @@ function HomeContent() {
             </button>
 
             <button 
-              onClick={() => handleTabChange('documenti')} 
+              onClick={() => navigateTo('documenti', pathNC)} 
               className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
                 activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
@@ -1085,7 +1126,7 @@ function HomeContent() {
             {currentUser?.ruolo === 'admin' && (
               <>
                 <button 
-                  onClick={() => handleTabChange('cruscotto')} 
+                  onClick={() => navigateTo('cruscotto')} 
                   className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
                     activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
@@ -1111,15 +1152,15 @@ function HomeContent() {
       {/* AREA PRINCIPALE DI CONTENUTO */}
       <main className="flex-1 p-4 md:p-8 w-full max-w-5xl mx-auto space-y-6">
 
-        {/* PULSANTE INDIETRO DI CORTESIA SOPRA IL CONTENUTO */}
-        {((tabHistory.length > 0 && activeTab !== 'home') || (activeTab === 'documenti' && pathNC !== '')) && (
+        {/* TASTO MOBILE DI RITORNO */}
+        {navHistory.length > 0 && activeTab !== 'home' && (
           <div className="md:hidden mb-4">
             <button
               onClick={handleGoBack}
               className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs rounded-2xl border border-slate-200 shadow-sm transition-all group cursor-pointer"
             >
               <span className="group-hover:-translate-x-1 transition-transform">⬅️</span>
-              <span>{activeTab === 'documenti' && pathNC !== '' ? 'Torna alla cartella superiore' : 'Torna alla scheda precedente'}</span>
+              <span>Torna indietro</span>
             </button>
           </div>
         )}
@@ -1140,7 +1181,7 @@ function HomeContent() {
                   </div>
                 </div>
                 <button 
-                  onClick={() => { handleTabChange('cruscotto'); setSubTabReport('ferie'); }} 
+                  onClick={() => { navigateTo('cruscotto'); setSubTabReport('ferie'); }} 
                   className="bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs px-4 py-2.5 rounded-xl font-black shadow-md transition-all whitespace-nowrap"
                 >
                   Vai all'Archivio Ferie ➔
@@ -1177,7 +1218,7 @@ function HomeContent() {
               {currentUser?.ruolo === 'admin' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div 
-                    onClick={() => handleTabChange('programmati')} 
+                    onClick={() => navigateTo('programmati')} 
                     className="p-4 rounded-2xl border border-amber-200 bg-amber-50/50 hover:bg-amber-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1190,7 +1231,7 @@ function HomeContent() {
                   </div>
 
                   <div 
-                    onClick={() => { handleTabChange('cruscotto'); setSubTabReport('ferie'); }} 
+                    onClick={() => { navigateTo('cruscotto'); setSubTabReport('ferie'); }} 
                     className="p-4 rounded-2xl border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1203,7 +1244,7 @@ function HomeContent() {
                   </div>
 
                   <div 
-                    onClick={() => handleTabChange('programmati')} 
+                    onClick={() => navigateTo('programmati')} 
                     className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1216,7 +1257,7 @@ function HomeContent() {
                   </div>
 
                   <div 
-                    onClick={() => handleTabChange('feedback')} 
+                    onClick={() => navigateTo('feedback')} 
                     className="p-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1231,7 +1272,7 @@ function HomeContent() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div 
-                    onClick={() => handleTabChange('programmati')} 
+                    onClick={() => navigateTo('programmati')} 
                     className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1244,7 +1285,7 @@ function HomeContent() {
                   </div>
 
                   <div 
-                    onClick={() => handleTabChange('programmati')} 
+                    onClick={() => navigateTo('programmati')} 
                     className="p-4 rounded-2xl border border-sky-200 bg-sky-50/50 hover:bg-sky-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1257,7 +1298,7 @@ function HomeContent() {
                   </div>
 
                   <div 
-                    onClick={() => handleTabChange('feedback')} 
+                    onClick={() => navigateTo('feedback')} 
                     className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1314,7 +1355,7 @@ function HomeContent() {
 
             {/* GRIGLIA PULSANTI DI NAVIGAZIONE */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div onClick={() => handleTabChange('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div onClick={() => navigateTo('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   📝
                 </div>
@@ -1323,7 +1364,7 @@ function HomeContent() {
                 <span className="text-xs font-bold text-sky-600 flex items-center gap-1">Registra Ora ➔</span>
               </div>
 
-              <div onClick={() => handleTabChange('programmati')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div onClick={() => navigateTo('programmati')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   ⏳
                 </div>
@@ -1332,7 +1373,7 @@ function HomeContent() {
                 <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Apri Cartelle ➔</span>
               </div>
 
-              <div onClick={() => handleTabChange('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group relative">
+              <div onClick={() => navigateTo('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group relative">
                 <div className="flex items-center justify-between mb-4">
                   <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold group-hover:scale-110 transition-transform">
                     💡
@@ -2025,7 +2066,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON TASTO INDIETRO / CARTELLA SUPERIORE */}
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON NAVIGAZIONE BREADCRUMB & CARTELLA SUPERIORE */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -2050,18 +2091,9 @@ function HomeContent() {
                 </a>
               </div>
 
-              {/* BARRA PERCORSO E PULSANTE CARTELLA SUPERIORE */}
+              {/* BARRA PERCORSO E PULSANTE CARTELLA SUPERIORE IN STILE WINDOWS */}
               <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                <div className="flex items-center space-x-2 text-xs font-bold text-slate-700 truncate">
-                  <button onClick={() => setPathNC('')} className="hover:text-sky-600 underline">🏠 Root</button>
-                  {pathNC && (
-                    <span className="text-slate-400">
-                      / {pathNC.split('/').filter(Boolean).map((p, idx) => (
-                        <span key={idx}> 📁 {p} </span>
-                      ))}
-                    </span>
-                  )}
-                </div>
+                {renderBreadcrumbs()}
 
                 {pathNC && (
                   <button 
@@ -2216,7 +2248,7 @@ function HomeContent() {
                         const tot = oreCantiere + oreBackoffice + oreStraordinario + oreFerie + orePermesso + oreMalattia;
 
                         return (
-                          <tr key={nomeDip} className="hover:bg-slate-50 cursor-pointer" onClick={() => { handleTabChange('programmati'); toggleCartella(nomeDip); }}>
+                          <tr key={nomeDip} className="hover:bg-slate-50 cursor-pointer" onClick={() => { navigateTo('programmati'); toggleCartella(nomeDip); }}>
                             <td className="py-3 px-3 font-bold text-slate-900">{nomeDip}</td>
                             <td className="py-3 px-3 text-center font-bold">{oreCantiere} h</td>
                             <td className="py-3 px-3 text-center font-bold text-sky-700">{oreBackoffice} h</td>
