@@ -251,6 +251,7 @@ export default function Home() {
   };
 
   const handleQuickReassign = async (item, nuovoDipendente) => {
+    if (currentUser?.ruolo !== 'admin') return alert("Solo l'amministratore può riassegnare le attività.");
     if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
     try {
       const res = await fetch('/api/gestisci', {
@@ -303,6 +304,7 @@ export default function Home() {
   };
 
   const handleElimina = async (item) => {
+    if (!canEditItem(item)) return alert("Puoi annullare solo le tue attività.");
     if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
     setLoading(true);
     try {
@@ -316,6 +318,7 @@ export default function Home() {
   };
 
   const openEditModal = (item) => {
+    if (!canEditItem(item)) return alert("Puoi modificare solo le tue attività.");
     setModalItem(item);
     setOreEffettive(item.ore || 0);
     setOreBackofficeEffettive(item.ore_backoffice || 0);
@@ -358,6 +361,13 @@ export default function Home() {
     return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
   };
 
+  // CONTROLLO RIGOROSO PERMESSI DI MODIFICA
+  const canEditItem = (item) => {
+    if (!currentUser) return false;
+    if (currentUser.ruolo === 'admin') return true;
+    return matchNomeDipendente(item.dipendente, currentUser.nome);
+  };
+
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
   const ieriStr = getYesterdayStr();
@@ -366,9 +376,8 @@ export default function Home() {
 
   const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
   
-  const dipendentiVisibili = currentUser?.ruolo === 'admin' 
-    ? listaDipendenti 
-    : listaDipendenti.filter(d => matchNomeDipendente(d, currentUser?.nome));
+  // Tutti i dipendenti vedono l'overview di tutti i colleghi
+  const dipendentiVisibili = listaDipendenti;
 
   const tuttiEventiMese = storicoCompleto.filter(item => {
     const dNorm = getNormalizedDate(item.data);
@@ -421,6 +430,7 @@ export default function Home() {
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
     const badgeAssenza = isFerie(item) ? '🏖️ Ferie' : isPermesso(item) ? '⏱️ Permesso' : isMalattia(item) ? '🏥 Malattia' : null;
+    const isEditable = canEditItem(item);
 
     return (
       <div key={item.id} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm`}>
@@ -457,11 +467,20 @@ export default function Home() {
           )}
         </div>
 
+        {/* PULSANTI D'AZIONE VISIBILI SOLO SE L'ATTIVITÀ È DELL'UTENTE O SE È ADMIN */}
         <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
-          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">
-            {item.stato === 'consuntivo' ? '✏️ Modifica' : '✅ Conferma'}
-          </button>
-          <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 whitespace-nowrap transition-all">🗑️ Annulla</button>
+          {isEditable ? (
+            <>
+              <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">
+                {item.stato === 'consuntivo' ? '✏️ Modifica' : '✅ Conferma'}
+              </button>
+              <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 whitespace-nowrap transition-all">🗑️ Annulla</button>
+            </>
+          ) : (
+            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 whitespace-nowrap flex items-center gap-1">
+              🔒 Sola Lettura
+            </span>
+          )}
         </div>
       </div>
     );
@@ -845,7 +864,7 @@ export default function Home() {
             </div>
 
             {/* CARTELLA "DA ASSEGNARE" */}
-            {(currentUser.ruolo === 'admin' || daAssegnareItems.length > 0) && (
+            {(currentUser?.ruolo === 'admin' || daAssegnareItems.length > 0) && (
               <div className="bg-amber-50/80 border-2 border-amber-300 rounded-3xl overflow-hidden shadow-sm transition-all">
                 <div 
                   onClick={() => toggleCartella('Da Assegnare')}
