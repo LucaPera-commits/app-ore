@@ -1,5 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import Head from 'next/head';
+
+// COMPONENTE DI PROTEZIONE ANTI-CRASH
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Errore React intercettato:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-900 text-white p-8 flex flex-col items-center justify-center font-sans">
+          <div className="max-w-xl bg-slate-800 p-6 rounded-3xl border border-rose-500/50 shadow-2xl space-y-4 text-center">
+            <div className="text-4xl">⚠️</div>
+            <h2 className="text-xl font-bold text-rose-400">Si è verificato un errore nell'interfaccia</h2>
+            <p className="text-xs text-slate-300">Dettaglio tecnico dell'eccezione:</p>
+            <pre className="bg-black/60 p-4 rounded-2xl text-[11px] text-rose-300 text-left overflow-x-auto whitespace-pre-wrap font-mono border border-slate-700">
+              {this.state.error?.toString()}
+            </pre>
+            <button onClick={() => window.location.reload()} className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 font-bold rounded-xl text-xs transition-all shadow-md">
+              🔄 Ricarica l'Applicazione
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
@@ -142,7 +176,7 @@ function getGiorniLavorativiMese(annoMeseStr) {
   }
 }
 
-export default function Home() {
+function HomeContent() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -211,11 +245,28 @@ export default function Home() {
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
   const safeReadIds = Array.isArray(readFeedbackIds) ? readFeedbackIds : [];
 
-  const canEditItem = (item) => {
+  function canEditItem(item) {
     if (!currentUser) return false;
     if (currentUser.ruolo === 'admin') return true;
     return matchNomeDipendente(item?.dipendente, currentUser.nome);
-  };
+  }
+
+  function handleTabChange(tab) {
+    setActiveTab(tab);
+    if (tab === 'feedback' && safeFeedbackList.length > 0) {
+      const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
+      if (keysToMark.length > 0) {
+        setReadFeedbackIds(prev => {
+          const currentArr = Array.isArray(prev) ? prev : [];
+          const missingKeys = keysToMark.filter(k => !currentArr.includes(k));
+          if (missingKeys.length === 0) return currentArr;
+          const updated = [...currentArr, ...missingKeys];
+          try { localStorage.setItem('bw_read_feedbacks', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+      }
+    }
+  }
 
   useEffect(() => {
     setIsMounted(true);
@@ -299,25 +350,6 @@ export default function Home() {
       }
     }
   }, [currentUser, activeTab, filtroArchivioAdmin, isMounted]);
-
-  useEffect(() => {
-    if (activeTab === 'feedback' && safeFeedbackList.length > 0) {
-      const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
-      if (keysToMark.length === 0) return;
-
-      setReadFeedbackIds(prev => {
-        const currentArr = Array.isArray(prev) ? prev : [];
-        const missingKeys = keysToMark.filter(k => !currentArr.includes(k));
-        if (missingKeys.length === 0) return currentArr;
-
-        const updated = [...currentArr, ...missingKeys];
-        try {
-          localStorage.setItem('bw_read_feedbacks', JSON.stringify(updated));
-        } catch (e) {}
-        return updated;
-      });
-    }
-  }, [activeTab, safeFeedbackList]);
 
   const unreadFeedbackCount = safeFeedbackList.filter(fb => {
     if (!fb || fb.is_deleted) return false;
@@ -480,7 +512,7 @@ export default function Home() {
       setCurrentUser(user);
       localStorage.setItem('bw_user', JSON.stringify(user));
       setFormData(prev => ({ ...prev, dipendente: user.nome }));
-      setActiveTab('home');
+      handleTabChange('home');
     } else {
       alert("Credenziali non valide.");
     }
@@ -645,7 +677,10 @@ export default function Home() {
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item)) return alert("Puoi modificare solo le tue attività.");
+    if (!canEditItem(item)) {
+      alert(`Visualizzazione in sola lettura dell'attività di ${toText(item.dipendente)}.`);
+      return;
+    }
     setModalItem(item);
     setOreEffettive(item.ore || 0);
     setOreBackofficeEffettive(item.ore_backoffice || 0);
@@ -750,6 +785,7 @@ export default function Home() {
 
   const safeRisultatiNC = Array.isArray(risultatiNC) ? risultatiNC : [];
 
+  // RENDER RIGA ATTIVITÀ CON INTERATTIVITÀ CLICCABILE SU TUTTA LA SCHEDA
   const renderRigaAttivita = (item, colorTheme, idx = 0) => {
     if (!item) return null;
     const normDate = getNormalizedDate(item.data);
@@ -770,7 +806,12 @@ export default function Home() {
     const keyVal = item.id || item.calendar_event_id || `att_${idx}`;
 
     return (
-      <div key={keyVal} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm`}>
+      <div 
+        key={keyVal} 
+        onClick={() => openEditModal(item)}
+        className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm cursor-pointer hover:border-sky-400 hover:shadow-md transition-all group`}
+        title="Clicca per aprire la scheda e modificare o visualizzare i dettagli"
+      >
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 shadow-xs">
@@ -794,7 +835,7 @@ export default function Home() {
             )}
           </div>
           
-          <div className="font-bold text-slate-900 text-sm truncate">
+          <div className="font-bold text-slate-900 text-sm truncate group-hover:text-sky-700 transition-colors">
             {isAssenzaFlag ? toText(item.progetto) : (toText(item.cliente) || "Senza Cliente")}
           </div>
           
@@ -809,7 +850,7 @@ export default function Home() {
           )}
           
           {currentUser?.ruolo === 'admin' && (
-            <div className="mt-2.5 flex items-center gap-2">
+            <div className="mt-2.5 flex items-center gap-2" onClick={e => e.stopPropagation()}>
               <span className="text-[10px] uppercase font-bold text-slate-400">Assegna a:</span>
               <select 
                 value={item.dipendente || 'Da Assegnare'} 
@@ -825,7 +866,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0 items-center h-full">
+        <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0 items-center h-full" onClick={e => e.stopPropagation()}>
           {isInApprovazione && currentUser?.ruolo === 'admin' ? (
             <>
               <button onClick={() => handleApprovaAssenza(item)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all whitespace-nowrap">
@@ -852,9 +893,7 @@ export default function Home() {
     );
   };
 
-  if (!isMounted) {
-    return <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center font-sans text-xs">Caricamento in corso...</div>;
-  }
+  if (!isMounted) return null;
 
   if (!currentUser) {
     return (
@@ -916,7 +955,7 @@ export default function Home() {
       {/* HEADER PRINCIPALE */}
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('home')}>
+          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleTabChange('home')}>
             <div className="bg-sky-500 text-slate-950 font-black text-base px-2.5 py-1 rounded-xl shadow-sm">bw</div>
             <div>
               <span className="font-bold text-base text-white leading-none block">bw solutions</span>
@@ -926,7 +965,7 @@ export default function Home() {
           
           <nav className="flex space-x-1.5 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold overflow-x-auto">
             <button 
-              onClick={() => setActiveTab('home')} 
+              onClick={() => handleTabChange('home')} 
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
                 activeTab === 'home' ? 'bg-sky-500 text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'
               }`}
@@ -934,9 +973,9 @@ export default function Home() {
               <span>🏠 Home</span>
             </button>
 
-            <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📝 Inserimento Ore</button>
+            <button onClick={() => handleTabChange('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📝 Inserimento Ore</button>
             
-            <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
+            <button onClick={() => handleTabChange('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
               <span>⏳ Gestione Attività</span>
               {(daAssegnareItems.length > 0 || (currentUser?.ruolo === 'admin' && assenzeDaApprovareAdmin.length > 0)) && (
                 <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">
@@ -954,7 +993,7 @@ export default function Home() {
               <span>📅 Google Calendar</span>
             </a>
             
-            <button onClick={() => setActiveTab('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
+            <button onClick={() => handleTabChange('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
               <span>💡 Suggerimenti</span>
               {unreadFeedbackCount > 0 && (
                 <span className="bg-purple-500 text-white font-black px-1.5 py-0.2 rounded-full text-[10px] shadow-xs animate-pulse">
@@ -963,7 +1002,7 @@ export default function Home() {
               )}
             </button>
 
-            <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
+            <button onClick={() => handleTabChange('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
             
             <a 
               href="https://ug.link/naszoeanna" 
@@ -976,7 +1015,7 @@ export default function Home() {
 
             {currentUser?.ruolo === 'admin' && (
               <>
-                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📊 Reportistica Mensile</button>
+                <button onClick={() => handleTabChange('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📊 Reportistica Mensile</button>
                 <a href="/preventivi" className="px-3.5 py-2 rounded-xl bg-sky-900/60 hover:bg-sky-800 text-sky-200 font-bold whitespace-nowrap border border-sky-700/50">💰 Preventivi</a>
               </>
             )}
@@ -1007,7 +1046,7 @@ export default function Home() {
                   </div>
                 </div>
                 <button 
-                  onClick={() => { setActiveTab('cruscotto'); setSubTabReport('ferie'); }} 
+                  onClick={() => { handleTabChange('cruscotto'); setSubTabReport('ferie'); }} 
                   className="bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs px-4 py-2.5 rounded-xl font-black shadow-md transition-all whitespace-nowrap"
                 >
                   Vai all'Archivio Ferie ➔
@@ -1044,7 +1083,7 @@ export default function Home() {
               {currentUser?.ruolo === 'admin' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div 
-                    onClick={() => setActiveTab('programmati')} 
+                    onClick={() => handleTabChange('programmati')} 
                     className="p-4 rounded-2xl border border-amber-200 bg-amber-50/50 hover:bg-amber-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1057,7 +1096,7 @@ export default function Home() {
                   </div>
 
                   <div 
-                    onClick={() => { setActiveTab('cruscotto'); setSubTabReport('ferie'); }} 
+                    onClick={() => { handleTabChange('cruscotto'); setSubTabReport('ferie'); }} 
                     className="p-4 rounded-2xl border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1070,7 +1109,7 @@ export default function Home() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab('programmati')} 
+                    onClick={() => handleTabChange('programmati')} 
                     className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1083,7 +1122,7 @@ export default function Home() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab('feedback')} 
+                    onClick={() => handleTabChange('feedback')} 
                     className="p-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1098,7 +1137,7 @@ export default function Home() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div 
-                    onClick={() => setActiveTab('programmati')} 
+                    onClick={() => handleTabChange('programmati')} 
                     className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1111,7 +1150,7 @@ export default function Home() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab('programmati')} 
+                    onClick={() => handleTabChange('programmati')} 
                     className="p-4 rounded-2xl border border-sky-200 bg-sky-50/50 hover:bg-sky-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1124,7 +1163,7 @@ export default function Home() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab('feedback')} 
+                    onClick={() => handleTabChange('feedback')} 
                     className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
@@ -1181,7 +1220,7 @@ export default function Home() {
 
             {/* GRIGLIA PULSANTI DI NAVIGAZIONE */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div onClick={() => handleTabChange('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   📝
                 </div>
@@ -1190,7 +1229,7 @@ export default function Home() {
                 <span className="text-xs font-bold text-sky-600 flex items-center gap-1">Registra Ora ➔</span>
               </div>
 
-              <div onClick={() => setActiveTab('programmati')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div onClick={() => handleTabChange('programmati')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   ⏳
                 </div>
@@ -1199,7 +1238,7 @@ export default function Home() {
                 <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Apri Cartelle ➔</span>
               </div>
 
-              <div onClick={() => setActiveTab('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group relative">
+              <div onClick={() => handleTabChange('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group relative">
                 <div className="flex items-center justify-between mb-4">
                   <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold group-hover:scale-110 transition-transform">
                     💡
@@ -1400,7 +1439,11 @@ export default function Home() {
 
                 <div className="space-y-3">
                   {assenzeDaApprovareAdmin.map((item, idx) => (
-                    <div key={item?.id || `app_${idx}`} className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+                    <div 
+                      key={item?.id || `app_${idx}`} 
+                      onClick={() => openEditModal(item)}
+                      className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-white/20 transition-all"
+                    >
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
                           <span className="font-extrabold text-sm text-amber-300">👤 {toText(item.dipendente)}</span>
@@ -1414,7 +1457,7 @@ export default function Home() {
                         {item.note && <p className="text-xs text-slate-300 italic">📝 {toText(item.note)}</p>}
                       </div>
 
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
                         <button 
                           onClick={() => handleApprovaAssenza(item)} 
                           className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-md transition-all whitespace-nowrap"
@@ -1922,13 +1965,20 @@ export default function Home() {
 
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                 {safeRisultatiNC.map((item, idx) => (
-                  <div key={idx} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-4">
-                    <div className="flex items-center space-x-3 truncate cursor-pointer" onClick={() => item?.isFolder && handleApriCartella(item.percorso)}>
+                  <div 
+                    key={idx} 
+                    onClick={() => {
+                      if (item?.isFolder) handleApriCartella(item.percorso);
+                      else window.open(`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`, '_blank');
+                    }}
+                    className="p-3.5 hover:bg-sky-50/80 flex items-center justify-between gap-4 cursor-pointer transition-all group"
+                  >
+                    <div className="flex items-center space-x-3 truncate">
                       <span className="text-2xl">{item?.isFolder ? '📁' : '📄'}</span>
-                      <span className="font-bold text-sm text-slate-800 truncate">{toText(item?.nome)}</span>
+                      <span className="font-bold text-sm text-slate-800 truncate group-hover:text-sky-700">{toText(item?.nome)}</span>
                     </div>
                     {!item?.isFolder && (
-                      <a href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold">📥 Scarica</a>
+                      <a href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} onClick={e => e.stopPropagation()} className="bg-slate-100 text-slate-700 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all">📥 Scarica</a>
                     )}
                   </div>
                 ))}
@@ -2049,7 +2099,7 @@ export default function Home() {
                         const tot = oreCantiere + oreBackoffice + oreStraordinario + oreFerie + orePermesso + oreMalattia;
 
                         return (
-                          <tr key={nomeDip} className="hover:bg-slate-50">
+                          <tr key={nomeDip} className="hover:bg-slate-50 cursor-pointer" onClick={() => toggleCartella(nomeDip)}>
                             <td className="py-3 px-3 font-bold text-slate-900">{nomeDip}</td>
                             <td className="py-3 px-3 text-center font-bold">{oreCantiere} h</td>
                             <td className="py-3 px-3 text-center font-bold text-sky-700">{oreBackoffice} h</td>
@@ -2117,9 +2167,14 @@ export default function Home() {
                         })
                         .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
                         .map((item, idx) => (
-                          <tr key={item.id || `fat_${idx}`} className="hover:bg-slate-50">
+                          <tr 
+                            key={item.id || `fat_${idx}`} 
+                            onClick={() => openEditModal(item)}
+                            className="hover:bg-sky-50/80 cursor-pointer transition-colors group"
+                            title="Clicca per aprire i dettagli dell'intervento"
+                          >
                             <td className="py-2.5 px-3 text-slate-500 font-bold">{getNormalizedDate(item.data)}</td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{toText(item.cliente)}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900 group-hover:text-sky-700">{toText(item.cliente)}</td>
                             <td className="py-2.5 px-3 text-slate-700">{toText(item.progetto)}</td>
                             <td className="py-2.5 px-3 font-semibold text-slate-800">{toText(item.dipendente)}</td>
                             <td className="py-2.5 px-3 text-center font-bold text-slate-900">{item.ore || 0} h</td>
@@ -2176,7 +2231,7 @@ export default function Home() {
                             ) : (
                               <div className="space-y-2">
                                 {inApprovazione.map((item, idx) => (
-                                  <div key={item.id || `app_sub_${idx}`} className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col gap-2">
+                                  <div key={item.id || `app_sub_${idx}`} onClick={() => openEditModal(item)} className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col gap-2 cursor-pointer hover:bg-amber-100/80 transition-all">
                                       <div className="flex justify-between items-start">
                                         <div>
                                           <div className="text-xs font-bold text-amber-900">{getNormalizedDate(item.data)}</div>
@@ -2185,7 +2240,7 @@ export default function Home() {
                                         <span className="text-[9px] uppercase font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md">In Attesa</span>
                                       </div>
                                       {item.note && <p className="text-[10px] text-amber-800 italic bg-amber-100/50 p-1.5 rounded border border-amber-100">📝 {toText(item.note)}</p>}
-                                      <div className="flex space-x-2 mt-1">
+                                      <div className="flex space-x-2 mt-1" onClick={e => e.stopPropagation()}>
                                         <button onClick={() => handleApprovaAssenza(item)} className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-bold rounded-lg shadow-sm transition-all">✅ Approva</button>
                                         <button onClick={() => handleRifiutaAssenza(item)} className="flex-1 py-1.5 bg-rose-500 hover:bg-rose-400 text-white text-[10px] font-bold rounded-lg shadow-sm transition-all">❌ Rifiuta</button>
                                       </div>
@@ -2203,7 +2258,7 @@ export default function Home() {
                             ) : (
                               <div className="space-y-2">
                                 {[...approvate].sort((a,b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => (
-                                  <div key={item.id || `app_ok_${idx}`} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center">
+                                  <div key={item.id || `app_ok_${idx}`} onClick={() => openEditModal(item)} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center cursor-pointer hover:bg-emerald-100/80 transition-all">
                                       <div className="flex flex-col">
                                         <span className="text-xs font-bold text-emerald-900">{getNormalizedDate(item.data)}</span>
                                         <span className="text-[10px] font-bold text-emerald-700">{toText(item.progetto)} ({item.ore}h)</span>
@@ -2245,18 +2300,30 @@ export default function Home() {
 
       </main>
 
-      {/* MODALE EDITING / CONFERMA CONSUNTIVO */}
+      {/* MODALE DETTAGLIO / EDITING UNIFICATA PER TUTTE LE RIGHE */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">
-              {modalItem.stato === 'consuntivo' ? 'Modifica Dati Intervento' : 'Conferma Consuntivo'}
-            </h3>
-            <p className="text-xs text-slate-500">
-              Stai modificando l'attività per <strong className="text-slate-800">{toText(modalItem.cliente)}</strong>.
-            </p>
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {modalItem.stato === 'consuntivo' ? '✏️ Dettaglio Intervento' : '📋 Scheda Attività'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Scheda del <strong className="text-slate-800">{getNormalizedDate(modalItem.data)}</strong>
+                </p>
+              </div>
+              <button onClick={() => setModalItem(null)} className="text-slate-400 hover:text-slate-600 font-black text-base p-1">✕</button>
+            </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2 bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs">
+              <div><strong className="text-slate-500 uppercase text-[10px]">Cliente:</strong> <span className="font-bold text-slate-900">{toText(modalItem.cliente) || '-'}</span></div>
+              <div><strong className="text-slate-500 uppercase text-[10px]">Progetto / Dettaglio:</strong> <span className="font-bold text-slate-900">{toText(modalItem.progetto) || '-'}</span></div>
+              <div><strong className="text-slate-500 uppercase text-[10px]">Tecnico Assegnato:</strong> <span className="font-bold text-slate-900">{toText(modalItem.dipendente) || '-'}</span></div>
+              {modalItem.note && <div><strong className="text-slate-500 uppercase text-[10px]">Note:</strong> <span className="italic text-slate-700">{toText(modalItem.note)}</span></div>}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-1">
               {(modalItem.dipendente === 'Da Assegnare' || currentUser?.ruolo === 'admin') && (
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
@@ -2269,15 +2336,15 @@ export default function Home() {
               
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Cantiere / Assenza</label>
-                <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold" />
+                <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-sky-200" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
-                <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800" />
+                <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800 outline-none focus:ring-2 focus:ring-sky-200" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-bold text-amber-600 mb-1 uppercase">⚡ Ore Straordinario</label>
-                <input type="number" step="0.5" min="0" value={oreStraordinarioEffettive} onChange={e => setOreStraordinarioEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-amber-50 border-amber-300 text-sm font-extrabold text-amber-900" />
+                <input type="number" step="0.5" min="0" value={oreStraordinarioEffettive} onChange={e => setOreStraordinarioEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-amber-50 border-amber-300 text-sm font-extrabold text-amber-900 outline-none focus:ring-2 focus:ring-amber-200" />
               </div>
             </div>
 
@@ -2291,5 +2358,13 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <HomeContent />
+    </ErrorBoundary>
   );
 }
