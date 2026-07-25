@@ -39,13 +39,11 @@ export default async function handler(req, res) {
       .insert([payload]);
 
     if (error) {
-      console.error("Errore Supabase Salva:", error);
       return res.status(500).json({ message: error.message });
     }
 
     return res.status(200).json({ message: 'Registrazione salvata con successo!' });
   } catch (error) {
-    console.error("Errore Server Salva:", error);
     return res.status(500).json({ message: error.message });
   }
 }
