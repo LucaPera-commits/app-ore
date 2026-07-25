@@ -240,8 +240,9 @@ function HomeContent() {
   const [errorNC, setErrorNC] = useState(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
 
-  // --- STATO ANTEPRIMA DOCUMENTI ---
+  // --- STATO ANTEPRIMA DOCUMENTI & MOTORE RENDERING ---
   const [modalDocumento, setModalDocumento] = useState(null);
+  const [viewerEngine, setViewerEngine] = useState('google');
 
   // --- STATI REPORTISTICA E FERIE ---
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
@@ -574,7 +575,7 @@ function HomeContent() {
       fetchProgrammati();
     } catch (e) {
       alert("Errore di rete.");
-    } fontally {
+    } finally {
       setLoadingProgrammati(false);
     }
   };
@@ -2064,7 +2065,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON MODALE DEDICATA PER ANTEPRIMA DOCUMENTI */}
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON ANTEPRIMA IN MODALE INTERNA PER WORD ED EXCEL */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -2110,7 +2111,7 @@ function HomeContent() {
                 </form>
               </div>
 
-              {/* ELENCO FILE CON APERTURA MODALE DI ANTEPRIMA */}
+              {/* ELENCO FILE CON APERTURA MODALE ANTEPRIMA SENZA DOWNLOAD */}
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                 {safeRisultatiNC.map((item, idx) => {
                   const isDir = item?.isFolder === true || item?.isFolder === 'true' || item?.type === 'dir' || item?.type === 'folder';
@@ -2470,40 +2471,44 @@ function HomeContent() {
 
       </main>
 
-      {/* MODALE ANTEPRIMA DOCUMENTI (PDF, IMMAGINI, WORD, EXCEL, PPT) */}
+      {/* MODALE ANTEPRIMA DOCUMENTI (WORD, EXCEL, PDF, IMMAGINI) */}
       {modalDocumento && (() => {
-        const path = String(modalDocumento.percorso || '');
+        const path = String(modalDocumento.percorso || modalDocumento.path || '');
         const ext = path.split('.').pop().toLowerCase();
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        const rawFileUrl = `${origin}/api/download?path=${encodeURIComponent(path)}`;
+        const rawFileUrl = `${origin}/api/download?path=${encodeURIComponent(path)}&inline=true`;
+        
         const isOffice = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext);
         const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
         const isPdf = ext === 'pdf';
 
-        const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(rawFileUrl)}&embedded=true`;
+        const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(rawFileUrl)}&embedded=true`;
         const msViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(rawFileUrl)}`;
 
-        const iframeSrc = isOffice ? googleViewerUrl : rawFileUrl;
+        let iframeSrc = rawFileUrl;
+        if (isOffice) {
+          iframeSrc = viewerEngine === 'ms' ? msViewerUrl : googleViewerUrl;
+        }
 
         return (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-3 md:p-6">
-            <div className="bg-white rounded-3xl max-w-5xl w-full h-[88vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+          <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-md z-50 flex items-center justify-center p-2 md:p-6">
+            <div className="bg-white rounded-3xl max-w-5xl w-full h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
               {/* Header Modale */}
               <div className="bg-slate-900 text-white p-4 flex items-center justify-between gap-3 border-b border-slate-800">
                 <div className="flex items-center space-x-3 truncate">
                   <span className="text-2xl flex-shrink-0">{isOffice ? '📊' : isPdf ? '📄' : isImage ? '🖼️' : '📁'}</span>
                   <div className="truncate">
                     <h3 className="font-bold text-sm md:text-base truncate">{toText(modalDocumento.nome)}</h3>
-                    <p className="text-[10px] text-sky-400 font-medium uppercase tracking-wider">{ext} • Visualizzatore Online</p>
+                    <p className="text-[10px] text-sky-400 font-medium uppercase tracking-wider">{ext} • Anteprima Online Documento</p>
                   </div>
                 </div>
 
                 <div className="flex items-center space-x-2 flex-shrink-0">
                   <a 
-                    href={`${rawFileUrl}&forceDownload=true`}
+                    href={`${origin}/api/download?path=${encodeURIComponent(path)}&forceDownload=true`}
                     className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1 cursor-pointer"
                   >
-                    📥 Scarica
+                    📥 Scarica File
                   </a>
                   <button 
                     onClick={() => setModalDocumento(null)} 
@@ -2514,37 +2519,38 @@ function HomeContent() {
                 </div>
               </div>
 
-              {/* Sotto-Intestazione per Opzioni Lettore Office */}
+              {/* Sotto-Header con controlli per documenti Office */}
               {isOffice && (
-                <div className="bg-slate-100 p-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <span className="text-slate-600 font-bold text-[11px]">💡 Modalità di lettura online attiva:</span>
+                <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <div className="flex items-center space-x-2">
-                    <a 
-                      href={googleViewerUrl.replace('&embedded=true', '')} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-lg border border-sky-200"
+                    <span className="text-slate-600 font-bold text-[11px]">Motore di rendering:</span>
+                    <button 
+                      onClick={() => setViewerEngine('google')} 
+                      className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${viewerEngine !== 'ms' ? 'bg-sky-600 text-white shadow-xs' : 'bg-white text-slate-700 border border-slate-200'}`}
                     >
                       🌐 Google Docs
-                    </a>
-                    <a 
-                      href={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(rawFileUrl)}`} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200"
+                    </button>
+                    <button 
+                      onClick={() => setViewerEngine('ms')} 
+                      className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${viewerEngine === 'ms' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 border border-slate-200'}`}
                     >
                       🖥️ MS Office Web
-                    </a>
+                    </button>
+                  </div>
+
+                  <div className="text-[11px] text-slate-500 italic">
+                    💡 Leggi i file Word ed Excel direttamente online senza scaricarli sul PC
                   </div>
                 </div>
               )}
 
               {/* Corpo Modale / Viewer */}
-              <div className="flex-1 bg-slate-200/60 p-2 overflow-hidden flex items-center justify-center">
+              <div className="flex-1 bg-slate-200/50 p-2 overflow-hidden flex items-center justify-center relative">
                 {isImage ? (
                   <img src={rawFileUrl} alt={toText(modalDocumento.nome)} className="max-h-full max-w-full object-contain rounded-xl shadow-md" />
                 ) : (
                   <iframe 
+                    key={iframeSrc}
                     src={iframeSrc} 
                     className="w-full h-full rounded-2xl border border-slate-300 bg-white shadow-inner" 
                     title="Anteprima Documento"
