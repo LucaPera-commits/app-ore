@@ -29,12 +29,22 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
-// FUNZIONI HELPER GLOBALI
+// HELPER GLOBALI PER DATE E MESE SUCCESSIVO
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
-const getYesterdayStr = () => {
-  const t = new Date(); t.setDate(t.getDate() - 1);
-  return t.toISOString().split('T')[0];
+
+const getNextMonthStr = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + 1);
+  return d.toISOString().slice(0, 7);
+};
+
+const getNomeMeseText = (annoMeseStr) => {
+  if (!annoMeseStr) return '';
+  const [year, month] = annoMeseStr.split('-').map(Number);
+  const date = new Date(year, month - 1, 1);
+  return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 };
 
 const getNormalizedDate = (d) => {
@@ -253,6 +263,39 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
+  // APPROVAZIONE ED ELIMINAZIONE FERIE/PERMESSI ADMIN
+  const handleApprovaAssenza = async (item) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/gestisci', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.id,
+          calendar_event_id: item.calendar_event_id,
+          stato: 'pianificato',
+          chiudi_consuntivo: false
+        })
+      });
+      if (res.ok) fetchProgrammati();
+    } catch (e) { alert("Errore durante l'approvazione"); }
+    finally { setLoading(false); }
+  };
+
+  const handleRifiutaAssenza = async (item) => {
+    if (!confirm(`Vuoi RIFIUTARE la richiesta di ${item.progetto} di ${item.dipendente}?`)) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/gestisci', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id })
+      });
+      if (res.ok) fetchProgrammati();
+    } catch (e) { alert("Errore durante il rifiuto"); }
+    finally { setLoading(false); }
+  };
+
   const caricaContenutoNC = async (folderPath = '', search = '') => {
     setLoadingNC(true);
     setErrorNC(null);
@@ -374,11 +417,18 @@ export default function Home() {
 
       if (dateDaSalvare.length === 0) dateDaSalvare = [formData.data];
 
+      // SE É FERIE O PERMESSO ED È UN DIPENDENTE NORMALE -> STATO VA IN APPROVAZIONE
+      let statoDaImpostare = formData.stato;
+      if ((categoriaForm === 'ferie' || categoriaForm === 'permesso') && currentUser?.ruolo !== 'admin') {
+        statoDaImpostare = 'in_approvazione';
+      }
+
       let salvatiOk = 0;
       for (const d of dateDaSalvare) {
         const payload = {
           ...formData,
           data: d,
+          stato: statoDaImpostare,
           ore_straordinario: formData.stato === 'consuntivo' ? (formData.ore_straordinario || 0) : 0
         };
 
@@ -392,7 +442,11 @@ export default function Home() {
       }
 
       if (salvatiOk > 0) {
-        setStatusMessage({ type: 'success', text: `Registrazione effettuata per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!` });
+        const msgOk = statoDaImpostare === 'in_approvazione'
+          ? `Richiesta inviata in approvazione all'amministratore per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!`
+          : `Registrazione effettuata per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!`;
+
+        setStatusMessage({ type: 'success', text: msgOk });
         setFormData(prev => ({
           ...prev, cliente: '', progetto: '', note: '',
           ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, usaIntervallo: false
@@ -537,15 +591,41 @@ export default function Home() {
   const dipendentiVisibili = listaDipendenti;
 
   // CONTEGGI PER CRUSCOTTO COMPITI E AZIONI PENDENTI
+  const assenzeDaApprovareAdmin = storicoCompleto.filter(s => (isFerie(s) || isPermesso(s)) && s.stato === 'in_approvazione');
   const feedbackSenzaRisposta = feedbackList.filter(f => !f.risposta && !f.is_deleted);
   const mieAttivitaArretrato = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
   const mieAttivitaProssime = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
   const mieiFeedbackRisposti = feedbackList.filter(f => matchNomeDipendente(f.autore, currentUser?.nome) && f.risposta);
   const consuntiviTeamDaChiudere = storicoCompleto.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
 
+  // CALCOLO DISPONIBILITÀ MESE SUCCESSIVO
+  const nextMonthStr = getNextMonthStr();
+  const nomeMeseProssimoText = getNomeMeseText(nextMonthStr);
+  const giorniLavorativiProssimoMese = getGiorniLavorativiMese(nextMonthStr);
+  const oreLavorativeTotaliProssimoMese = giorniLavorativiProssimoMese * 8;
+
+  const riepilogoDisponibilitaProssimoMese = listaDipendenti.map(nomeDip => {
+    const eventiDipMese = storicoCompleto.filter(item => {
+      const dNorm = getNormalizedDate(item.data);
+      return dNorm && dNorm.startsWith(nextMonthStr) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
+    });
+
+    const oreImpegnateTotali = eventiDipMese.reduce((acc, curr) => acc + Number(curr.ore || 0) + Number(curr.ore_backoffice || 0) + Number(curr.ore_trasferta || 0), 0);
+    const oreDisponibiliResidue = Math.max(0, oreLavorativeTotaliProssimoMese - oreImpegnateTotali);
+    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
+
+    return {
+      nome: nomeDip,
+      oreImpegnateTotali,
+      oreDisponibiliResidue,
+      giorniDisponibiliResidui
+    };
+  });
+
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
     const isAssenzaFlag = isFerie(item) || isPermesso(item) || isMalattia(item);
+    const isInApprovazione = item.stato === 'in_approvazione';
     
     let icona = '💼';
     let etichetta = 'Cantiere';
@@ -570,6 +650,12 @@ export default function Home() {
             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border flex items-center gap-1 shadow-xs ${badgeStyle}`}>
               <span>{icona}</span> {etichetta}
             </span>
+
+            {isInApprovazione && (
+              <span className="text-[10px] font-black bg-amber-400 text-slate-950 px-2 py-0.5 rounded-lg border border-amber-500 shadow-xs animate-pulse">
+                ⏳ In Approvazione Admin
+              </span>
+            )}
 
             {Number(item.ore_straordinario || 0) > 0 && (
               <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300 shadow-xs">
@@ -610,7 +696,16 @@ export default function Home() {
         </div>
 
         <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0 items-center h-full">
-          {isEditable ? (
+          {isInApprovazione && currentUser?.ruolo === 'admin' ? (
+            <>
+              <button onClick={() => handleApprovaAssenza(item)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all whitespace-nowrap">
+                ✅ Approva
+              </button>
+              <button onClick={() => handleRifiutaAssenza(item)} className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all whitespace-nowrap">
+                ❌ Rifiuta
+              </button>
+            </>
+          ) : isEditable ? (
             <>
               <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">
                 {item.stato === 'consuntivo' ? '✏️ Modifica' : '✅ Conferma'}
@@ -684,7 +779,7 @@ export default function Home() {
         ))}
       </datalist>
 
-      {/* HEADER PRINCIPALE */}
+      {/* HEADER PRINCIPALE CON LINK A GOOGLE CALENDAR */}
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('home')}>
@@ -709,8 +804,21 @@ export default function Home() {
             
             <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
               <span>⏳ Gestione Attività</span>
-              {daAssegnareItems.length > 0 && <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
+              {(daAssegnareItems.length > 0 || (currentUser?.ruolo === 'admin' && assenzeDaApprovareAdmin.length > 0)) && (
+                <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">
+                  {daAssegnareItems.length + (currentUser?.ruolo === 'admin' ? assenzeDaApprovareAdmin.length : 0)}
+                </span>
+              )}
             </button>
+
+            <a 
+              href="https://calendar.google.com/" 
+              target="_blank" 
+              rel="noreferrer" 
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shadow-sm transition-all flex items-center space-x-1"
+            >
+              <span>📅 Google Calendar</span>
+            </a>
             
             <button onClick={() => setActiveTab('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
               <span>💡 Suggerimenti</span>
@@ -749,7 +857,7 @@ export default function Home() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
 
-        {/* TAB 0: HOME CON CRUSCOTTO OPERATIVO AZIONI & COMPITI */}
+        {/* TAB 0: HOME CON CRUSCOTTO OPERATIVO E VISIBILITÀ MESE SUCCESSIVO */}
         {activeTab === 'home' && (
           <div className="space-y-8">
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 rounded-3xl p-8 text-white shadow-xl border border-slate-800 relative overflow-hidden">
@@ -761,7 +869,7 @@ export default function Home() {
                   Bentornato, <span className="text-sky-400">{currentUser?.nome}</span>! 👋
                 </h1>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Accedi a tutte le risorse aziendali: registra le ore, proponi idee per l'app, consulta il Cloud Aruba o accedi al Server NAS UGREEN.
+                  Accedi a tutte le risorse aziendali: registra le ore, verifica i giorni liberi dei colleghi o apri Google Calendar.
                 </p>
               </div>
               <div className="absolute right-6 bottom-4 text-8xl opacity-10 pointer-events-none select-none">
@@ -769,30 +877,42 @@ export default function Home() {
               </div>
             </div>
 
-            {/* CRUSCOTTO OPERATIVO AZIONI E COMPITI PENDENTI */}
+            {/* CRUSCOTTO OPERATIVO AZIONI & COMPITI PENDENTI */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-md space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                   <span>🎯</span> Cruscotto Azioni &amp; Compiti Pendenti
                 </h3>
-                <span className="text-xs text-slate-400 font-semibold">Aggiornato in tempo reale</span>
+                <span className="text-xs text-slate-400 font-semibold">In tempo reale</span>
               </div>
 
               {currentUser?.ruolo === 'admin' ? (
                 /* PANNELLO PENDENZE ADMIN */
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div 
                     onClick={() => setActiveTab('programmati')} 
                     className="p-4 rounded-2xl border border-amber-200 bg-amber-50/50 hover:bg-amber-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-amber-900 uppercase">Da Assegnare</span>
-                      <span className="text-lg font-black text-amber-900 bg-amber-200/80 px-2.5 py-0.5 rounded-xl border border-amber-300">
+                      <span className="text-[11px] font-bold text-amber-900 uppercase">Da Assegnare</span>
+                      <span className="text-base font-black text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-lg border border-amber-300">
                         {daAssegnareItems.length}
                       </span>
                     </div>
-                    <p className="text-xs text-amber-800 font-medium">Interventi da associare ad un tecnico del team.</p>
-                    <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">Vai alle Cartelle ➔</span>
+                    <p className="text-[11px] text-amber-800 font-medium">Interventi da associare ad un tecnico.</p>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab('programmati')} 
+                    className="p-4 rounded-2xl border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-purple-900 uppercase">Approvazione Ferie</span>
+                      <span className="text-base font-black text-purple-900 bg-purple-200/80 px-2 py-0.5 rounded-lg border border-purple-300">
+                        {assenzeDaApprovareAdmin.length}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-purple-800 font-medium">Richieste ferie/permessi da confermare.</p>
                   </div>
 
                   <div 
@@ -800,27 +920,25 @@ export default function Home() {
                     className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-rose-900 uppercase">Consuntivi Team</span>
-                      <span className="text-lg font-black text-rose-900 bg-rose-200/80 px-2.5 py-0.5 rounded-xl border border-rose-300">
+                      <span className="text-[11px] font-bold text-rose-900 uppercase">Consuntivi Scaduti</span>
+                      <span className="text-base font-black text-rose-900 bg-rose-200/80 px-2 py-0.5 rounded-lg border border-rose-300">
                         {consuntiviTeamDaChiudere.length}
                       </span>
                     </div>
-                    <p className="text-xs text-rose-800 font-medium">Schede ore scadute non ancora consuntivate dal team.</p>
-                    <span className="text-[11px] font-bold text-rose-900 flex items-center gap-1">Verifica Situazione ➔</span>
+                    <p className="text-[11px] text-rose-800 font-medium">Schede ore non ancora consuntivate dal team.</p>
                   </div>
 
                   <div 
                     onClick={() => setActiveTab('feedback')} 
-                    className="p-4 rounded-2xl border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 cursor-pointer transition-all space-y-2"
+                    className="p-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100/50 cursor-pointer transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-purple-900 uppercase">Suggerimenti da Leggere</span>
-                      <span className="text-lg font-black text-purple-900 bg-purple-200/80 px-2.5 py-0.5 rounded-xl border border-purple-300">
+                      <span className="text-[11px] font-bold text-indigo-900 uppercase">Suggerimenti Nuovi</span>
+                      <span className="text-base font-black text-indigo-900 bg-indigo-200/80 px-2 py-0.5 rounded-lg border border-indigo-300">
                         {feedbackSenzaRisposta.length}
                       </span>
                     </div>
-                    <p className="text-xs text-purple-800 font-medium">Idee dei dipendenti in attesa di risposta dalla direzione.</p>
-                    <span className="text-[11px] font-bold text-purple-900 flex items-center gap-1">Rispondi Ora ➔</span>
+                    <p className="text-[11px] text-indigo-800 font-medium">Idee dipendenti in attesa di risposta.</p>
                   </div>
                 </div>
               ) : (
@@ -836,8 +954,7 @@ export default function Home() {
                         {mieAttivitaArretrato.length}
                       </span>
                     </div>
-                    <p className="text-xs text-rose-800 font-medium">Tue attività passate in attesa di conferma o modifica ore.</p>
-                    <span className="text-[11px] font-bold text-rose-900 flex items-center gap-1">Chiudi Consuntivi ➔</span>
+                    <p className="text-xs text-rose-800 font-medium">Tue attività passate da confermare.</p>
                   </div>
 
                   <div 
@@ -850,8 +967,7 @@ export default function Home() {
                         {mieAttivitaProssime.length}
                       </span>
                     </div>
-                    <p className="text-xs text-sky-800 font-medium">Attività e cantieri già programmati per i prossimi giorni.</p>
-                    <span className="text-[11px] font-bold text-sky-900 flex items-center gap-1">Vedi Calendario ➔</span>
+                    <p className="text-xs text-sky-800 font-medium">Attività e cantieri già programmati.</p>
                   </div>
 
                   <div 
@@ -864,13 +980,53 @@ export default function Home() {
                         {mieiFeedbackRisposti.length}
                       </span>
                     </div>
-                    <p className="text-xs text-emerald-800 font-medium">Risposte ricevute dalla direzione ai tuoi suggerimenti.</p>
-                    <span className="text-[11px] font-bold text-emerald-900 flex items-center gap-1">Leggi Risposte ➔</span>
+                    <p className="text-xs text-emerald-800 font-medium">Risposte ai tuoi suggerimenti.</p>
                   </div>
                 </div>
               )}
             </div>
 
+            {/* QUADRO VISIBILITÀ GIORNI LIBERI MESE SUCCESSIVO (PER TUTTI) */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-md space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                    <span>🗓️</span> Disponibilità Team - Mese Successivo ({nomeMeseProssimoText})
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Capienza teorica: <strong className="text-slate-800">{giorniLavorativiProssimoMese} giorni lavorativi ({oreLavorativeTotaliProssimoMese} ore)</strong>
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-xl border border-sky-200">
+                  Visibile a tutti i collaboratori
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {riepilogoDisponibilitaProssimoMese.map(dip => {
+                  const haLibero = Number(dip.giorniDisponibiliResidui) > 0;
+                  return (
+                    <div key={dip.nome} className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-2 text-center">
+                      <div className="font-bold text-xs text-slate-900 truncate flex items-center justify-center gap-1">
+                        <span>👤</span> {dip.nome}
+                      </div>
+                      
+                      <div className={`py-1.5 px-2 rounded-xl text-xs font-black shadow-2xs ${
+                        haLibero ? 'bg-emerald-500 text-white' : 'bg-rose-600 text-white'
+                      }`}>
+                        {dip.giorniDisponibiliResidui} gg liberi
+                      </div>
+
+                      <div className="text-[10px] font-semibold text-slate-500">
+                        {dip.oreDisponibiliResidue}h libere su {oreLavorativeTotaliProssimoMese}h
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* GRIGLIA PULSANTI DI NAVIGAZIONE */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
@@ -906,14 +1062,14 @@ export default function Home() {
                 <span className="text-xs font-bold text-purple-600 flex items-center gap-1">Lascia un'idea ➔</span>
               </div>
 
-              <div onClick={() => setActiveTab('documenti')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
-                  📂
+              <a href="https://calendar.google.com/" target="_blank" rel="noreferrer" className="bg-gradient-to-br from-amber-500 to-amber-700 text-slate-950 p-6 rounded-3xl shadow-md hover:shadow-xl transition-all cursor-pointer group border border-amber-400 block">
+                <div className="w-12 h-12 bg-white/20 text-slate-950 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
+                  📅
                 </div>
-                <h3 className="font-bold text-slate-900 text-base mb-1">Cloud Aruba</h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">Consulta tavole PDF, documenti ed Excel da Nextcloud Aruba.</p>
-                <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">Esplora Aruba ➔</span>
-              </div>
+                <h3 className="font-bold text-slate-950 text-base mb-1">Google Calendar</h3>
+                <p className="text-xs text-slate-900 leading-relaxed mb-4">Apri direttamente l'applicazione Google Calendar aziendale.</p>
+                <span className="text-xs font-extrabold text-slate-950 flex items-center gap-1">Apri Calendar ➔</span>
+              </a>
             </div>
           </div>
         )}
