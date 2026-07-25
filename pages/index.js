@@ -80,7 +80,7 @@ export default function Home() {
 
   // --- STATI PER REPORTISTICA BUSTE PAGA / FATTURAZIONE ---
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
-  const [subTabReport, setSubTabReport] = useState('paghe'); // 'paghe' | 'fatturazione'
+  const [subTabReport, setSubTabReport] = useState('paghe');
   const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
 
   const [modalItem, setModalItem] = useState(null);
@@ -157,7 +157,7 @@ export default function Home() {
       }
     } catch (err) {
       setErrorNC('Impossibile contattare il server Nextcloud');
-    } fontally {
+    } finally {
       setLoadingNC(false);
     }
   };
@@ -337,7 +337,6 @@ export default function Home() {
     setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser?.nome : item.dipendente);
   };
 
-  // --- ESPORTAZIONI CSV DEDICATE (PAge & FATTURAZIONE) ---
   const exportCSVPaghe = () => {
     let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore Impegnate\n";
     
@@ -1013,7 +1012,6 @@ export default function Home() {
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="space-y-6">
             
-            {/* BARRA SUPERIORE CONTROLLO E SCELTA REPORT */}
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
@@ -1070,7 +1068,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* SEZIONE SUB-TAB 1: REPORT BUSTE PAGA */}
+            {/* SUB-TAB 1: REPORT BUSTE PAGA */}
             {subTabReport === 'paghe' && (
               <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
                 <div className="border-b border-slate-100 pb-3">
@@ -1128,7 +1126,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* SEZIONE SUB-TAB 2: REPORT FATTURAZIONE CLIENTE */}
+            {/* SUB-TAB 2: REPORT FATTURAZIONE CLIENTE */}
             {subTabReport === 'fatturazione' && (
               <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
