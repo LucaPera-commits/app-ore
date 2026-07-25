@@ -191,7 +191,7 @@ function HomeContent() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   
-  // --- STATI NAVIGAZIONE UNIFICATA (SCHEDE + CARTELLE FILE) ---
+  // --- STATI NAVIGAZIONE UNIFICATA ---
   const [activeTab, setActiveTab] = useState('home');
   const [pathNC, setPathNC] = useState('');
   const [navHistory, setNavHistory] = useState([]);
@@ -974,13 +974,13 @@ function HomeContent() {
     );
   }
 
-  // RENDER BREADCRUMBS IN STILE WINDOWS PER ARUBA NEXTCLOUD
+  // BREADCRUMBS ARUBA NEXTCLOUD
   const renderBreadcrumbs = () => {
     const parts = pathNC ? pathNC.split('/').filter(Boolean) : [];
     let accumulatedPath = '';
 
     return (
-      <div className="flex flex-wrap items-center space-x-1.5 text-xs font-bold text-slate-700 truncate">
+      <div className="flex flex-wrap items-center space-x-1.5 text-xs font-bold text-slate-700 truncate min-w-0 flex-1">
         <button 
           onClick={() => navigateTo('documenti', '')} 
           className={`hover:text-sky-600 cursor-pointer ${parts.length === 0 ? 'text-sky-700 font-black' : 'underline'}`}
@@ -2061,7 +2061,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON PULSANTI VISUALIZZA / SCARICA */}
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON PULSANTI VISUALIZZA / SCARICA VISIBILI E FISSI */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -2086,14 +2086,14 @@ function HomeContent() {
                 </a>
               </div>
 
-              {/* BARRA PERCORSO E PULSANTE CARTELLA SUPERIORE IN STILE WINDOWS */}
+              {/* BARRA PERCORSO E PULSANTE CARTELLA SUPERIORE */}
               <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 {renderBreadcrumbs()}
 
                 {pathNC && (
                   <button 
                     onClick={handleCartellaSuperioreNC}
-                    className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-1 cursor-pointer"
+                    className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-1 cursor-pointer flex-shrink-0"
                   >
                     <span>⬆️ Cartella Superiore</span>
                   </button>
@@ -2107,42 +2107,49 @@ function HomeContent() {
                 </form>
               </div>
 
-              {/* ELENCO FILE CON TASTI VISUALIZZA / SCARICA DEDICATI */}
+              {/* ELENCO FILE CON GARANZIA DI VISIBILITÀ PULSANTI */}
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-                {safeRisultatiNC.map((item, idx) => (
-                  <div 
-                    key={idx} 
-                    onClick={() => {
-                      if (item?.isFolder) handleApriCartella(item.percorso);
-                      else window.open(`/api/download?path=${encodeURIComponent(item?.percorso || '')}`, '_blank');
-                    }}
-                    className="p-3.5 hover:bg-sky-50/80 flex items-center justify-between gap-4 cursor-pointer transition-all group"
-                  >
-                    <div className="flex items-center space-x-3 truncate">
-                      <span className="text-2xl">{item?.isFolder ? '📁' : '📄'}</span>
-                      <span className="font-bold text-sm text-slate-800 truncate group-hover:text-sky-700">{toText(item?.nome)}</span>
-                    </div>
+                {safeRisultatiNC.map((item, idx) => {
+                  const isDir = item?.isFolder === true || item?.isFolder === 'true' || item?.type === 'dir' || item?.type === 'folder';
 
-                    {!item?.isFolder && (
-                      <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
-                        <a 
-                          href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}`} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="bg-sky-100 text-sky-800 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
-                        >
-                          👁️ Visualizza
-                        </a>
-                        <a 
-                          href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} 
-                          className="bg-slate-100 text-slate-700 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
-                        >
-                          📥 Scarica
-                        </a>
+                  return (
+                    <div 
+                      key={idx} 
+                      onClick={() => {
+                        if (isDir) {
+                          handleApriCartella(item.percorso);
+                        } else {
+                          window.open(`/api/download?path=${encodeURIComponent(item?.percorso || '')}`, '_blank');
+                        }
+                      }}
+                      className="p-3.5 hover:bg-sky-50/80 flex items-center justify-between gap-3 cursor-pointer transition-all group"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0 flex-1">
+                        <span className="text-2xl flex-shrink-0">{isDir ? '📁' : '📄'}</span>
+                        <span className="font-bold text-sm text-slate-800 truncate group-hover:text-sky-700">{toText(item?.nome)}</span>
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {!isDir && (
+                        <div className="flex items-center space-x-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          <a 
+                            href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="bg-sky-100 text-sky-800 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs"
+                          >
+                            👁️ Visualizza
+                          </a>
+                          <a 
+                            href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} 
+                            className="bg-slate-100 text-slate-700 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs"
+                          >
+                            📥 Scarica
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
