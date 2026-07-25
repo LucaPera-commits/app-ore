@@ -45,9 +45,13 @@ const getNextMonthStr = () => {
 
 const getNomeMeseText = (annoMeseStr) => {
   if (!annoMeseStr) return '';
-  const [year, month] = annoMeseStr.split('-').map(Number);
-  const date = new Date(year, month - 1, 1);
-  return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  try {
+    const [year, month] = annoMeseStr.split('-').map(Number);
+    const date = new Date(year, month - 1, 1);
+    return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  } catch (e) {
+    return String(annoMeseStr);
+  }
 };
 
 const getNormalizedDate = (d) => {
@@ -70,6 +74,12 @@ const formatDateSafely = (dateVal) => {
   }
 };
 
+const toText = (val) => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+};
+
 const renderStars = (rating) => {
   const parsed = Math.floor(Number(rating));
   const count = isNaN(parsed) || parsed < 1 ? 5 : Math.min(5, parsed);
@@ -78,15 +88,19 @@ const renderStars = (rating) => {
 
 const getGiorniLavorativiMese = (annoMeseStr) => {
   if (!annoMeseStr) return 22;
-  const [year, month] = annoMeseStr.split('-').map(Number);
-  let count = 0;
-  const date = new Date(year, month - 1, 1);
-  while (date.getMonth() === month - 1) {
-    const day = date.getDay();
-    if (day !== 0 && day !== 6) count++;
-    date.setDate(date.getDate() + 1);
+  try {
+    const [year, month] = annoMeseStr.split('-').map(Number);
+    let count = 0;
+    const date = new Date(year, month - 1, 1);
+    while (date.getMonth() === month - 1) {
+      const day = date.getDay();
+      if (day !== 0 && day !== 6) count++;
+      date.setDate(date.getDate() + 1);
+    }
+    return count;
+  } catch (e) {
+    return 22;
   }
-  return count;
 };
 
 export default function Home() {
@@ -241,7 +255,6 @@ export default function Home() {
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
 
-  // MARCA COME LETTI SOLO SE CI SONO NUOVI ELEMENTI DA TRACCIARE
   useEffect(() => {
     if (activeTab === 'feedback' && safeFeedbackList.length > 0) {
       const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
@@ -363,7 +376,7 @@ export default function Home() {
 
   const handleRifiutaAssenza = async (item) => {
     if (!item) return;
-    if (!confirm(`Vuoi RIFIUTARE la richiesta di ${item.progetto} di ${item.dipendente}?`)) return;
+    if (!confirm(`Vuoi RIFIUTARE la richiesta di ${toText(item.progetto)} di ${toText(item.dipendente)}?`)) return;
     setLoading(true);
     try {
       const res = await fetch('/api/gestisci', {
@@ -570,10 +583,10 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
-  const isFerie = (item) => (item?.progetto || '').toLowerCase().includes('ferie');
-  const isPermesso = (item) => (item?.progetto || '').toLowerCase().includes('permesso') || (item?.progetto || '').toLowerCase().includes('rol');
-  const isMalattia = (item) => (item?.progetto || '').toLowerCase().includes('malattia');
-  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item?.cliente || '').toLowerCase().includes('assenze');
+  const isFerie = (item) => toText(item?.progetto).toLowerCase().includes('ferie');
+  const isPermesso = (item) => toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol');
+  const isMalattia = (item) => toText(item?.progetto).toLowerCase().includes('malattia');
+  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze');
 
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true; 
@@ -597,7 +610,7 @@ export default function Home() {
   const handleElimina = async (item) => {
     if (!item) return;
     if (!canEditItem(item)) return alert("Puoi annullare solo le tue attività.");
-    if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
+    if (!confirm(`Vuoi annullare l'attività per "${toText(item.cliente)}"?`)) return;
     setLoading(true);
     try {
       const res = await fetch('/api/gestisci', {
@@ -663,8 +676,8 @@ export default function Home() {
       return inMese && matchCliente && item.stato === 'consuntivo' && !isAssenza(item);
     });
 
-    consuntivi.sort((a, b) => (a.cliente || '').localeCompare(b.cliente || '')).forEach(row => {
-      csv += `"${row.cliente}";"${row.progetto}";"${row.dipendente}";"${getNormalizedDate(row.data)}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${row.ore_straordinario || 0}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+    [...consuntivi].sort((a, b) => toText(a.cliente).localeCompare(toText(b.cliente))).forEach(row => {
+      csv += `"${toText(row.cliente)}";"${toText(row.progetto)}";"${toText(row.dipendente)}";"${getNormalizedDate(row.data)}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${row.ore_straordinario || 0}";"${toText(row.note).replace(/"/g, '""')}"\n`;
     });
 
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
@@ -686,8 +699,8 @@ export default function Home() {
 
   // CONTEGGI PER CRUSCOTTO COMPITI E AZIONI PENDENTI
   const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
-  const mieAttivitaArretrato = safeStorico.filter(s => s && matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
-  const mieAttivitaProssime = safeStorico.filter(s => s && matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
+  const mieAttivitaArretrato = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
+  const mieAttivitaProssime = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
   const consuntiviTeamDaChiudere = safeStorico.filter(s => s && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
 
   // CALCOLO DISPONIBILITÀ MESE SUCCESSIVO
@@ -714,6 +727,8 @@ export default function Home() {
       giorniDisponibiliResidui
     };
   });
+
+  const safeRisultatiNC = Array.isArray(risultatiNC) ? risultatiNC : [];
 
   const renderRigaAttivita = (item, colorTheme, idx = 0) => {
     if (!item) return null;
@@ -760,16 +775,16 @@ export default function Home() {
           </div>
           
           <div className="font-bold text-slate-900 text-sm truncate">
-            {isAssenzaFlag ? item.progetto : (item.cliente || "Senza Cliente")}
+            {isAssenzaFlag ? toText(item.progetto) : (toText(item.cliente) || "Senza Cliente")}
           </div>
           
           {!isAssenzaFlag && (
-            <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
+            <div className="text-xs text-slate-600 truncate max-w-xs">{toText(item.progetto) || "Nessun dettaglio"}</div>
           )}
           
           {item.note && (
             <div className="text-[11px] text-slate-500 italic mt-1 bg-white p-1.5 rounded-lg border border-slate-100 max-w-xs truncate shadow-xs">
-              📝 {item.note}
+              📝 {toText(item.note)}
             </div>
           )}
           
@@ -1366,15 +1381,15 @@ export default function Home() {
                     <div key={item?.id || `app_${idx}`} className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
-                          <span className="font-extrabold text-sm text-amber-300">👤 {item.dipendente}</span>
+                          <span className="font-extrabold text-sm text-amber-300">👤 {toText(item.dipendente)}</span>
                           <span className="text-xs bg-white/20 text-white font-bold px-2.5 py-0.5 rounded-lg border border-white/10">
                             📅 {getNormalizedDate(item.data)}
                           </span>
                           <span className="text-xs bg-purple-500/40 text-purple-200 font-bold px-2 py-0.5 rounded-lg border border-purple-400/30">
-                            {item.progetto} ({item.ore}h)
+                            {toText(item.progetto)} ({item.ore}h)
                           </span>
                         </div>
-                        {item.note && <p className="text-xs text-slate-300 italic">📝 {item.note}</p>}
+                        {item.note && <p className="text-xs text-slate-300 italic">📝 {toText(item.note)}</p>}
                       </div>
 
                       <div className="flex items-center space-x-2">
@@ -1594,7 +1609,7 @@ export default function Home() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_concluse`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {concluseConsuntivate.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna attività conclusa.</p> : concluseConsuntivate.sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => renderRigaAttivita(item, 'emerald', idx))}
+                              {concluseConsuntivate.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna attività conclusa.</p> : [...concluseConsuntivate].sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => renderRigaAttivita(item, 'emerald', idx))}
                             </div>
                           )}
                         </div>
@@ -1653,7 +1668,7 @@ export default function Home() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Autore</label>
-                    <input type="text" readOnly value={currentUser?.nome || ''} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-medium text-sm cursor-not-allowed" />
+                    <input type="text" readOnly value={toText(currentUser?.nome)} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-medium text-sm cursor-not-allowed" />
                   </div>
 
                   <div>
@@ -1756,9 +1771,9 @@ export default function Home() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center space-x-2">
-                            <span className="font-bold text-xs text-slate-900">👤 {fb.autore || 'Anonimo'}</span>
+                            <span className="font-bold text-xs text-slate-900">👤 {toText(fb.autore) || 'Anonimo'}</span>
                             <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-lg border border-purple-200">
-                              {fb.categoria || 'Suggerimento'}
+                              {toText(fb.categoria) || 'Suggerimento'}
                             </span>
                             {fb.is_deleted && (
                               <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded-lg shadow-2xs">
@@ -1778,7 +1793,7 @@ export default function Home() {
                         </div>
 
                         <p className="text-xs text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">
-                          {fb.messaggio}
+                          {toText(fb.messaggio)}
                         </p>
 
                         {fb.risposta && (
@@ -1794,7 +1809,7 @@ export default function Home() {
                               )}
                             </div>
                             <p className="text-xs text-sky-950 font-semibold leading-relaxed">
-                              {fb.risposta}
+                              {toText(fb.risposta)}
                             </p>
                           </div>
                         )}
@@ -1805,7 +1820,7 @@ export default function Home() {
                               <button
                                 onClick={() => {
                                   setRispostaApertaId(rispostaApertaId === fb.id ? null : fb.id);
-                                  setTestoRispostaAdmin(fb.risposta || '');
+                                  setTestoRispostaAdmin(toText(fb.risposta));
                                 }}
                                 className="text-[11px] font-bold bg-sky-100 hover:bg-sky-200 text-sky-800 px-3 py-1 rounded-lg border border-sky-300 transition-all"
                               >
@@ -1884,14 +1899,14 @@ export default function Home() {
               </div>
 
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-                {risultatiNC.map((item, idx) => (
+                {safeRisultatiNC.map((item, idx) => (
                   <div key={idx} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-4">
-                    <div className="flex items-center space-x-3 truncate cursor-pointer" onClick={() => item.isFolder && handleApriCartella(item.percorso)}>
-                      <span className="text-2xl">{item.isFolder ? '📁' : '📄'}</span>
-                      <span className="font-bold text-sm text-slate-800 truncate">{item.nome}</span>
+                    <div className="flex items-center space-x-3 truncate cursor-pointer" onClick={() => item?.isFolder && handleApriCartella(item.percorso)}>
+                      <span className="text-2xl">{item?.isFolder ? '📁' : '📄'}</span>
+                      <span className="font-bold text-sm text-slate-800 truncate">{toText(item?.nome)}</span>
                     </div>
-                    {!item.isFolder && (
-                      <a href={`/api/download?path=${encodeURIComponent(item.percorso)}&forceDownload=true`} className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold">📥 Scarica</a>
+                    {!item?.isFolder && (
+                      <a href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold">📥 Scarica</a>
                     )}
                   </div>
                 ))}
@@ -2070,7 +2085,7 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
-                      {safeStorico
+                      {[...safeStorico]
                         .filter(item => {
                           if (!item) return false;
                           const dNorm = getNormalizedDate(item.data);
@@ -2082,9 +2097,9 @@ export default function Home() {
                         .map((item, idx) => (
                           <tr key={item.id || `fat_${idx}`} className="hover:bg-slate-50">
                             <td className="py-2.5 px-3 text-slate-500 font-bold">{getNormalizedDate(item.data)}</td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{item.cliente}</td>
-                            <td className="py-2.5 px-3 text-slate-700">{item.progetto}</td>
-                            <td className="py-2.5 px-3 font-semibold text-slate-800">{item.dipendente}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{toText(item.cliente)}</td>
+                            <td className="py-2.5 px-3 text-slate-700">{toText(item.progetto)}</td>
+                            <td className="py-2.5 px-3 font-semibold text-slate-800">{toText(item.dipendente)}</td>
                             <td className="py-2.5 px-3 text-center font-bold text-slate-900">{item.ore || 0} h</td>
                             <td className="py-2.5 px-3 text-center font-bold text-sky-700">{item.ore_backoffice || 0} h</td>
                             <td className="py-2.5 px-3 text-center font-bold text-purple-700">{item.ore_trasferta || 0} h</td>
@@ -2143,11 +2158,11 @@ export default function Home() {
                                       <div className="flex justify-between items-start">
                                         <div>
                                           <div className="text-xs font-bold text-amber-900">{getNormalizedDate(item.data)}</div>
-                                          <div className="text-[10px] font-bold text-amber-700">{item.progetto} ({item.ore}h)</div>
+                                          <div className="text-[10px] font-bold text-amber-700">{toText(item.progetto)} ({item.ore}h)</div>
                                         </div>
                                         <span className="text-[9px] uppercase font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md">In Attesa</span>
                                       </div>
-                                      {item.note && <p className="text-[10px] text-amber-800 italic bg-amber-100/50 p-1.5 rounded border border-amber-100">📝 {item.note}</p>}
+                                      {item.note && <p className="text-[10px] text-amber-800 italic bg-amber-100/50 p-1.5 rounded border border-amber-100">📝 {toText(item.note)}</p>}
                                       <div className="flex space-x-2 mt-1">
                                         <button onClick={() => handleApprovaAssenza(item)} className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-bold rounded-lg shadow-sm transition-all">✅ Approva</button>
                                         <button onClick={() => handleRifiutaAssenza(item)} className="flex-1 py-1.5 bg-rose-500 hover:bg-rose-400 text-white text-[10px] font-bold rounded-lg shadow-sm transition-all">❌ Rifiuta</button>
@@ -2165,12 +2180,12 @@ export default function Home() {
                               <p className="text-xs text-slate-400 italic">Nessuna ferie approvata in questo mese.</p>
                             ) : (
                               <div className="space-y-2">
-                                {approvate.sort((a,b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => (
+                                {[...approvate].sort((a,b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => (
                                   <div key={item.id || `app_ok_${idx}`} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center">
                                       <div className="flex flex-col">
                                         <span className="text-xs font-bold text-emerald-900">{getNormalizedDate(item.data)}</span>
-                                        <span className="text-[10px] font-bold text-emerald-700">{item.progetto} ({item.ore}h)</span>
-                                        {item.note && <span className="text-[9px] text-emerald-600 italic mt-0.5">📝 {item.note}</span>}
+                                        <span className="text-[10px] font-bold text-emerald-700">{toText(item.progetto)} ({item.ore}h)</span>
+                                        {item.note && <span className="text-[9px] text-emerald-600 italic mt-0.5">📝 {toText(item.note)}</span>}
                                       </div>
                                       <span className="text-[9px] uppercase font-black bg-emerald-200 text-emerald-900 px-2 py-1 rounded-md">
                                         {item.stato === 'consuntivo' ? 'Conclusa' : 'Pianificata'}
@@ -2216,7 +2231,7 @@ export default function Home() {
               {modalItem.stato === 'consuntivo' ? 'Modifica Dati Intervento' : 'Conferma Consuntivo'}
             </h3>
             <p className="text-xs text-slate-500">
-              Stai modificando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong>.
+              Stai modificando l'attività per <strong className="text-slate-800">{toText(modalItem.cliente)}</strong>.
             </p>
 
             <div className="grid grid-cols-2 gap-4">
