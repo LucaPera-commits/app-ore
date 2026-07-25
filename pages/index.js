@@ -34,9 +34,13 @@ const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
 
 const getNextMonthStr = () => {
   const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + 1);
-  return d.toISOString().slice(0, 7);
+  let year = d.getFullYear();
+  let month = d.getMonth() + 2;
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
 };
 
 const getNomeMeseText = (annoMeseStr) => {
@@ -228,28 +232,39 @@ export default function Home() {
     }
   }, [currentUser, activeTab, filtroArchivioAdmin, isMounted]);
 
-  const getFeedbackKey = (fb) => fb ? (fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`) : '';
-
-  useEffect(() => {
-    if (activeTab === 'feedback' && Array.isArray(feedbackList) && feedbackList.length > 0) {
-      const keysToMark = feedbackList.map(getFeedbackKey).filter(Boolean);
-      setReadFeedbackIds(prev => {
-        const currentArr = Array.isArray(prev) ? prev : [];
-        const nextSet = new Set([...currentArr, ...keysToMark]);
-        const nextArr = Array.from(nextSet);
-        localStorage.setItem('bw_read_feedbacks', JSON.stringify(nextArr));
-        return nextArr;
-      });
-    }
-  }, [activeTab, feedbackList]);
+  const getFeedbackKey = (fb) => {
+    if (!fb || !fb.id) return null;
+    return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
+  };
 
   const safeReadIds = Array.isArray(readFeedbackIds) ? readFeedbackIds : [];
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
 
+  // MARCA COME LETTI SOLO SE CI SONO NUOVI ELEMENTI DA TRACCIARE
+  useEffect(() => {
+    if (activeTab === 'feedback' && safeFeedbackList.length > 0) {
+      const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
+      if (keysToMark.length === 0) return;
+
+      setReadFeedbackIds(prev => {
+        const currentArr = Array.isArray(prev) ? prev : [];
+        const missingKeys = keysToMark.filter(k => !currentArr.includes(k));
+        if (missingKeys.length === 0) return currentArr;
+
+        const updated = [...currentArr, ...missingKeys];
+        try {
+          localStorage.setItem('bw_read_feedbacks', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+    }
+  }, [activeTab, safeFeedbackList]);
+
   const unreadFeedbackCount = safeFeedbackList.filter(fb => {
     if (!fb || fb.is_deleted) return false;
     const key = getFeedbackKey(fb);
+    if (!key) return false;
     
     if (currentUser?.ruolo === 'admin') {
       return !fb.risposta && !safeReadIds.includes(key);
@@ -700,7 +715,7 @@ export default function Home() {
     };
   });
 
-  const renderRigaAttivita = (item, colorTheme) => {
+  const renderRigaAttivita = (item, colorTheme, idx = 0) => {
     if (!item) return null;
     const normDate = getNormalizedDate(item.data);
     const isAssenzaFlag = isFerie(item) || isPermesso(item) || isMalattia(item);
@@ -717,9 +732,10 @@ export default function Home() {
     else if (Number(item.ore_backoffice || 0) > 0) { icona = '🖥️'; etichetta = 'Backoffice'; badgeStyle = 'bg-sky-100 text-sky-800 border-sky-300'; }
 
     const isEditable = canEditItem(item);
+    const keyVal = item.id || item.calendar_event_id || `att_${idx}`;
 
     return (
-      <div key={item.id || item.calendar_event_id || Math.random()} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm`}>
+      <div key={keyVal} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm`}>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 shadow-xs">
@@ -1347,7 +1363,7 @@ export default function Home() {
 
                 <div className="space-y-3">
                   {assenzeDaApprovareAdmin.map((item, idx) => (
-                    <div key={item.id || idx} className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+                    <div key={item?.id || `app_${idx}`} className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
                           <span className="font-extrabold text-sm text-amber-300">👤 {item.dipendente}</span>
@@ -1472,7 +1488,7 @@ export default function Home() {
                     {daAssegnareItems.length === 0 ? (
                       <p className="text-xs text-amber-700 font-semibold py-2">✅ Tutte le attività sono state assegnate ai dipendenti!</p>
                     ) : (
-                      daAssegnareItems.map(item => renderRigaAttivita(item, 'amber'))
+                      daAssegnareItems.map((item, idx) => renderRigaAttivita(item, 'amber', idx))
                     )}
                   </div>
                 )}
@@ -1533,7 +1549,7 @@ export default function Home() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_lavoro`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {interventiLavoro.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun intervento in programma.</p> : interventiLavoro.map(item => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky'))}
+                              {interventiLavoro.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun intervento in programma.</p> : interventiLavoro.map((item, idx) => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky', idx))}
                             </div>
                           )}
                         </div>
@@ -1548,7 +1564,7 @@ export default function Home() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_backoffice`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {backofficeProgetti.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun backoffice programmato.</p> : backofficeProgetti.map(item => renderRigaAttivita(item, 'indigo'))}
+                              {backofficeProgetti.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun backoffice programmato.</p> : backofficeProgetti.map((item, idx) => renderRigaAttivita(item, 'indigo', idx))}
                             </div>
                           )}
                         </div>
@@ -1563,7 +1579,7 @@ export default function Home() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_assenze`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {assenzeGiustificativi.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna assenza programmata.</p> : assenzeGiustificativi.map(item => renderRigaAttivita(item, 'purple'))}
+                              {assenzeGiustificativi.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna assenza programmata.</p> : assenzeGiustificativi.map((item, idx) => renderRigaAttivita(item, 'purple', idx))}
                             </div>
                           )}
                         </div>
@@ -1578,7 +1594,7 @@ export default function Home() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_concluse`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {concluseConsuntivate.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna attività conclusa.</p> : concluseConsuntivate.sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map(item => renderRigaAttivita(item, 'emerald'))}
+                              {concluseConsuntivate.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna attività conclusa.</p> : concluseConsuntivate.sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => renderRigaAttivita(item, 'emerald', idx))}
                             </div>
                           )}
                         </div>
@@ -1731,7 +1747,7 @@ export default function Home() {
                     if (!fb) return null;
                     return (
                       <div 
-                        key={fb.id || idx} 
+                        key={fb.id || `fb_${idx}`} 
                         className={`p-4 rounded-2xl border transition-all space-y-3 ${
                           fb.is_deleted 
                             ? 'bg-rose-50/40 border-rose-200 opacity-75' 
@@ -2064,7 +2080,7 @@ export default function Home() {
                         })
                         .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
                         .map((item, idx) => (
-                          <tr key={item.id || idx} className="hover:bg-slate-50">
+                          <tr key={item.id || `fat_${idx}`} className="hover:bg-slate-50">
                             <td className="py-2.5 px-3 text-slate-500 font-bold">{getNormalizedDate(item.data)}</td>
                             <td className="py-2.5 px-3 font-bold text-slate-900">{item.cliente}</td>
                             <td className="py-2.5 px-3 text-slate-700">{item.progetto}</td>
@@ -2123,7 +2139,7 @@ export default function Home() {
                             ) : (
                               <div className="space-y-2">
                                 {inApprovazione.map((item, idx) => (
-                                  <div key={item.id || idx} className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col gap-2">
+                                  <div key={item.id || `app_sub_${idx}`} className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col gap-2">
                                       <div className="flex justify-between items-start">
                                         <div>
                                           <div className="text-xs font-bold text-amber-900">{getNormalizedDate(item.data)}</div>
@@ -2150,7 +2166,7 @@ export default function Home() {
                             ) : (
                               <div className="space-y-2">
                                 {approvate.sort((a,b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => (
-                                  <div key={item.id || idx} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center">
+                                  <div key={item.id || `app_ok_${idx}`} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center">
                                       <div className="flex flex-col">
                                         <span className="text-xs font-bold text-emerald-900">{getNormalizedDate(item.data)}</span>
                                         <span className="text-[10px] font-bold text-emerald-700">{item.progetto} ({item.ore}h)</span>
