@@ -71,17 +71,20 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
-  // --- STATI SUGGERIMENTI E FEEDBACK ---
+  // --- STATI SUGGERIMENTI & MODERAZIONE ---
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [filtroArchivioAdmin, setFiltroArchivioAdmin] = useState(false); // false = solo attivi, true = con archiviati
   const [feedbackForm, setFeedbackForm] = useState({
     categoria: '💡 Nuova Funzionalità',
     valutazione: 5,
     messaggio: ''
   });
   const [feedbackStatus, setFeedbackStatus] = useState(null);
+  const [rispostaApertaId, setRispostaApertaId] = useState(null);
+  const [testoRispostaAdmin, setTestoRispostaAdmin] = useState('');
 
-  // --- STATI APERTURA/CHIUSURA CARTELE E SOTTO-CARTELE ---
+  // --- STATI CARTELE ---
   const [cartelleAperte, setCartelleAperte] = useState({});
   const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
 
@@ -93,7 +96,7 @@ export default function Home() {
     setSottoCartelleAperte(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // --- STATI PER ESPLORATORE DOCUMENTI NEXTCLOUD ARUBA ---
+  // --- STATI NEXTCLOUD ARUBA ---
   const [pathNC, setPathNC] = useState('');
   const [searchQueryNC, setSearchQueryNC] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
@@ -101,7 +104,7 @@ export default function Home() {
   const [errorNC, setErrorNC] = useState(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
 
-  // --- STATI PER REPORTISTICA BUSTE PAGA / FATTURAZIONE ---
+  // --- STATI REPORTISTICA ---
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
   const [subTabReport, setSubTabReport] = useState('paghe');
   const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
@@ -167,10 +170,12 @@ export default function Home() {
     }
   }, [currentUser, activeTab]);
 
+  // GESTIONE SUGGERIMENTI E MODERAZIONE
   const fetchFeedback = async () => {
     setLoadingFeedback(true);
     try {
-      const res = await fetch('/api/feedback');
+      const isInclude = currentUser?.ruolo === 'admin' && filtroArchivioAdmin;
+      const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}`);
       if (res.ok) {
         const data = await res.json();
         setFeedbackList(data);
@@ -183,7 +188,7 @@ export default function Home() {
     if (currentUser && activeTab === 'feedback') {
       fetchFeedback();
     }
-  }, [currentUser, activeTab]);
+  }, [currentUser, activeTab, filtroArchivioAdmin]);
 
   const handleInviaFeedback = async (e) => {
     e.preventDefault();
@@ -214,6 +219,44 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // AZIONI MODERATORE: RISPONDI / ELIMINA (ARCHIVIA)
+  const handleInviaRispostaAdmin = async (id) => {
+    if (!testoRispostaAdmin.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, risposta: testoRispostaAdmin.trim() })
+      });
+      if (res.ok) {
+        setRispostaApertaId(null);
+        setTestoRispostaAdmin('');
+        fetchFeedback();
+      }
+    } catch (e) {}
+    finally { setLoading(false); }
+  };
+
+  const handleToggleSoftDelete = async (id, statoAttuale) => {
+    const nuovaAzione = !statoAttuale;
+    const msg = nuovaAzione 
+      ? "Vuoi rimuovere questo commento dalla bacheca pubblica? Rimarrà comunque nello storico riservato all'Admin."
+      : "Vuoi ripristinare questo commento e renderlo di nuovo visibile a tutti?";
+    
+    if (!confirm(msg)) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, is_deleted: nuovaAzione })
+      });
+      if (res.ok) fetchFeedback();
+    } catch (e) {}
+    finally { setLoading(false); }
   };
 
   const caricaContenutoNC = async (folderPath = '', search = '') => {
@@ -1129,7 +1172,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: SUGGERIMENTI E FEEDBACK SULL'APP */}
+        {/* TAB 3: SUGGERIMENTI E FEEDBACK SULL'APP CON MODERAZIONE ED ARCHIVIO */}
         {activeTab === 'feedback' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
@@ -1222,15 +1265,33 @@ export default function Home() {
               </form>
             </div>
 
-            {/* LISTA SUGGERIMENTI INVIATI */}
+            {/* LISTA BACHECA SUGGERIMENTI E PANNELLO MODERAZIONE */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                  <span>💬</span> Bacheca delle Idee &amp; Feedback ({feedbackList.length})
-                </h3>
-                <button onClick={fetchFeedback} disabled={loadingFeedback} className="text-xs text-sky-600 font-bold hover:underline">
-                  {loadingFeedback ? '⏳' : '🔄 Ricarica'}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                    <span>💬</span> Bacheca Idee &amp; Feedback ({feedbackList.length})
+                  </h3>
+                  <p className="text-xs text-slate-400">Suggerimenti inviati dai collaboratori</p>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  {currentUser?.ruolo === 'admin' && (
+                    <button 
+                      onClick={() => setFiltroArchivioAdmin(!filtroArchivioAdmin)}
+                      className={`text-xs font-bold px-3.5 py-1.5 rounded-xl border transition-all ${
+                        filtroArchivioAdmin 
+                          ? 'bg-purple-900 text-white border-purple-800 shadow' 
+                          : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      {filtroArchivioAdmin ? '📂 Mostra Tutti (Inc. Archiviati)' : '📌 Solo Bacheca Pubblica'}
+                    </button>
+                  )}
+                  <button onClick={fetchFeedback} disabled={loadingFeedback} className="text-xs text-sky-600 font-bold hover:underline">
+                    {loadingFeedback ? '⏳' : '🔄 Ricarica'}
+                  </button>
+                </div>
               </div>
 
               {loadingFeedback ? (
@@ -1238,19 +1299,32 @@ export default function Home() {
               ) : feedbackList.length === 0 ? (
                 <div className="text-center py-10 bg-slate-50 border border-dashed rounded-2xl text-xs text-slate-400">
                   <span className="text-3xl block mb-1">💡</span>
-                  Nessun suggerimento inviato finora. Sii il primo a proporre un'idea!
+                  Nessun suggerimento visibile al momento.
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {feedbackList.map((fb) => (
-                    <div key={fb.id} className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-2">
+                    <div 
+                      key={fb.id} 
+                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                        fb.is_deleted 
+                          ? 'bg-rose-50/40 border-rose-200 opacity-75' 
+                          : 'bg-slate-50/80 border-slate-200'
+                      }`}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center space-x-2">
                           <span className="font-bold text-xs text-slate-900">👤 {fb.autore}</span>
                           <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-lg border border-purple-200">
                             {fb.categoria}
                           </span>
+                          {fb.is_deleted && (
+                            <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded-lg shadow-2xs">
+                              🔒 Archiviato Admin
+                            </span>
+                          )}
                         </div>
+
                         <div className="flex items-center space-x-2">
                           <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
                             {'⭐'.repeat(Number(fb.valutazione || 5))}
@@ -1260,9 +1334,75 @@ export default function Home() {
                           </span>
                         </div>
                       </div>
-                      <p className="text-xs text-slate-700 leading-relaxed font-medium pt-1 whitespace-pre-wrap">
+
+                      <p className="text-xs text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">
                         {fb.messaggio}
                       </p>
+
+                      {/* BLOCCO RISPOSTA DIREZIONE (SE PRESENTE) */}
+                      {fb.risposta && (
+                        <div className="bg-sky-50/90 border border-sky-200 p-3 rounded-xl space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-extrabold text-sky-900 uppercase tracking-wider flex items-center gap-1">
+                              <span>💬</span> Risposta della Direzione
+                            </span>
+                            {fb.risposta_at && (
+                              <span className="text-[9px] text-sky-600 font-medium">
+                                {new Date(fb.risposta_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-sky-950 font-semibold leading-relaxed">
+                            {fb.risposta}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* AZIONI RISERVATE ALL'ADMIN (LUCA) */}
+                      {currentUser?.ruolo === 'admin' && (
+                        <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => {
+                                setRispostaApertaId(rispostaApertaId === fb.id ? null : fb.id);
+                                setTestoRispostaAdmin(fb.risposta || '');
+                              }}
+                              className="text-[11px] font-bold bg-sky-100 hover:bg-sky-200 text-sky-800 px-3 py-1 rounded-lg border border-sky-300 transition-all"
+                            >
+                              {fb.risposta ? '✏️ Modifica Risposta' : '💬 Rispondi al Dipendente'}
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => handleToggleSoftDelete(fb.id, fb.is_deleted)}
+                            className={`text-[11px] font-bold px-3 py-1 rounded-lg border transition-all ${
+                              fb.is_deleted 
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300' 
+                                : 'bg-rose-100 hover:bg-rose-200 text-rose-800 border-rose-300'
+                            }`}
+                          >
+                            {fb.is_deleted ? '🔄 Ripristina in Bacheca' : '🗑️ Rimuovi dalla Bacheca'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* BOX SCRITTURA RISPOSTA ADMIN */}
+                      {currentUser?.ruolo === 'admin' && rispostaApertaId === fb.id && (
+                        <div className="p-3 bg-white border border-sky-200 rounded-xl space-y-2 mt-2">
+                          <textarea
+                            rows={2}
+                            placeholder="Scrivi una risposta pubblica da parte della direzione..."
+                            value={testoRispostaAdmin}
+                            onChange={e => setTestoRispostaAdmin(e.target.value)}
+                            className="w-full text-xs font-medium p-2.5 bg-slate-50 border rounded-lg outline-none focus:ring-2 focus:ring-sky-200"
+                          ></textarea>
+                          <div className="flex justify-end space-x-2">
+                            <button onClick={() => setRispostaApertaId(null)} className="px-3 py-1 text-xs font-bold text-slate-500 bg-slate-100 rounded-lg">Annulla</button>
+                            <button onClick={() => handleInviaRispostaAdmin(fb.id)} disabled={loading} className="px-4 py-1 text-xs font-bold text-white bg-sky-600 rounded-lg shadow-sm">Pubblica Risposta ✅</button>
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   ))}
                 </div>
