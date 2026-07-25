@@ -17,7 +17,7 @@ export default async function handler(req, res) {
       : undefined;
 
     if (!clientEmail || !privateKey || !calendarId) {
-      return res.status(500).json({ message: 'Configurazione Google Calendar mancante nelle variabili Vercel.' });
+      return res.status(500).json({ message: 'Configurazione Google Calendar mancante su Vercel.' });
     }
 
     const auth = new google.auth.JWT({
@@ -28,7 +28,6 @@ export default async function handler(req, res) {
 
     const calendar = google.calendar({ version: 'v3', auth });
 
-    // Finestra temporale: 90 giorni nel passato e 180 nel futuro
     const ora = new Date();
     const timeMin = new Date(ora.getTime() - (90 * 24 * 60 * 60 * 1000)).toISOString();
     const timeMax = new Date(ora.getTime() + (180 * 24 * 60 * 60 * 1000)).toISOString();
@@ -43,6 +42,8 @@ export default async function handler(req, res) {
 
     const events = response.data.items || [];
     let inseriti = 0;
+    let giaPresenti = 0;
+    let erroriDb = [];
 
     for (const event of events) {
       if (!event.summary) continue;
@@ -55,45 +56,58 @@ export default async function handler(req, res) {
       let progetto = restoProgetto.join('-').trim() || 'Attività da Calendar';
       cliente = cliente.trim();
 
-      // Correzione lettura data!
       let dataEvento = null;
-      if (event.start.date) {
+      if (event.start?.date) {
         dataEvento = event.start.date;
-      } else if (event.start.dateTime) {
+      } else if (event.start?.dateTime) {
         dataEvento = event.start.dateTime.split('T')[0];
       }
 
       if (!dataEvento) continue;
 
+      // Verifica se esiste già
       const { data: esistente } = await supabase
         .from('eventi_ore')
         .select('id')
         .eq('calendar_event_id', event.id)
         .maybeSingle();
 
-      if (!esistente) {
-        await supabase.from('eventi_ore').insert([{
-          calendar_event_id: event.id,
-          dipendente,
-          cliente,
-          progetto,
-          data: dataEvento,
-          ore: 8,
-          ore_backoffice: 0,
-          ore_trasferta: 0,
-          stato: 'pianificato',
-          note: event.description || 'Importato da Google Calendar'
-        }]);
+      if (esistente) {
+        giaPresenti++;
+        continue;
+      }
+
+      // Inserisci e CATTURA l'errore esplicito di Supabase
+      const { error: insertError } = await supabase.from('eventi_ore').insert([{
+        calendar_event_id: event.id,
+        dipendente,
+        cliente,
+        progetto,
+        data: dataEvento,
+        ore: 8,
+        ore_backoffice: 0,
+        ore_trasferta: 0,
+        stato: 'pianificato',
+        note: event.description || 'Importato da Google Calendar'
+      }]);
+
+      if (insertError) {
+        console.error("Errore inserimento Supabase:", insertError);
+        erroriDb.push(insertError.message);
+      } else {
         inseriti++;
       }
     }
 
-    return res.status(200).json({ 
-      message: `Sincronizzazione completata! Analizzati ${events.length} eventi, ${inseriti} nuovi importati.` 
-    });
+    let msg = `Analizzati ${events.length} eventi da Calendar. ${inseriti} nuovi salvati nel DB, ${giaPresenti} già presenti.`;
+    if (erroriDb.length > 0) {
+      msg += ` [⚠️ Attenzione: ${erroriDb.length} non salvati per errore DB: ${erroriDb[0]}]`;
+    }
+
+    return res.status(200).json({ message: msg });
 
   } catch (error) {
     console.error("Errore Sync:", error);
-    return res.status(500).json({ message: "Errore di connessione a Calendar.", error: error.message });
+    return res.status(500).json({ message: "Errore durante la sincronizzazione", error: error.message });
   }
 }
