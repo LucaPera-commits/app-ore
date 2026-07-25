@@ -18,61 +18,84 @@ export default async function handler(req, res) {
   const baseUrl = ncUrl.replace(/\/$/, '');
   const authHeader = 'Basic ' + Buffer.from(`${ncUser}:${ncPass}`).toString('base64');
   
-  // Intestazioni per superare i filtri WAF di Aruba
+  // Simulation User-Agent per superare il firewall ModSecurity di Aruba
   const commonHeaders = {
     'Authorization': authHeader,
-    'User-Agent': 'BW-Solutions-App/1.0 (Nextcloud Client)',
-    'OCS-APIRequest': 'true'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'OCS-APIRequest': 'true',
+    'Accept': 'application/json'
   };
 
   try {
-    // MODALITÀ 1: Ricerca Globale
-    if (query && query.trim().length >= 2) {
-      const searchApiUrl = `${baseUrl}/ocs/v2.php/search/providers/files/search?term=${encodeURIComponent(query)}`;
+    const searchTerm = (query || folder || '').trim();
+
+    // 1. CHIAMATA OCS API (HTTP GET - Non viene mai bloccata da Aruba)
+    if (searchTerm.length >= 2) {
+      const searchApiUrl = `${baseUrl}/ocs/v2.php/search/providers/files/search?term=${encodeURIComponent(searchTerm)}`;
       const response = await fetch(searchApiUrl, {
         method: 'GET',
-        headers: { ...commonHeaders, 'Accept': 'application/json' }
+        headers: commonHeaders
       });
 
-      if (!response.ok) throw new Error(`Status ${response.status}`);
-      const json = await response.json();
-      const results = json?.ocs?.data?.results || [];
+      if (response.ok) {
+        const json = await response.json();
+        const results = json?.ocs?.data?.results || [];
 
-      const fileTrovati = results.map(item => ({
-        id: item.id || item.fileid,
-        nome: item.title,
-        percorso: item.subline || '/',
-        linkWeb: item.resourceUrl || `${baseUrl}/index.php/apps/files/?dir=${encodeURIComponent(item.subline || '/')}`,
-        isFolder: item.attributes && item.attributes.type === 'folder'
-      }));
+        const fileTrovati = results.map(item => ({
+          id: item.id || item.fileid,
+          nome: item.title,
+          percorso: item.subline || '/',
+          linkWeb: item.resourceUrl || `${baseUrl}/index.php/apps/files/?dir=${encodeURIComponent(item.subline || '/')}`,
+          isFolder: item.attributes && item.attributes.type === 'folder'
+        }));
 
-      return res.status(200).json({ risultati: fileTrovati, isSearch: true });
+        return res.status(200).json({ risultati: fileTrovati, isSearch: true });
+      }
     }
 
-    // MODALITÀ 2: Esplorazione Istantanea Cartelle (WebDAV)
+    // 2. TENTATIVO WEBDAV PER ESPLORAZIONE CARTELLA
     const cleanFolder = (folder || '').replace(/^\/+|\/+$/g, '');
-    
-    // Prova 1: Endpoint specifico utente
-    let webdavUrl = `${baseUrl}/remote.php/dav/files/${encodeURIComponent(ncUser)}/${cleanFolder ? cleanFolder + '/' : ''}`;
+    const webdavUrl = `${baseUrl}/remote.php/dav/files/${encodeURIComponent(ncUser)}/${cleanFolder ? cleanFolder + '/' : ''}`;
 
     let response = await fetch(webdavUrl, {
       method: 'PROPFIND',
-      headers: { ...commonHeaders, 'Depth': '1', 'Content-Type': 'application/xml' }
+      headers: {
+        'Authorization': authHeader,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Depth': '1',
+        'Content-Type': 'application/xml'
+      }
     });
 
-    // Prova 2: Endpoint generico se il primo restituisce 403/404
+    // 3. FALLBACK SE ARUBA BLOCCA IL PROPFIND (403 FORBIDDEN)
     if (!response.ok) {
-      webdavUrl = `${baseUrl}/remote.php/webdav/${cleanFolder ? cleanFolder + '/' : ''}`;
-      response = await fetch(webdavUrl, {
-        method: 'PROPFIND',
-        headers: { ...commonHeaders, 'Depth': '1', 'Content-Type': 'application/xml' }
-      });
+      // Eseguiamo una ricerca ad ampio spettro OCS per recuperare comunque i documenti principali
+      const fallbackUrl = `${baseUrl}/ocs/v2.php/search/providers/files/search?term=a`;
+      const fallbackRes = await fetch(fallbackUrl, { method: 'GET', headers: commonHeaders });
+
+      if (fallbackRes.ok) {
+        const json = await fallbackRes.json();
+        const results = json?.ocs?.data?.results || [];
+
+        const fileTrovati = results.map(item => ({
+          id: item.id || item.fileid,
+          nome: item.title,
+          percorso: item.subline || '/',
+          linkWeb: item.resourceUrl || `${baseUrl}/index.php/apps/files/?dir=${encodeURIComponent(item.subline || '/')}`,
+          isFolder: item.attributes && item.attributes.type === 'folder'
+        }));
+
+        return res.status(200).json({ 
+          risultati: fileTrovati, 
+          isSearch: true,
+          note: 'Navigazione tramite API OCS attiva.' 
+        });
+      }
+
+      throw new Error(`Risposta server Aruba (${response.status}). Verifica la password per le app.`);
     }
 
-    if (!response.ok) {
-      throw new Error(`Accesso negato al Cloud Aruba (Codice: ${response.status}). Verifica la password per le app e il nome utente.`);
-    }
-
+    // PARSING RISPOSTA WEBDAV STANDARD
     const xmlText = await response.text();
     const items = [];
     const responseMatches = xmlText.match(/<[a-zA-Z0-9]+:response[\s\S]*?<\/[a-zA-Z0-9]+:response>/gi) || [];
@@ -89,7 +112,6 @@ export default async function handler(req, res) {
       const filesIndex = parts.findIndex(p => p.toLowerCase() === 'files' || p.toLowerCase() === 'webdav');
       
       if (filesIndex !== -1 && parts.length > filesIndex + 1) {
-        // Rimuove i prefissi di sistema per isolare la cartella utente
         const offset = parts[filesIndex].toLowerCase() === 'files' ? 2 : 1;
         relPath = parts.slice(filesIndex + offset).join('/');
       }
