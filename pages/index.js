@@ -49,8 +49,8 @@ export default function Home() {
 
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
-    dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
-    ore: 8, ore_backoffice: 0, ore_trasferta: 0, note: '', stato: 'consuntivo'
+    dipendente: '', cliente: '', progetto: '', data: getTodayStr(), data_fine: getTodayStr(),
+    usaIntervallo: false, ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, note: '', stato: 'consuntivo'
   });
 
   const [loading, setLoading] = useState(false);
@@ -87,6 +87,7 @@ export default function Home() {
   const [oreEffettive, setOreEffettive] = useState(8);
   const [oreBackofficeEffettive, setOreBackofficeEffettive] = useState(0);
   const [oreTrasfertaEffettive, setOreTrasfertaEffettive] = useState(0);
+  const [oreStraordinarioEffettive, setOreStraordinarioEffettive] = useState(0);
   const [dipendenteEffettivo, setDipendenteEffettivo] = useState('');
 
   useEffect(() => {
@@ -102,11 +103,11 @@ export default function Home() {
 
   useEffect(() => {
     if (categoriaForm === 'ferie') {
-      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Ferie', ore: 8, ore_backoffice: 0, ore_trasferta: 0 }));
+      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Ferie', ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0 }));
     } else if (categoriaForm === 'permesso') {
-      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Permesso', ore: 4, ore_backoffice: 0, ore_trasferta: 0 }));
+      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Permesso', ore: 4, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0 }));
     } else if (categoriaForm === 'malattia') {
-      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Malattia', ore: 8, ore_backoffice: 0, ore_trasferta: 0 }));
+      setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Malattia', ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0 }));
     } else if (categoriaForm === 'lavoro' && formData.cliente === 'ASSENZE / GIUSTIFICATIVI') {
       setFormData(prev => ({ ...prev, cliente: '', progetto: '', ore: 8 }));
     }
@@ -189,20 +190,6 @@ export default function Home() {
     setPathNC(parti.join('/'));
   };
 
-  const handleApriOnlineSenzaLogin = async (percorso) => {
-    try {
-      const res = await fetch(`/api/share?path=${encodeURIComponent(percorso)}`);
-      const data = await res.json();
-      if (res.ok && data.shareUrl) {
-        window.open(data.shareUrl, '_blank');
-      } else {
-        alert("Impossibile aprire l'anteprima cloud. Usa il pulsante Scarica File.");
-      }
-    } catch (e) {
-      alert("Errore durante l'apertura del documento.");
-    }
-  };
-
   const handleLogin = (e) => {
     e.preventDefault();
     const user = UTENTI[loginForm.username.toLowerCase().trim()];
@@ -258,20 +245,62 @@ export default function Home() {
     e.preventDefault();
     setStatusMessage(null);
     setLoading(true);
+
     try {
-      const res = await fetch('/api/salva', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setStatusMessage({ type: 'success', text: data.message });
-        setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0 }));
+      let dateDaSalvare = [formData.data];
+
+      if (formData.usaIntervallo && formData.data_fine > formData.data) {
+        dateDaSalvare = [];
+        let curr = new Date(formData.data);
+        const end = new Date(formData.data_fine);
+
+        while (curr <= end) {
+          const dayOfWeek = curr.getDay();
+          // Escludiamo i fine settimana (sabato 6 e domenica 0) di default
+          if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            dateDaSalvare.push(curr.toISOString().split('T')[0]);
+          }
+          curr.setDate(curr.getDate() + 1);
+        }
+      }
+
+      if (dateDaSalvare.length === 0) {
+        dateDaSalvare = [formData.data];
+      }
+
+      let salvatiOk = 0;
+      for (const d of dateDaSalvare) {
+        const payload = {
+          ...formData,
+          data: d,
+          ore_straordinario: formData.stato === 'consuntivo' ? (formData.ore_straordinario || 0) : 0
+        };
+
+        const res = await fetch('/api/salva', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) salvatiOk++;
+      }
+
+      if (salvatiOk > 0) {
+        setStatusMessage({ type: 'success', text: `Registrazione effettuata per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!` });
+        setFormData(prev => ({
+          ...prev, cliente: '', progetto: '', note: '',
+          ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, usaIntervallo: false
+        }));
         setCategoriaForm('lavoro');
         fetchProgrammati();
-      } else { setStatusMessage({ type: 'error', text: data.message }); }
-    } catch (err) { setStatusMessage({ type: 'error', text: 'Errore server.' }); } 
-    finally { setLoading(false); }
+      } else {
+        setStatusMessage({ type: 'error', text: 'Errore durante il salvataggio.' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: 'Errore server.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConfermaChiudi = async () => {
@@ -282,7 +311,8 @@ export default function Home() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
-          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive, ore_trasferta: oreTrasfertaEffettive,
+          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive,
+          ore_trasferta: oreTrasfertaEffettive, ore_straordinario: oreStraordinarioEffettive,
           dipendente: dipendenteEffettivo || modalItem.dipendente, chiudi_consuntivo: true
         })
       });
@@ -334,11 +364,12 @@ export default function Home() {
     setOreEffettive(item.ore || 0);
     setOreBackofficeEffettive(item.ore_backoffice || 0);
     setOreTrasfertaEffettive(item.ore_trasferta || 0);
+    setOreStraordinarioEffettive(item.ore_straordinario || 0);
     setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser?.nome : item.dipendente);
   };
 
   const exportCSVPaghe = () => {
-    let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore Impegnate\n";
+    let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore Impegnate\n";
     
     listaDipendenti.forEach(nomeDip => {
       const eventi = storicoCompleto.filter(item => {
@@ -349,12 +380,13 @@ export default function Home() {
       const oreCantiere = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
       const oreBackoffice = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
       const oreTrasferta = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+      const oreStraordinario = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_straordinario || 0), 0);
       const oreFerie = eventi.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
       const orePermesso = eventi.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
       const oreMalattia = eventi.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-      const tot = oreCantiere + oreBackoffice + oreFerie + orePermesso + oreMalattia;
+      const tot = oreCantiere + oreBackoffice + oreStraordinario + oreFerie + orePermesso + oreMalattia;
 
-      csv += `"${nomeDip}";"${filtroMeseReport}";"${oreCantiere}";"${oreBackoffice}";"${oreTrasferta}";"${oreFerie}";"${orePermesso}";"${oreMalattia}";"${tot}"\n`;
+      csv += `"${nomeDip}";"${filtroMeseReport}";"${oreCantiere}";"${oreBackoffice}";"${oreTrasferta}";"${oreStraordinario}";"${oreFerie}";"${orePermesso}";"${oreMalattia}";"${tot}"\n`;
     });
 
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
@@ -368,7 +400,7 @@ export default function Home() {
   };
 
   const exportCSVFatturazione = () => {
-    let csv = "Cliente;Commessa / Progetto;Dipendente;Data;Ore Cantiere;Ore Backoffice;Ore Trasferta;Note\n";
+    let csv = "Cliente;Commessa / Progetto;Dipendente;Data;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Note\n";
     
     const consuntivi = storicoCompleto.filter(item => {
       const dNorm = getNormalizedDate(item.data);
@@ -378,7 +410,7 @@ export default function Home() {
     });
 
     consuntivi.sort((a, b) => (a.cliente || '').localeCompare(b.cliente || '')).forEach(row => {
-      csv += `"${row.cliente}";"${row.progetto}";"${row.dipendente}";"${getNormalizedDate(row.data)}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+      csv += `"${row.cliente}";"${row.progetto}";"${row.dipendente}";"${getNormalizedDate(row.data)}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${row.ore_straordinario || 0}";"${(row.note || '').replace(/"/g, '""')}"\n`;
     });
 
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
@@ -393,7 +425,6 @@ export default function Home() {
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
-  const ieriStr = getYesterdayStr();
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
   const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
@@ -417,6 +448,11 @@ export default function Home() {
               </span>
             ) : (
               <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
+            )}
+            {Number(item.ore_straordinario || 0) > 0 && (
+              <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300">
+                ⚡ +{item.ore_straordinario}h Straord.
+              </span>
             )}
           </div>
           <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
@@ -630,7 +666,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 1: INSERIMENTO ORE */}
+        {/* TAB 1: INSERIMENTO ORE CON OPZIONE PERIODO PLURIGIORNALIERO E STRAORDINARI */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -653,7 +689,7 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200">
                 <button type="button" onClick={() => setFormData({ ...formData, stato: 'consuntivo' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'consuntivo' ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>✅ Consuntivo (Svolto)</button>
-                <button type="button" onClick={() => setFormData({ ...formData, stato: 'pianificato' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>⏳ Pianificato (Futuro)</button>
+                <button type="button" onClick={() => setFormData({ ...formData, stato: 'pianificato', ore_straordinario: 0 })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>⏳ Pianificato (Futuro)</button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -668,9 +704,35 @@ export default function Home() {
                     <input type="text" readOnly value={formData.dipendente} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-medium text-sm cursor-not-allowed" />
                   )}
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Data Attività</label>
-                  <input type="date" required value={formData.data} onChange={(e) => setFormData({ ...formData, data: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-sm" />
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold uppercase text-slate-500">Data o Periodo</label>
+                    <label className="text-xs text-sky-700 font-bold flex items-center space-x-1 cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={formData.usaIntervallo} 
+                        onChange={e => setFormData({ ...formData, usaIntervallo: e.target.checked })}
+                        className="rounded text-sky-600"
+                      />
+                      <span>📆 Attività su più giorni</span>
+                    </label>
+                  </div>
+
+                  {formData.usaIntervallo ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 block mb-0.5 uppercase">Dal (Inizio)</span>
+                        <input type="date" required value={formData.data} onChange={(e) => setFormData({ ...formData, data: e.target.value, data_fine: e.target.value > formData.data_fine ? e.target.value : formData.data_fine })} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium text-xs" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 block mb-0.5 uppercase">Al (Fine)</span>
+                        <input type="date" required value={formData.data_fine} min={formData.data} onChange={(e) => setFormData({ ...formData, data_fine: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium text-xs" />
+                      </div>
+                    </div>
+                  ) : (
+                    <input type="date" required value={formData.data} onChange={(e) => setFormData({ ...formData, data: e.target.value, data_fine: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-sm" />
+                  )}
                 </div>
               </div>
 
@@ -685,21 +747,37 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* GRIGLIA ORE (ORDINARIE, BACKOFFICE, TRASFERTA, STRAORDINARI) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore {categoriaForm !== 'lavoro' ? 'Giustificate' : 'Lavorate'}</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore / Giorno (Std. 8h)</label>
                   <input type="number" step="0.5" min="0" required value={formData.ore} onChange={e => setFormData({ ...formData, ore: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-bold text-sm" />
                 </div>
+
                 {categoriaForm === 'lavoro' && (
                   <>
                     <div>
                       <label className="block text-xs font-bold uppercase text-sky-600 mb-1.5">Ore Backoffice</label>
                       <input type="number" step="0.5" min="0" value={formData.ore_backoffice} onChange={e => setFormData({ ...formData, ore_backoffice: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50/50 font-bold text-sm text-sky-800" />
                     </div>
+
                     {isAlessandro && (
                       <div>
                         <label className="block text-xs font-bold uppercase text-purple-600 mb-1.5">🚗 Ore Trasferta</label>
                         <input type="number" step="0.5" min="0" value={formData.ore_trasferta} onChange={e => setFormData({ ...formData, ore_trasferta: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 bg-purple-50/50 font-bold text-sm text-purple-800" />
+                      </div>
+                    )}
+
+                    {/* CAMPO STRAORDINARI: VISIBILE SOLO A CONSUNTIVO */}
+                    {formData.stato === 'consuntivo' ? (
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-amber-600 mb-1.5">⚡ Ore Straordinario</label>
+                        <input type="number" step="0.5" min="0" value={formData.ore_straordinario} onChange={e => setFormData({ ...formData, ore_straordinario: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-amber-300 bg-amber-50/60 font-black text-sm text-amber-900" />
+                      </div>
+                    ) : (
+                      <div className="opacity-50 pointer-events-none">
+                        <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">⚡ Ore Straordinario</label>
+                        <input type="text" disabled value="Solo a consuntivo" className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-xs italic text-slate-400" />
                       </div>
                     )}
                   </>
@@ -1011,7 +1089,6 @@ export default function Home() {
         {/* TAB 4: CENTRO REPORTISTICA MENSILE (BUSTE PAGA & FATTURAZIONE) */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="space-y-6">
-            
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
@@ -1075,7 +1152,7 @@ export default function Home() {
                   <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                     <span>💶</span> Prospetto Ore Dipendenti ({filtroMeseReport})
                   </h3>
-                  <p className="text-xs text-slate-500">Riepilogo ore ordinarie, straordinarie e giustificativi da trasmettere al consulente del lavoro.</p>
+                  <p className="text-xs text-slate-500">Riepilogo ore ordinarie, straordinari e giustificativi da trasmettere al consulente del lavoro.</p>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -1086,6 +1163,7 @@ export default function Home() {
                         <th className="py-3 px-3 text-center">Cantiere</th>
                         <th className="py-3 px-3 text-center">Backoffice</th>
                         <th className="py-3 px-3 text-center">Trasferta</th>
+                        <th className="py-3 px-3 text-center text-amber-900 bg-amber-50">⚡ Straordinari</th>
                         <th className="py-3 px-3 text-center text-amber-700">Ferie</th>
                         <th className="py-3 px-3 text-center text-indigo-700">Permessi</th>
                         <th className="py-3 px-3 text-center text-rose-700">Malattia</th>
@@ -1102,10 +1180,11 @@ export default function Home() {
                         const oreCantiere = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
                         const oreBackoffice = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
                         const oreTrasferta = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+                        const oreStraordinario = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_straordinario || 0), 0);
                         const oreFerie = eventi.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
                         const orePermesso = eventi.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
                         const oreMalattia = eventi.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-                        const tot = oreCantiere + oreBackoffice + oreFerie + orePermesso + oreMalattia;
+                        const tot = oreCantiere + oreBackoffice + oreStraordinario + oreFerie + orePermesso + oreMalattia;
 
                         return (
                           <tr key={nomeDip} className="hover:bg-slate-50">
@@ -1113,6 +1192,7 @@ export default function Home() {
                             <td className="py-3 px-3 text-center font-bold">{oreCantiere} h</td>
                             <td className="py-3 px-3 text-center font-bold text-sky-700">{oreBackoffice} h</td>
                             <td className="py-3 px-3 text-center font-bold text-purple-700">{oreTrasferta} h</td>
+                            <td className="py-3 px-3 text-center font-extrabold text-amber-900 bg-amber-50">{oreStraordinario} h</td>
                             <td className="py-3 px-3 text-center font-bold text-amber-700">{oreFerie} h</td>
                             <td className="py-3 px-3 text-center font-bold text-indigo-700">{orePermesso} h</td>
                             <td className="py-3 px-3 text-center font-bold text-rose-700">{oreMalattia} h</td>
@@ -1161,6 +1241,7 @@ export default function Home() {
                         <th className="py-3 px-3 text-center">Cantiere</th>
                         <th className="py-3 px-3 text-center">Backoffice</th>
                         <th className="py-3 px-3 text-center">Trasferta</th>
+                        <th className="py-3 px-3 text-center text-amber-900 bg-amber-50">Straordinari</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
@@ -1181,6 +1262,7 @@ export default function Home() {
                             <td className="py-2.5 px-3 text-center font-bold text-slate-900">{item.ore || 0} h</td>
                             <td className="py-2.5 px-3 text-center font-bold text-sky-700">{item.ore_backoffice || 0} h</td>
                             <td className="py-2.5 px-3 text-center font-bold text-purple-700">{item.ore_trasferta || 0} h</td>
+                            <td className="py-2.5 px-3 text-center font-extrabold text-amber-900 bg-amber-50">{item.ore_straordinario || 0} h</td>
                           </tr>
                         ))}
                     </tbody>
@@ -1194,7 +1276,7 @@ export default function Home() {
 
       </main>
 
-      {/* MODALE EDITING */}
+      {/* MODALE EDITING / CONFERMA CONSUNTIVO */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
@@ -1217,12 +1299,16 @@ export default function Home() {
               )}
               
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Lavorate / Assenza</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Cantiere / Assenza</label>
                 <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
                 <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-bold text-amber-600 mb-1 uppercase">⚡ Ore Straordinario</label>
+                <input type="number" step="0.5" min="0" value={oreStraordinarioEffettive} onChange={e => setOreStraordinarioEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-amber-50 border-amber-300 text-sm font-extrabold text-amber-900" />
               </div>
             </div>
 
