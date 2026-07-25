@@ -35,6 +35,7 @@ export default function Home() {
   // 1. STATI E HOOK
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [showPassword, setShowPassword] = useState(false); // STATO PER VISIBILITÀ PASSWORD
   const [activeTab, setActiveTab] = useState('nuovo');
 
   const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -127,6 +128,7 @@ export default function Home() {
     setCurrentUser(null);
     localStorage.removeItem('bw_user');
     setLoginForm({ username: '', password: '' });
+    setShowPassword(false);
   };
 
   const handleSyncCalendar = async () => {
@@ -144,32 +146,6 @@ export default function Home() {
       alert("Errore durante la connessione a Google Calendar.");
     } finally {
       setLoadingProgrammati(false);
-    }
-  };
-
-  const handleQuickReassign = async (item, nuovoDipendente) => {
-    if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/gestisci', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: item.id,
-          calendar_event_id: item.calendar_event_id,
-          dipendente: nuovoDipendente,
-          chiudi_consuntivo: false
-        })
-      });
-      if (res.ok) {
-        fetchProgrammati();
-      } else {
-        alert("Errore durante la riassegnazione.");
-      }
-    } catch (e) {
-      alert("Errore durante la riassegnazione.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -255,7 +231,7 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  // 4. LOGIN
+  // 4. LOGIN SCREEN CON TASTO MOSTRA/NASCONDI PASSWORD
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
@@ -271,16 +247,45 @@ export default function Home() {
               </div>
               <p className="text-xs text-slate-500 font-medium">Gestione Ore &amp; Attività Lavorative</p>
             </div>
+
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
-                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" placeholder="Inserisci nome utente" />
+                <input 
+                  type="text" 
+                  required 
+                  value={loginForm.username} 
+                  onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" 
+                  placeholder="Inserisci nome utente" 
+                />
               </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
-                <input type="password" required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" />
+                <div className="relative">
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    required 
+                    value={loginForm.password} 
+                    onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium pr-12" 
+                    placeholder="Inserisci password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-base focus:outline-none p-1 transition-all"
+                    title={showPassword ? 'Nascondi password' : 'Mostra password'}
+                  >
+                    {showPassword ? '👁️' : '🙈'}
+                  </button>
+                </div>
               </div>
-              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">Accedi al Portale ➔</button>
+
+              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">
+                Accedi al Portale ➔
+              </button>
             </form>
           </div>
           <p className="text-center text-[11px] text-slate-400 mt-6 font-medium">© {new Date().getFullYear()} bw solutions • Powered by Zo&amp;annA S.R.L.</p>
@@ -289,7 +294,7 @@ export default function Home() {
     );
   }
 
-  // 5. CALCOLI LOGICI DASHBOARD
+  // 5. CALCOLI DASHBOARD UTENTE
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const dipendenteFiltro = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
   const eventiFiltrati = dipendenteFiltro === 'Tutti' ? programmati : programmati.filter(p => p.dipendente === dipendenteFiltro);
@@ -313,23 +318,6 @@ export default function Home() {
 
   const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
 
-  const riepilogoDipendenti = listaDipendenti.map(nomeDip => {
-    const voci = consuntiviMese.filter(c => c.dipendente === nomeDip);
-    const cantiere = voci.reduce((a, b) => a + Number(b.ore || 0), 0);
-    const backoffice = voci.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
-    const trasferta = voci.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
-    return { nome: nomeDip, cantiere, backoffice, trasferta, totale: cantiere + backoffice + trasferta, count: voci.length };
-  });
-
-  const clientiUnici = Array.from(new Set(consuntiviMese.map(c => c.cliente))).sort();
-  const riepilogoClienti = clientiUnici.map(nomeCli => {
-    const voci = consuntiviMese.filter(c => c.cliente === nomeCli);
-    const cantiere = voci.reduce((a, b) => a + Number(b.ore || 0), 0);
-    const backoffice = voci.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
-    const trasferta = voci.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
-    return { cliente: nomeCli, cantiere, backoffice, trasferta, totale: cantiere + backoffice + trasferta, count: voci.length };
-  });
-
   const totMeseCantiere = consuntiviMese.reduce((a, b) => a + Number(b.ore || 0), 0);
   const totMeseBackoffice = consuntiviMese.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
   const totMeseTrasferta = consuntiviMese.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
@@ -339,8 +327,6 @@ export default function Home() {
     <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-12">
       <Head>
         <title>Gestionale Ore | bw solutions</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       </Head>
 
       <datalist id="lista-aziende">
@@ -466,7 +452,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ (RAGGRUPPATA PER DIPENDENTE E ARCHIVIO STORICO) */}
+        {/* TAB 2: GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
@@ -506,7 +492,6 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {/* RAGGRUPPAMENTO PER DIPENDENTE */}
                   {Array.from(new Set(eventiFiltrati.map(e => e.dipendente))).map(dipNome => {
                     const attivitaDipendente = eventiFiltrati.filter(e => e.dipendente === dipNome);
                     const inRitardo = attivitaDipendente.filter(e => e.data < getTodayStr());
@@ -523,7 +508,6 @@ export default function Home() {
                         </div>
 
                         <div className="p-4 space-y-4 bg-white">
-                          {/* Sotto-gruppo: IN RITARDO */}
                           {inRitardo.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
@@ -545,7 +529,6 @@ export default function Home() {
                             </div>
                           )}
 
-                          {/* Sotto-gruppo: OGGI */}
                           {oggi.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
@@ -567,7 +550,6 @@ export default function Home() {
                             </div>
                           )}
 
-                          {/* Sotto-gruppo: FUTURE */}
                           {future.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
@@ -593,7 +575,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* SEZIONE: ARCHIVIO STORICO (ATTIVITÀ CONCLUSE E ANNULLATE) */}
+            {/* ARCHIVIO STORICO */}
             <div className="bg-slate-50 border-t border-slate-200 p-6">
               <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
                 <span>🗂️</span> Archivio Storico (Concluse e Annullate)
@@ -640,7 +622,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: CRUSCOTTO MENSILE (ADMIN) */}
+        {/* TAB 3: CRUSCOTTO MENSILE */}
         {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
@@ -649,45 +631,26 @@ export default function Home() {
                   <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile</h2>
                   <p className="text-xs text-slate-300 mt-0.5">Riepilogo ore per fatturazione clienti e calcolo buste paga dipendenti.</p>
                 </div>
-                
-                <button 
-                  onClick={() => exportCSV(consuntiviMese)} 
-                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2"
-                >
+                <button onClick={() => exportCSV(consuntiviMese)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
                   <span>📥 Esporta per Excel (CSV)</span>
                 </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Mese &amp; Anno di Riferimento</label>
-                  <input 
-                    type="month" 
-                    value={filtroMese} 
-                    onChange={e => setFiltroMese(e.target.value)} 
-                    className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-sky-400"
-                  />
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Mese &amp; Anno</label>
+                  <input type="month" value={filtroMese} onChange={e => setFiltroMese(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none" />
                 </div>
-
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Dipendente</label>
-                  <select 
-                    value={filtroCruscottoDip} 
-                    onChange={e => setFiltroCruscottoDip(e.target.value)} 
-                    className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-sky-400"
-                  >
+                  <select value={filtroCruscottoDip} onChange={e => setFiltroCruscottoDip(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
                     <option value="Tutti">Tutti i Dipendenti</option>
                     {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
-
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Cliente</label>
-                  <select 
-                    value={filtroCruscottoCliente} 
-                    onChange={e => setFiltroCruscottoCliente(e.target.value)} 
-                    className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-sky-400"
-                  >
+                  <select value={filtroCruscottoCliente} onChange={e => setFiltroCruscottoCliente(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
                     <option value="Tutti">Tutti i Clienti</option>
                     {LISTA_CLIENTI.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -696,7 +659,7 @@ export default function Home() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
                 <div className="bg-slate-800/80 border border-slate-700/80 p-3 rounded-2xl text-center">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Cantiere / Lavoro</span>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Cantiere</span>
                   <span className="text-lg font-bold text-white">{totMeseCantiere} h</span>
                 </div>
                 <div className="bg-slate-800/80 border border-sky-500/30 p-3 rounded-2xl text-center">
@@ -708,7 +671,7 @@ export default function Home() {
                   <span className="text-lg font-bold text-purple-300">{totMeseTrasferta} h</span>
                 </div>
                 <div className="bg-emerald-950/60 border border-emerald-500/40 p-3 rounded-2xl text-center">
-                  <span className="text-[10px] font-bold uppercase text-emerald-400 block">Totale Ore Mese</span>
+                  <span className="text-[10px] font-bold uppercase text-emerald-400 block">Totale Ore</span>
                   <span className="text-lg font-extrabold text-emerald-300">{totMeseComplessivo} h</span>
                 </div>
               </div>
@@ -717,7 +680,6 @@ export default function Home() {
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
               <h3 className="font-bold text-slate-900 text-base flex justify-between items-center">
                 <span>Registro Dettagliato Interventi ({tuttiEventiMese.length})</span>
-                <span className="text-xs font-normal text-slate-500 italic">Clicca l'icona della matita per modificare</span>
               </h3>
               <div className="overflow-x-auto max-h-[500px] border border-slate-200 rounded-xl">
                 <table className="w-full text-left text-xs border-collapse">
@@ -734,41 +696,29 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {tuttiEventiMese.map(item => {
-                      const isDaAssegnare = item.dipendente === 'Da Assegnare';
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-50 group">
-                          <td className="py-2.5 px-3">
-                            {item.stato === 'consuntivo' ? (
-                              <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">Chiuso</span>
-                            ) : (
-                              <span className="text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100 animate-pulse">In Sospeso</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{item.data}</td>
-                          <td className="py-2.5 px-2 whitespace-nowrap">
-                            <span className={`font-semibold px-2 py-0.5 rounded-lg border ${isDaAssegnare ? 'bg-indigo-100 text-indigo-700 border-indigo-200 animate-pulse' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                              {item.dipendente}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-2">
-                            <div className="font-bold text-slate-900">{item.cliente}</div>
-                            <div className="text-slate-500 text-[10px] truncate max-w-[150px]">{item.progetto}</div>
-                          </td>
-                          <td className="py-2.5 px-2 text-center font-bold text-slate-800">{item.ore || 0}h</td>
-                          <td className="py-2.5 px-2 text-center font-bold text-sky-700">{item.ore_backoffice || 0}h</td>
-                          <td className="py-2.5 px-2 text-center font-bold text-purple-700">{item.ore_trasferta || 0}h</td>
-                          <td className="py-2.5 px-2 text-center">
-                            <button 
-                              onClick={() => openEditModal(item)}
-                              className="bg-white border border-slate-300 text-slate-600 hover:text-sky-700 hover:border-sky-300 hover:bg-sky-50 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-sm"
-                            >
-                              ✏️ Modifica
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {tuttiEventiMese.map(item => (
+                      <tr key={item.id} className="hover:bg-slate-50 group">
+                        <td className="py-2.5 px-3">
+                          {item.stato === 'consuntivo' ? (
+                            <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">Chiuso</span>
+                          ) : (
+                            <span className="text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100 animate-pulse">In Sospeso</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{item.data}</td>
+                        <td className="py-2.5 px-2 whitespace-nowrap font-semibold">{item.dipendente}</td>
+                        <td className="py-2.5 px-2">
+                          <div className="font-bold text-slate-900">{item.cliente}</div>
+                          <div className="text-slate-500 text-[10px] truncate max-w-[150px]">{item.progetto}</div>
+                        </td>
+                        <td className="py-2.5 px-2 text-center font-bold text-slate-800">{item.ore || 0}h</td>
+                        <td className="py-2.5 px-2 text-center font-bold text-sky-700">{item.ore_backoffice || 0}h</td>
+                        <td className="py-2.5 px-2 text-center font-bold text-purple-700">{item.ore_trasferta || 0}h</td>
+                        <td className="py-2.5 px-2 text-center">
+                          <button onClick={() => openEditModal(item)} className="bg-white border border-slate-300 text-slate-600 hover:text-sky-700 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-sm">✏️ Modifica</button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -776,7 +726,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 4: REPORT PERFORMANCE (ADMIN) */}
+        {/* TAB 4: REPORT PERFORMANCE */}
         {activeTab === 'report' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
@@ -795,9 +745,7 @@ export default function Home() {
                   const inRitardoScadute = attivitaDip.filter(s => s.stato === 'pianificato' && s.data < ieriStr);
 
                   const totaleRilevante = consuntivate.length + inRitardoScadute.length;
-                  const indiceReattivita = totaleRilevante > 0 
-                    ? Math.round((consuntivate.length / totaleRilevante) * 100) 
-                    : 100;
+                  const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
 
                   const totOreLavorate = consuntivate.reduce((acc, curr) => acc + Number(curr.ore || 0), 0);
                   const totOreBackoffice = consuntivate.reduce((acc, curr) => acc + Number(curr.ore_backoffice || 0), 0);
@@ -840,17 +788,9 @@ export default function Home() {
                         )}
                         <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
                           <p className="text-[10px] font-bold uppercase text-slate-400">Ritardi (&gt;24h)</p>
-                          <p className={`text-lg font-bold ${inRitardoScadute.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                            {inRitardoScadute.length}
-                          </p>
+                          <p className={`text-lg font-bold ${inRitardoScadute.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{inRitardoScadute.length}</p>
                         </div>
                       </div>
-
-                      {inRitardoScadute.length > 0 && (
-                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-medium">
-                          🚨 <strong>{inRitardoScadute.length}</strong> interventi in ritardo non ancora consuntivati oltre il limite di 24 ore.
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -861,7 +801,7 @@ export default function Home() {
 
       </main>
 
-      {/* MODALE CONFERMA CHIUSURA E MODIFICA INTERVENTI */}
+      {/* MODALE CHIUSURA / MODIFICA */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
