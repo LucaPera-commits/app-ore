@@ -71,6 +71,9 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
+  // --- STATO SOTTO-TAB PER LE CARTELE DIPENDENTI ---
+  const [dipendenteSubTabs, setDipendenteSubTabs] = useState({});
+
   // --- STATI PER ESPLORATORE DOCUMENTI NEXTCLOUD ARUBA ---
   const [pathNC, setPathNC] = useState('');
   const [searchQueryNC, setSearchQueryNC] = useState('');
@@ -78,9 +81,6 @@ export default function Home() {
   const [loadingNC, setLoadingNC] = useState(false);
   const [errorNC, setErrorNC] = useState(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
-
-  const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti');
-  const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
 
   const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
   const [filtroCruscottoDip, setFiltroCruscottoDip] = useState('Tutti');
@@ -377,14 +377,6 @@ export default function Home() {
   const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
   const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
 
-  const matchAssegnazione = (dipDb, filtroAss) => {
-    if (!filtroAss || filtroAss === 'Tutti') return true;
-    const isDaAssegnare = !dipDb || dipDb === 'Da Assegnare' || dipDb === '';
-    if (filtroAss === 'Da Assegnare') return isDaAssegnare;
-    if (filtroAss === 'Assegnate') return !isDaAssegnare;
-    return true;
-  };
-
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true; 
     const db = nomeDb ? nomeDb.toLowerCase().trim() : '';
@@ -398,34 +390,17 @@ export default function Home() {
   };
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
-  const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
-
-  const attivitaPianificateAttive = storicoCompleto.filter(p => {
-    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
-    if (isChiuso) return false;
-
-    const passAssegnazione = matchAssegnazione(p.dipendente, filtroAssegnazione);
-    const passDipendente = matchNomeDipendente(p.dipendente, targetDipendente);
-
-    return passAssegnazione && passDipendente;
-  });
-
-  const attivitaArchiviate = storicoCompleto.filter(p => {
-    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
-    if (!isChiuso) return false;
-
-    const passAssegnazione = matchAssegnazione(p.dipendente, filtroAssegnazione);
-    const passDipendente = matchNomeDipendente(p.dipendente, targetDipendente);
-
-    return passAssegnazione && passDipendente;
-  });
-
   const todayStr = getTodayStr();
-  const daConfermare = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) <= todayStr);
   const ieriStr = getYesterdayStr();
-  const attivitaInScadenzaRitardo = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) < ieriStr);
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
+
+  // CATEGORIZZAZIONE DEGLI EVENTI
+  const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
+  
+  const dipendentiVisibili = currentUser.ruolo === 'admin' 
+    ? listaDipendenti 
+    : listaDipendenti.filter(d => matchNomeDipendente(d, currentUser.nome));
 
   const tuttiEventiMese = storicoCompleto.filter(item => {
     const dNorm = getNormalizedDate(item.data);
@@ -495,10 +470,11 @@ export default function Home() {
             )}
           </div>
           <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
+          {item.note && <div className="text-[11px] text-slate-400 italic mt-0.5 truncate max-w-xs">📝 {item.note}</div>}
           
           {currentUser.ruolo === 'admin' && (
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Assegna a:</span>
               <select 
                 value={item.dipendente || 'Da Assegnare'} 
                 onChange={e => handleQuickReassign(item, e.target.value)}
@@ -514,7 +490,9 @@ export default function Home() {
         </div>
 
         <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
-          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">✅ Conferma</button>
+          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">
+            {item.stato === 'consuntivo' ? '✏️ Modifica' : '✅ Conferma'}
+          </button>
           <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 whitespace-nowrap transition-all">🗑️ Annulla</button>
         </div>
       </div>
@@ -533,7 +511,7 @@ export default function Home() {
         ))}
       </datalist>
 
-      {/* HEADER PRINCIPALE CON LINK UGREEN NAS */}
+      {/* HEADER PRINCIPALE */}
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('home')}>
@@ -557,8 +535,8 @@ export default function Home() {
             <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📝 Inserimento Ore</button>
             
             <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
-              <span>⏳ Attività</span>
-              {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">{daConfermare.length}</span>}
+              <span>⏳ Gestione Attività</span>
+              {daAssegnareItems.length > 0 && <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
             
             <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
@@ -590,7 +568,7 @@ export default function Home() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
 
-        {/* TAB 0: SCHERMATA PRINCIPALE GENERAL (HOME) */}
+        {/* TAB 0: SCHERMATA PRINCIPALE (HOME) */}
         {activeTab === 'home' && (
           <div className="space-y-8">
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 rounded-3xl p-8 text-white shadow-xl border border-slate-800 relative overflow-hidden">
@@ -602,7 +580,7 @@ export default function Home() {
                   Bentornato, <span className="text-sky-400">{currentUser.nome}</span>! 👋
                 </h1>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Accedi a tutte le risorse aziendali: registra le ore, consulta il Cloud Aruba o accedi direttamente al nuovo Server NAS UGREEN.
+                  Accedi a tutte le risorse aziendali: registra le ore, consulta il Cloud Aruba o accedi direttamente al Server NAS UGREEN.
                 </p>
               </div>
               <div className="absolute right-6 bottom-4 text-8xl opacity-10 pointer-events-none select-none">
@@ -610,17 +588,17 @@ export default function Home() {
               </div>
             </div>
 
-            {daConfermare.length > 0 && (
+            {daAssegnareItems.length > 0 && currentUser.ruolo === 'admin' && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
                 <div className="flex items-center space-x-3">
-                  <span className="text-2xl">⏳</span>
+                  <span className="text-2xl">❓</span>
                   <div>
-                    <h3 className="font-bold text-amber-900 text-sm">Hai {daConfermare.length} attività in attesa di conferma</h3>
-                    <p className="text-xs text-amber-700">Consuntiva le schede ore completate per aggiornare il registro aziendale.</p>
+                    <h3 className="font-bold text-amber-900 text-sm">Ci sono {daAssegnareItems.length} attività ancora "Da Assegnare"</h3>
+                    <p className="text-xs text-amber-700">Assegna ciascuna attività al relativo dipendente nella sezione Attività.</p>
                   </div>
                 </div>
                 <button onClick={() => setActiveTab('programmati')} className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm whitespace-nowrap">
-                  Vedi Attività ➔
+                  Vedi Cartella ➔
                 </button>
               </div>
             )}
@@ -640,8 +618,8 @@ export default function Home() {
                   ⏳
                 </div>
                 <h3 className="font-bold text-slate-900 text-base mb-1">Gestione Attività</h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">Conferma i consuntivi e controlla gli interventi programmati.</p>
-                <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Vedi Calendario ➔</span>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Cartelle per dipendente con attività assegnate e concluse.</p>
+                <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Apri Cartelle ➔</span>
               </div>
 
               <div onClick={() => setActiveTab('documenti')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
@@ -755,166 +733,179 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ (CON BARRA PULSANTI RIPRISTINATA) */}
+        {/* TAB 2: GESTIONE ATTIVITÀ ORGANIZZATA IN CARTELE */}
         {activeTab === 'programmati' && (
-          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
-            <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
+          <div className="space-y-6">
+            
+            {/* INTESTAZIONE E STRUMENTI */}
+            <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-wrap items-center justify-between gap-4 border border-slate-800">
               <div>
-                <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Sincronizzazione Automatica Attiva 🔄</p>
+                <h2 className="text-xl font-bold tracking-tight">📁 Gestione Attività per Dipendente</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Sotto-cartelle suddivise per Attività Assegnate, Concluse e Modificate.</p>
               </div>
-            </div>
-
-            {/* BARRA STRUMENTI CON FILTRI E PULSANTI SINCRONIZZA / AGGIORNA */}
-            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-              {currentUser.ruolo === 'admin' ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-xs font-bold text-slate-500 uppercase">Stato:</span>
-                    <select 
-                      value={filtroAssegnazione} 
-                      onChange={e => setFiltroAssegnazione(e.target.value)} 
-                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none shadow-2xs"
-                    >
-                      <option value="Tutti">Tutti gli stati</option>
-                      <option value="Assegnate">📌 Assegnate</option>
-                      <option value="Da Assegnare">❓ Da Assegnare</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-xs font-bold text-slate-500 uppercase">Dipendente:</span>
-                    <select 
-                      value={filtroDipendente} 
-                      onChange={e => setFiltroDipendente(e.target.value)} 
-                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none shadow-2xs"
-                    >
-                      {['Tutti', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-                </div>
-              ) : <div></div>}
 
               <div className="flex items-center space-x-2">
                 {currentUser.ruolo === 'admin' && (
                   <button 
                     onClick={handleSyncCalendar} 
                     disabled={loadingProgrammati} 
-                    className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold transition-all shadow-sm disabled:opacity-50"
+                    className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50"
                   >
-                    {loadingProgrammati ? '⏳ In corso...' : '⬇️ Sincronizza Ora'}
+                    {loadingProgrammati ? '⏳ In corso...' : '⬇️ Sincronizza Google'}
                   </button>
                 )}
                 <button 
                   onClick={fetchProgrammati} 
                   disabled={loadingProgrammati} 
-                  className="text-xs bg-white text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 font-bold transition-all shadow-sm disabled:opacity-50"
+                  className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-2 rounded-xl border border-slate-700 font-bold transition-all shadow-sm disabled:opacity-50"
                 >
                   {loadingProgrammati ? '⏳' : '🔄 Aggiorna'}
                 </button>
               </div>
             </div>
 
-            <div className="p-6">
-              {loadingProgrammati ? (
-                <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso...</p>
-              ) : attivitaPianificateAttive.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">
-                  <span className="text-4xl block mb-2">🎉</span>
-                  <p className="text-sm font-medium">Nessuna attività in sospeso per i filtri selezionati!</p>
+            {/* SEZIONE 1: CARTELLA "DA ASSEGNARE" */}
+            {(currentUser.ruolo === 'admin' || daAssegnareItems.length > 0) && (
+              <div className="bg-amber-50/70 border-2 border-amber-300/80 rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-amber-200 pb-3">
+                  <div className="flex items-center space-x-2.5">
+                    <span className="text-2xl">❓</span>
+                    <div>
+                      <h3 className="font-bold text-amber-950 text-base">Cartella: Attività Da Assegnare</h3>
+                      <p className="text-xs text-amber-800">Incontri ed eventi sincronizzati da Google o in attesa di assegnazione ad un tecnico.</p>
+                    </div>
+                  </div>
+                  <span className="bg-amber-400 text-slate-950 font-black text-xs px-3 py-1 rounded-full shadow-2xs">
+                    {daAssegnareItems.length} voci
+                  </span>
                 </div>
-              ) : (
-                <div className="space-y-8">
-                  {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente || 'Da Assegnare'))).map(dipNome => {
-                    const attivitaDip = attivitaPianificateAttive.filter(e => (e.dipendente || 'Da Assegnare') === dipNome);
-                    const inRitardo = attivitaDip.filter(e => getNormalizedDate(e.data) < todayStr);
-                    const oggi = attivitaDip.filter(e => getNormalizedDate(e.data) === todayStr);
-                    const future = attivitaDip.filter(e => getNormalizedDate(e.data) > todayStr);
 
-                    return (
-                      <div key={dipNome} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                        <div className="bg-slate-100 px-4 py-3 flex items-center justify-between border-b border-slate-200">
-                          <h3 className={`font-bold text-base flex items-center gap-2 ${dipNome === 'Da Assegnare' ? 'text-indigo-600' : 'text-slate-800'}`}>
-                            <span>{dipNome === 'Da Assegnare' ? '❓' : '👤'}</span> {dipNome}
-                          </h3>
-                          <span className="text-xs font-bold text-slate-500 bg-white px-2.5 py-0.5 rounded-lg border">{attivitaDip.length} attive</span>
+                {daAssegnareItems.length === 0 ? (
+                  <p className="text-xs text-amber-700 font-semibold py-2">✅ Tutte le attività sono state assegnate ai dipendenti!</p>
+                ) : (
+                  <div className="space-y-3">
+                    {daAssegnareItems.map(item => renderRigaAttivita(item, 'amber'))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SEZIONE 2: CARTELE DIPENDENTI CON SOTTO-CATEGORIE */}
+            <div className="space-y-6">
+              {dipendentiVisibili.map(dipNome => {
+                const eventiDip = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, dipNome));
+                
+                // SOTTO-CATEGORIZZAZIONE PER IL DIPENDENTE
+                const assegnateInCorso = eventiDip.filter(e => e.stato === 'pianificato' || (e.stato !== 'consuntivo' && e.stato !== 'annullato'));
+                const concluse = eventiDip.filter(e => e.stato === 'consuntivo');
+                const annullateModificate = eventiDip.filter(e => e.stato === 'annullato' || (e.note && e.note.length > 0));
+
+                const subTabCorrente = dipendenteSubTabs[dipNome] || 'assegnate';
+
+                return (
+                  <div key={dipNome} className="bg-white rounded-3xl border border-slate-200/90 shadow-md overflow-hidden">
+                    
+                    {/* INTESTAZIONE CARTELLA DIPENDENTE */}
+                    <div className="bg-slate-900 text-white p-5 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-sky-500 text-slate-950 font-extrabold rounded-2xl flex items-center justify-center text-lg shadow-sm">
+                          📁
                         </div>
-
-                        <div className="p-4 space-y-4 bg-white">
-                          {inRitardo.length > 0 && (
-                            <div>
-                              <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
-                              <div className="space-y-2">{inRitardo.map(item => renderRigaAttivita(item, 'rose'))}</div>
-                            </div>
-                          )}
-                          {oggi.length > 0 && (
-                            <div>
-                              <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
-                              <div className="space-y-2">{oggi.map(item => renderRigaAttivita(item, 'amber'))}</div>
-                            </div>
-                          )}
-                          {future.length > 0 && (
-                            <div>
-                              <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
-                              <div className="space-y-2">{future.map(item => renderRigaAttivita(item, 'sky'))}</div>
-                            </div>
-                          )}
+                        <div>
+                          <h3 className="font-bold text-lg leading-tight">{dipNome}</h3>
+                          <span className="text-xs text-slate-400 font-medium">Cartella Attività &amp; Commesse</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+
+                      {/* STATISTICHE RAPIDE CARTELLA */}
+                      <div className="flex items-center space-x-2 text-xs font-bold">
+                        <span className="bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-xl border border-amber-500/30">
+                          📌 {assegnateInCorso.length} Assegnate
+                        </span>
+                        <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-xl border border-emerald-500/30">
+                          ✅ {concluse.length} Concluse
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* SOTTO-TAB INTERNI ALLA CARTELLA (ASSEGNATE | CONCLUSE | MODIFICATE) */}
+                    <div className="bg-slate-100 border-b border-slate-200 p-2 flex space-x-1 text-xs font-bold overflow-x-auto">
+                      <button 
+                        onClick={() => setDipendenteSubTabs({ ...dipendenteSubTabs, [dipNome]: 'assegnate' })}
+                        className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                          subTabCorrente === 'assegnate' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>📌 Attività Assegnate</span>
+                        <span className="bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded-full text-[10px]">{assegnateInCorso.length}</span>
+                      </button>
+
+                      <button 
+                        onClick={() => setDipendenteSubTabs({ ...dipendenteSubTabs, [dipNome]: 'concluse' })}
+                        className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                          subTabCorrente === 'concluse' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>✅ Attività Concluse</span>
+                        <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full text-[10px]">{concluse.length}</span>
+                      </button>
+
+                      <button 
+                        onClick={() => setDipendenteSubTabs({ ...dipendenteSubTabs, [dipNome]: 'modificate' })}
+                        className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                          subTabCorrente === 'modificate' ? 'bg-white text-indigo-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>✏️ Note &amp; Storico Modifiche</span>
+                        <span className="bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded-full text-[10px]">{annullateModificate.length}</span>
+                      </button>
+                    </div>
+
+                    {/* CONTENUTO CARTELLA IN BASE AL SOTTO-TAB SELEZIONATO */}
+                    <div className="p-5 space-y-3">
+                      
+                      {/* SUB-TAB 1: ASSEGNATE */}
+                      {subTabCorrente === 'assegnate' && (
+                        assegnateInCorso.length === 0 ? (
+                          <div className="text-center py-8 text-slate-400 text-xs font-semibold">
+                            🎉 Nessuna attività assegnata in sospeso per {dipNome}.
+                          </div>
+                        ) : (
+                          assegnateInCorso.map(item => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky'))
+                        )
+                      )}
+
+                      {/* SUB-TAB 2: CONCLUSE */}
+                      {subTabCorrente === 'concluse' && (
+                        concluse.length === 0 ? (
+                          <div className="text-center py-8 text-slate-400 text-xs font-semibold">
+                            📂 Nessuna attività conclusa registrata per {dipNome}.
+                          </div>
+                        ) : (
+                          concluse
+                            .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
+                            .map(item => renderRigaAttivita(item, 'emerald'))
+                        )
+                      )}
+
+                      {/* SUB-TAB 3: MODIFICATE / ANNULLATE / NOTE */}
+                      {subTabCorrente === 'modificate' && (
+                        annullateModificate.length === 0 ? (
+                          <div className="text-center py-8 text-slate-400 text-xs font-semibold">
+                            📝 Nessun intervento con modifiche o annullamenti per {dipNome}.
+                          </div>
+                        ) : (
+                          annullateModificate.map(item => renderRigaAttivita(item, 'indigo'))
+                        )
+                      )}
+
+                    </div>
+
+                  </div>
+                );
+              })}
             </div>
 
-            {/* ARCHIVIO STORICO */}
-            <div className="bg-slate-50 border-t border-slate-200 p-6">
-              <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci)
-              </h3>
-              
-              <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-xl bg-white shadow-inner">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 bg-slate-100 z-10 shadow-sm">
-                    <tr className="text-slate-500 font-bold uppercase border-b">
-                      <th className="py-2.5 px-3">Stato</th>
-                      <th className="py-2.5 px-3">Data</th>
-                      <th className="py-2.5 px-3">Dipendente</th>
-                      <th className="py-2.5 px-3">Cliente / Tipo</th>
-                      <th className="py-2.5 px-3">Dettagli / Ore</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {attivitaArchiviate.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività trovata nell'archivio.</td>
-                      </tr>
-                    ) : (
-                      attivitaArchiviate
-                        .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
-                        .map(item => (
-                        <tr key={item.id} className={`hover:bg-slate-50 ${item.stato === 'annullato' ? 'opacity-60' : ''}`}>
-                          <td className="py-2 px-3">
-                            {item.stato === 'consuntivo' ? (
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">✅ Conclusa</span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">❌ Annullata</span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3 font-medium text-slate-600">{getNormalizedDate(item.data)}</td>
-                          <td className="py-2 px-3 font-semibold text-slate-800">{item.dipendente}</td>
-                          <td className="py-2 px-3 font-bold text-slate-900">{item.cliente}</td>
-                          <td className="py-2 px-3">
-                            <span className="text-slate-500">{item.progetto}</span>
-                            {item.stato === 'consuntivo' && <span className="ml-2 font-bold text-sky-700">({item.ore}h)</span>}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         )}
 
