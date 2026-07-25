@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   if (!ncUrl || !ncUser || !ncPass) {
     return res.status(500).json({ 
-      message: 'Configurazione Nextcloud mancante. Verificare NEXTCLOUD_URL, NEXTCLOUD_USER e NEXTCLOUD_PASS su Vercel.' 
+      message: 'Configurazione Nextcloud mancante. Verificare le chiavi su Vercel.' 
     });
   }
 
@@ -46,9 +46,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ risultati: fileTrovati, isSearch: true });
     }
 
-    // MODALITÀ 2: Esplorazione Istantanea Cartella (WebDAV)
+    // MODALITÀ 2: Esplorazione Istantanea Cartella (WebDAV Universale)
     const cleanFolder = (folder || '').replace(/^\/+|\/+$/g, '');
-    const webdavUrl = `${baseUrl}/remote.php/dav/files/${encodeURIComponent(ncUser)}/${cleanFolder ? cleanFolder + '/' : ''}`;
+    
+    // Usiamo l'endpoint webdav generico che non richiede l'ID utente esatto
+    const webdavUrl = `${baseUrl}/remote.php/webdav/${cleanFolder ? cleanFolder + '/' : ''}`;
 
     const response = await fetch(webdavUrl, {
       method: 'PROPFIND',
@@ -60,7 +62,10 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
-      throw new Error(`Impossibile accedere alla cartella su Nextcloud (Status: ${response.status})`);
+      // Se fallisce, stampiamo il vero motivo nella console di Vercel per debug
+      const errorText = await response.text();
+      console.error("Errore WebDAV Nextcloud:", response.status, errorText);
+      throw new Error(`Accesso negato al Cloud Aruba (Codice: ${response.status}). Verifica Utente e Password.`);
     }
 
     const xmlText = await response.text();
@@ -74,19 +79,27 @@ export default async function handler(req, res) {
       let rawHref = decodeURIComponent(hrefMatch[1]);
       const isFolder = /<[a-zA-Z0-9]+:collection\s*\/?>/i.test(respXml);
 
-      const userPrefix = `/remote.php/dav/files/${ncUser}/`.toLowerCase();
-      const userPrefixEnc = `/remote.php/dav/files/${encodeURIComponent(ncUser)}/`.toLowerCase();
+      // Nextcloud restituisce il percorso in due modi possibili
+      const prefix1 = `/remote.php/webdav/`.toLowerCase();
+      const prefix2 = `/remote.php/dav/files/`.toLowerCase();
 
       let relPath = rawHref;
-      if (relPath.toLowerCase().startsWith(userPrefix)) {
-        relPath = relPath.substring(userPrefix.length);
-      } else if (relPath.toLowerCase().startsWith(userPrefixEnc)) {
-        relPath = relPath.substring(userPrefixEnc.length);
+      const lowerHref = rawHref.toLowerCase();
+
+      if (lowerHref.startsWith(prefix1)) {
+        relPath = rawHref.substring(prefix1.length);
+      } else if (lowerHref.startsWith(prefix2)) {
+        // Se usa la sintassi dav/files/USERNAME/cartella, rimuoviamo tutta la parte iniziale inclusa l'username
+        const parts = rawHref.split('/');
+        const filesIndex = parts.findIndex(p => p.toLowerCase() === 'files');
+        if (filesIndex !== -1 && parts.length > filesIndex + 2) {
+          relPath = parts.slice(filesIndex + 2).join('/');
+        }
       }
 
       relPath = relPath.replace(/^\/+|\/+$/g, '');
 
-      // Ignora la cartella principale se stessa nella lista dei contenuti
+      // Ignora la cartella principale se stessa
       if (relPath.toLowerCase() === cleanFolder.toLowerCase()) return;
 
       let name = '';
@@ -112,7 +125,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ risultati: items, currentFolder: cleanFolder, isSearch: false });
 
   } catch (error) {
-    console.error("Errore documenti Nextcloud:", error);
-    return res.status(500).json({ message: 'Errore durante la lettura da Nextcloud', error: error.message });
+    console.error("Errore Fetch Nextcloud:", error);
+    return res.status(500).json({ message: error.message || 'Errore durante la lettura da Nextcloud' });
   }
 }
