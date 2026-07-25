@@ -5,7 +5,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// HELPER PER CONNESSIONE GOOGLE CALENDAR
+// CONNESSORE GOOGLE CALENDAR API
 function getGoogleCalendarClient() {
   try {
     const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
@@ -33,7 +33,6 @@ function getGoogleCalendarClient() {
 }
 
 export default async function handler(req, res) {
-  // Disabilita la cache lato Vercel
   res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
 
   if (req.method === 'GET') {
@@ -54,7 +53,6 @@ export default async function handler(req, res) {
     try {
       const { id, ore_effettive, ore_backoffice, ore_trasferta, ore_straordinario, dipendente, chiudi_consuntivo, stato } = req.body;
       
-      // 1. Preleva la scheda attuale da Supabase
       const { data: item, error: fetchErr } = await supabase
         .from('ore_registrate')
         .select('*')
@@ -81,7 +79,6 @@ export default async function handler(req, res) {
         updateData = { dipendente };
       }
 
-      // 2. Aggiorna il database Supabase
       const { error: updateErr } = await supabase
         .from('ore_registrate')
         .update(updateData)
@@ -89,7 +86,7 @@ export default async function handler(req, res) {
 
       if (updateErr) throw updateErr;
 
-      // 3. SE VIENE APPROVATA (stato passa a 'pianificato'): PUBBLICA SU GOOGLE CALENDAR
+      // 1. APPROVAZIONE: SE PASSA A 'pianificato' DA 'in_approvazione', CREA L'EVENTO SU GOOGLE CALENDAR
       if (stato === 'pianificato' && item.stato === 'in_approvazione') {
         const googleObj = getGoogleCalendarClient();
         if (googleObj) {
@@ -124,32 +121,8 @@ export default async function handler(req, res) {
         }
       }
 
-      return res.status(200).json({ message: 'Aggiornato con successo' });
-    } catch (error) {
-      return res.status(500).json({ message: error.message });
-    }
-  }
-
-  if (req.method === 'DELETE') {
-    try {
-      const { id } = req.body;
-
-      // Recupera calendar_event_id prima di eliminare da Supabase
-      const { data: item } = await supabase
-        .from('ore_registrate')
-        .select('calendar_event_id')
-        .eq('id', id)
-        .single();
-
-      const { error } = await supabase
-        .from('ore_registrate')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      // Se l'evento era presente su Google Calendar, rimuovilo
-      if (item && item.calendar_event_id) {
+      // 2. CAMBIO STATO AD 'annullato': SE ESISTEVA L'EVENTO GOOGLE CALENDAR, RIMUOVILO SUBITO
+      if (stato === 'annullato' && item.calendar_event_id) {
         const googleObj = getGoogleCalendarClient();
         if (googleObj) {
           const { calendar, calendarId } = googleObj;
@@ -158,13 +131,61 @@ export default async function handler(req, res) {
               calendarId,
               eventId: item.calendar_event_id
             });
+            await supabase
+              .from('ore_registrate')
+              .update({ calendar_event_id: null })
+              .eq('id', id);
           } catch (calErr) {
-            console.error("Errore cancellazione Google Calendar:", calErr);
+            console.error("Errore rimosso da Google Calendar:", calErr);
           }
         }
       }
 
-      return res.status(200).json({ message: 'Eliminato con successo' });
+      return res.status(200).json({ message: 'Aggiornato con successo' });
+    } catch (error) {
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  if (req.method === 'DELETE') {
+    try {
+      const { id, calendar_event_id } = req.body;
+
+      // Recupera la scheda da Supabase per verificare se possiede un ID evento Google
+      const { data: item } = await supabase
+        .from('ore_registrate')
+        .select('calendar_event_id')
+        .eq('id', id)
+        .single();
+
+      const eventIdToDelete = (item && item.calendar_event_id) || calendar_event_id;
+
+      // Rimuove dal Database interno
+      const { error } = await supabase
+        .from('ore_registrate')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // 3. RIMOZIONE DA GOOGLE CALENDAR (se presente)
+      if (eventIdToDelete) {
+        const googleObj = getGoogleCalendarClient();
+        if (googleObj) {
+          const { calendar, calendarId } = googleObj;
+          try {
+            await calendar.events.delete({
+              calendarId,
+              eventId: eventIdToDelete
+            });
+          } catch (calErr) {
+            // Tolleranza in caso l'evento fosse già stato rimosso a mano da Google
+            console.log("Evento non presente su Google Calendar o già rimosso.");
+          }
+        }
+      }
+
+      return res.status(200).json({ message: 'Eliminato e sincronizzato con Google Calendar' });
     } catch (error) {
       return res.status(500).json({ message: error.message });
     }
