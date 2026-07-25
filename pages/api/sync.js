@@ -19,7 +19,6 @@ function rilevaDipendenteDaTitolo(summary) {
   if (!summary) return 'Da Assegnare';
   const summaryLower = summary.toLowerCase();
 
-  // 1. Tag tra quadre [Giampaolo]
   const matchDip = summary.match(/^\[(.*?)\]/);
   if (matchDip) {
     const dentroQuadre = matchDip[1].trim().toLowerCase();
@@ -31,7 +30,6 @@ function rilevaDipendenteDaTitolo(summary) {
     return matchDip[1].trim(); 
   }
 
-  // 2. Parola chiave nel titolo
   for (const dip of DIPENDENTI_MAPPING) {
     for (const chiave of dip.chiavi) {
       const regex = new RegExp(`\\b${chiave}\\b`, 'i');
@@ -42,6 +40,29 @@ function rilevaDipendenteDaTitolo(summary) {
   }
 
   return 'Da Assegnare';
+}
+
+function rilevaClienteProgetto(summary) {
+  const sumLower = (summary || '').toLowerCase();
+  
+  if (sumLower.includes('ferie')) {
+    return { cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Ferie' };
+  }
+  if (sumLower.includes('permesso') || sumLower.includes('rol')) {
+    return { cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Permesso' };
+  }
+  if (sumLower.includes('malattia')) {
+    return { cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Malattia' };
+  }
+
+  let titoloPulito = summary
+    .replace(/^\[.*?\]\s*/, '')
+    .replace(/^(✅ |❌ |❓ )/g, '')
+    .trim();
+
+  let [cliente, ...restoProgetto] = titoloPulito.split('-');
+  let progetto = restoProgetto.join('-').trim() || 'Attività da Calendar';
+  return { cliente: cliente.trim(), progetto };
 }
 
 async function getGoogleCalendar() {
@@ -90,15 +111,7 @@ export default async function handler(req, res) {
       if (!event.summary) continue;
 
       const dipendenteRilevato = rilevaDipendenteDaTitolo(event.summary);
-
-      let titoloPulito = event.summary
-        .replace(/^\[.*?\]\s*/, '')
-        .replace(/^(✅ |❌ |❓ )/g, '')
-        .trim();
-
-      let [cliente, ...restoProgetto] = titoloPulito.split('-');
-      let progetto = restoProgetto.join('-').trim() || 'Attività da Calendar';
-      cliente = cliente.trim();
+      const { cliente, progetto } = rilevaClienteProgetto(event.summary);
 
       let dataEvento = null;
       if (event.start?.date) {
@@ -109,7 +122,6 @@ export default async function handler(req, res) {
 
       if (!dataEvento) continue;
 
-      // Cerca se esiste già nel DB
       const { data: esistente } = await supabase
         .from('eventi_ore')
         .select('id, dipendente, stato')
@@ -117,41 +129,17 @@ export default async function handler(req, res) {
         .maybeSingle();
 
       if (esistente) {
-        // Se nel DB era "Da Assegnare" ma su Calendar hai aggiunto il nome dopo:
         if ((!esistente.dipendente || esistente.dipendente === 'Da Assegnare') && dipendenteRilevato !== 'Da Assegnare') {
           await supabase
             .from('eventi_ore')
-            .update({ dipendente: dipendenteRilevato })
+            .update({ dipendente: dipendenteRilevato, cliente, progetto })
             .eq('id', esistente.id);
           
           aggiornati++;
-
-          // Formatta il titolo su Calendar con il tag standard [Nome]
-          try {
-            let summaryStandard = `[${dipendenteRilevato}] ${titoloPulito}`;
-            if (esistente.stato === 'consuntivo') summaryStandard = `✅ ${summaryStandard}`;
-            await calendar.events.patch({
-              calendarId,
-              eventId: event.id,
-              requestBody: { summary: summaryStandard }
-            });
-          } catch (e) { console.error("Errore update calendar title:", e); }
         }
         continue;
       }
 
-      // Se è un NUOVO evento ed è stato assegnato, formatta pulito il titolo su Calendar
-      if (dipendenteRilevato !== 'Da Assegnare' && !event.summary.startsWith(`[${dipendenteRilevato}]`)) {
-        try {
-          await calendar.events.patch({
-            calendarId,
-            eventId: event.id,
-            requestBody: { summary: `[${dipendenteRilevato}] ${titoloPulito}` }
-          });
-        } catch (e) {}
-      }
-
-      // Inserisci nel DB come 'pianificato' (da consuntivare)
       await supabase.from('eventi_ore').insert([{
         calendar_event_id: event.id,
         dipendente: dipendenteRilevato,
@@ -169,7 +157,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({ 
-      message: `Sincronizzazione completata! ${events.length} analizzati, ${inseriti} nuovi importati, ${aggiornati} assegnati da Calendar.` 
+      message: `Sincronizzazione completata! ${events.length} analizzati, ${inseriti} nuovi importati, ${aggiornati} aggiornati.` 
     });
 
   } catch (error) {
