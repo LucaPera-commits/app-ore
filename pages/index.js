@@ -32,7 +32,6 @@ const LISTA_CLIENTI = [
 ];
 
 export default function Home() {
-  // 1. STATI E HOOK
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
@@ -63,7 +62,6 @@ export default function Home() {
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
 
-  // Filtri Cruscotto
   const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
   const [filtroCruscottoDip, setFiltroCruscottoDip] = useState('Tutti');
   const [filtroCruscottoCliente, setFiltroCruscottoCliente] = useState('Tutti');
@@ -74,7 +72,6 @@ export default function Home() {
   const [oreTrasfertaEffettive, setOreTrasfertaEffettive] = useState(0);
   const [dipendenteEffettivo, setDipendenteEffettivo] = useState('');
 
-  // 2. EFFETTI COLLATERALI
   useEffect(() => {
     const saved = localStorage.getItem('bw_user');
     if (saved) setCurrentUser(JSON.parse(saved));
@@ -109,7 +106,6 @@ export default function Home() {
     if (currentUser) fetchProgrammati();
   }, [activeTab, currentUser]);
 
-  // 3. FUNZIONI DI GESTIONE
   const handleLogin = (e) => {
     e.preventDefault();
     const user = UTENTI[loginForm.username.toLowerCase().trim()];
@@ -229,7 +225,6 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  // 4. LOGIN SCREEN
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
@@ -249,41 +244,20 @@ export default function Home() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={loginForm.username} 
-                  onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} 
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" 
-                  placeholder="Inserisci nome utente" 
-                />
+                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" placeholder="Inserisci nome utente" />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
                 <div className="relative">
-                  <input 
-                    type={showPassword ? 'text' : 'password'} 
-                    required 
-                    value={loginForm.password} 
-                    onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} 
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium pr-12" 
-                    placeholder="Inserisci password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-base focus:outline-none p-1 transition-all"
-                    title={showPassword ? 'Nascondi password' : 'Mostra password'}
-                  >
+                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium pr-12" placeholder="Inserisci password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-base focus:outline-none p-1 transition-all">
                     {showPassword ? '👁️' : '🙈'}
                   </button>
                 </div>
               </div>
 
-              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">
-                Accedi al Portale ➔
-              </button>
+              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">Accedi al Portale ➔</button>
             </form>
           </div>
           <p className="text-center text-[11px] text-slate-400 mt-6 font-medium">© {new Date().getFullYear()} bw solutions • Powered by Zo&amp;annA S.R.L.</p>
@@ -292,28 +266,36 @@ export default function Home() {
     );
   }
 
-  // 5. CALCOLI DASHBOARD & FILTRAGGIO CORRETTO
+  // --- FUNZIONE DI MATCHING FLESSIBILE PER NOMI (Es: "Giampaolo" match con "Giampaolo Lauro") ---
+  const matchNomeDipendente = (nomeDb, filtro) => {
+    if (!filtro || filtro === 'Tutti') return true;
+    if (!nomeDb) return false;
+    const db = nomeDb.toLowerCase().trim();
+    const flt = filtro.toLowerCase().trim();
+    const primoNomeFiltro = flt.split(' ')[0];
+    const primoNomeDb = db.split(' ')[0];
+    return db === flt || db.includes(primoNomeFiltro) || flt.includes(primoNomeDb);
+  };
+
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
-  // 🎯 FILTRAGGIO ATTIVITÀ IN CORSO (Solo 'pianificato')
+  // 🎯 FILTRAGGIO ATTIVITÀ PIANIFICATE ATTIVE
   const attivitaPianificateAttive = programmati.filter(p => {
-    if (p.stato !== 'pianificato') return false; // Ignora consuntivi e annullati
-    if (targetDipendente === 'Tutti') return true;
-    return p.dipendente?.trim().toLowerCase() === targetDipendente.trim().toLowerCase();
+    if (p.stato !== 'pianificato') return false;
+    return matchNomeDipendente(p.dipendente, targetDipendente);
   });
 
-  // 🎯 FILTRAGGIO ARCHIVIO STORICO (Solo 'consuntivo' e 'annullato')
+  // 🎯 FILTRAGGIO ARCHIVIO STORICO
   const attivitaArchiviate = storicoCompleto.filter(p => {
     if (p.stato !== 'consuntivo' && p.stato !== 'annullato') return false;
-    if (targetDipendente === 'Tutti') return true;
-    return p.dipendente?.trim().toLowerCase() === targetDipendente.trim().toLowerCase();
+    return matchNomeDipendente(p.dipendente, targetDipendente);
   });
 
   const daConfermare = attivitaPianificateAttive.filter(p => p.data <= getTodayStr());
   const ieriStr = getYesterdayStr();
   const attivitaInScadenzaRitardo = programmati.filter(p => 
-    (currentUser.ruolo === 'admin' || p.dipendente === currentUser.nome) && 
+    (currentUser.ruolo === 'admin' || matchNomeDipendente(p.dipendente, currentUser.nome)) && 
     p.stato === 'pianificato' && 
     p.data < ieriStr
   );
@@ -322,7 +304,7 @@ export default function Home() {
 
   const tuttiEventiMese = storicoCompleto.filter(item => {
     const isInMese = item.data && item.data.startsWith(filtroMese);
-    const matchDip = filtroCruscottoDip === 'Tutti' || item.dipendente === filtroCruscottoDip;
+    const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
     const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
     return isInMese && matchDip && matchCliente;
   });
@@ -463,7 +445,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ (CORRETTA ED EFFICIENTE) */}
+        {/* TAB 2: GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
@@ -501,11 +483,11 @@ export default function Home() {
               ) : attivitaPianificateAttive.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
                   <span className="text-4xl block mb-2">🎉</span>
-                  <p className="text-sm font-medium">Nessuna attività in programma da svolgere!</p>
+                  <p className="text-sm font-medium">Nessuna attività pianificata in corso per questo utente!</p>
+                  <p className="text-xs text-slate-400 mt-1">Le attività completate si trovano nella sezione "Archivio Storico" in basso.</p>
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {/* RAGGRUPPAMENTO DINAMICO PER DIPENDENTE */}
                   {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente))).map(dipNome => {
                     const attivitaDip = attivitaPianificateAttive.filter(e => e.dipendente === dipNome);
                     const inRitardo = attivitaDip.filter(e => e.data < getTodayStr());
@@ -522,7 +504,6 @@ export default function Home() {
                         </div>
 
                         <div className="p-4 space-y-4 bg-white">
-                          {/* IN RITARDO */}
                           {inRitardo.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
@@ -544,7 +525,6 @@ export default function Home() {
                             </div>
                           )}
 
-                          {/* OGGI */}
                           {oggi.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
@@ -566,7 +546,6 @@ export default function Home() {
                             </div>
                           )}
 
-                          {/* FUTURE */}
                           {future.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
@@ -592,10 +571,10 @@ export default function Home() {
               )}
             </div>
 
-            {/* SEZIONE: ARCHIVIO STORICO ATTIVITÀ */}
+            {/* ARCHIVIO STORICO */}
             <div className="bg-slate-50 border-t border-slate-200 p-6">
               <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci)
+                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci trovate)
               </h3>
               
               <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-xl bg-white shadow-inner">
@@ -612,7 +591,7 @@ export default function Home() {
                   <tbody className="divide-y divide-slate-100">
                     {attivitaArchiviate.length === 0 ? (
                       <tr>
-                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività conclusa o annullata nell'archivio.</td>
+                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività trovata per questo filtro nell'archivio.</td>
                       </tr>
                     ) : (
                       attivitaArchiviate
@@ -761,7 +740,7 @@ export default function Home() {
 
               <div className="p-6 space-y-6">
                 {listaDipendenti.map(nomeDip => {
-                  const attivitaDip = storicoCompleto.filter(s => s.dipendente === nomeDip);
+                  const attivitaDip = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, nomeDip));
                   const consuntivate = attivitaDip.filter(s => s.stato === 'consuntivo');
                   const inRitardoScadute = attivitaDip.filter(s => s.stato === 'pianificato' && s.data < ieriStr);
 
