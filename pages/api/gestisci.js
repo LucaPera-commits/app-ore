@@ -26,16 +26,13 @@ async function getGoogleCalendar() {
 
 export default async function handler(req, res) {
   try {
-    // --- METODO GET: LEGGI ATTIVITÀ ---
     if (req.method === 'GET') {
       const { mode } = req.query;
-
       if (mode === 'all') {
         const { data, error } = await supabase
           .from('eventi_ore')
           .select('*')
           .order('data', { ascending: false });
-
         if (error) return res.status(500).json({ message: error.message });
         return res.status(200).json(data);
       } else {
@@ -44,13 +41,11 @@ export default async function handler(req, res) {
           .select('*')
           .neq('stato', 'annullato')
           .order('data', { ascending: true });
-
         if (error) return res.status(500).json({ message: error.message });
         return res.status(200).json(data);
       }
     }
 
-    // --- METODO PUT: CHIUDI O RIASSEGNA ---
     if (req.method === 'PUT') {
       const { id, calendar_event_id, ore_effettive, ore_backoffice, ore_trasferta, dipendente, chiudi_consuntivo } = req.body;
 
@@ -74,25 +69,30 @@ export default async function handler(req, res) {
 
       if (dbError) return res.status(500).json({ message: dbError.message });
 
-      // Aggiorna Google Calendar
+      // Sincronizza l'assegnazione e lo stato direttamente su Google Calendar
       if (calendar_event_id && calendarId) {
         try {
           const calendar = await getGoogleCalendar();
           if (calendar) {
             const eventRes = await calendar.events.get({ calendarId, eventId: calendar_event_id });
             let summary = eventRes.data.summary || '';
-            summary = summary.replace(/^(✅ |❌ |❓ )/g, '').trim();
+            
+            let titoloPulito = summary
+              .replace(/^(✅ |❌ |❓ )/g, '')
+              .replace(/^\[.*?\]\s*/, '')
+              .trim();
 
-            if (chiudi_consuntivo) {
-              summary = `✅ ${summary}`;
-            } else if (dipendente) {
-              summary = `[${dipendente}] ${summary.replace(/^\[.*?\]\s*/, '')}`;
+            const dip = dipendente || updatedDb.dipendente;
+            let nuovoSummary = (dip && dip !== 'Da Assegnare') ? `[${dip}] ${titoloPulito}` : titoloPulito;
+
+            if (updatedDb.stato === 'consuntivo' || chiudi_consuntivo) {
+              nuovoSummary = `✅ ${nuovoSummary}`;
             }
 
             await calendar.events.patch({
               calendarId,
               eventId: calendar_event_id,
-              requestBody: { summary }
+              requestBody: { summary: nuovoSummary }
             });
           }
         } catch (calError) {
@@ -103,29 +103,23 @@ export default async function handler(req, res) {
       return res.status(200).json({ message: "Attività aggiornata con successo", data: updatedDb });
     }
 
-    // --- METODO DELETE: ANNULLA E SPOSTA IN ARCHIVIO ---
     if (req.method === 'DELETE') {
       const { id, calendar_event_id } = req.body;
       if (!id) return res.status(400).json({ message: "ID mancante" });
 
-      // 1. Sposta in archivio sul Database (stato = annullato)
       const { error: dbError } = await supabase
         .from('eventi_ore')
         .update({ stato: 'annullato' })
         .eq('id', id);
 
-      if (dbError) {
-        return res.status(500).json({ message: "Errore durante l'annullamento nel DB.", error: dbError.message });
-      }
+      if (dbError) return res.status(500).json({ message: dbError.message });
 
-      // 2. Segna l'evento come ANNULLATO su Google Calendar
       if (calendar_event_id && calendarId) {
         try {
           const calendar = await getGoogleCalendar();
           if (calendar) {
             const eventRes = await calendar.events.get({ calendarId, eventId: calendar_event_id });
-            let nuovoTitolo = eventRes.data.summary || '';
-            nuovoTitolo = nuovoTitolo.replace(/^(✅ |❌ )/g, '').trim();
+            let nuovoTitolo = (eventRes.data.summary || '').replace(/^(✅ |❌ )/g, '').trim();
 
             await calendar.events.patch({
               calendarId,
