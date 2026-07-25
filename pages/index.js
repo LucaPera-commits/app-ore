@@ -93,11 +93,14 @@ export default function Home() {
   const fetchProgrammati = async () => {
     setLoadingProgrammati(true);
     try {
-      const res = await fetch('/api/gestisci');
-      if (res.ok) setProgrammati(await res.json());
-      
-      const resAll = await fetch('/api/gestisci?mode=all');
-      if (resAll.ok) setStoricoCompleto(await resAll.json());
+      const res = await fetch('/api/gestisci?mode=all');
+      if (res.ok) {
+        const tuttiDati = await res.json();
+        setStoricoCompleto(tuttiDati);
+        
+        // Separiamo i dati: "programmati" sono quelli aperti, "storico" sono quelli chiusi/annullati
+        setProgrammati(tuttiDati.filter(d => d.stato !== 'annullato'));
+      }
     } catch (e) { console.error(e); } 
     finally { setLoadingProgrammati(false); }
   };
@@ -143,7 +146,6 @@ export default function Home() {
     }
   };
 
-  // --- RIASSEGNAZIONE RAPIDA (REINTRODOTTA) ---
   const handleQuickReassign = async (item, nuovoDipendente) => {
     if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
     setLoadingProgrammati(true);
@@ -159,7 +161,7 @@ export default function Home() {
         })
       });
       if (res.ok) {
-        fetchProgrammati(); // Ricarica i dati per spostare graficamente il blocco
+        fetchProgrammati(); 
       } else {
         alert("Errore durante la riassegnazione.");
         setLoadingProgrammati(false);
@@ -293,16 +295,16 @@ export default function Home() {
     );
   }
 
-  // --- LOGICA DI CONFRONTO NOMI ---
+  // --- LOGICA DI CONFRONTO NOMI INFALLIBILE ---
   const matchNomeDipendente = (nomeDb, filtro) => {
-    if (!filtro || filtro === 'Tutti') return true;
-    if (!nomeDb) return false;
-    const db = nomeDb.toLowerCase().trim();
+    if (!filtro || filtro === 'Tutti') return true; // Se Tutti, mostra sempre
+    
+    // Se non ha nome o è nullo/vuoto, lo classifichiamo come "Da Assegnare"
+    const db = nomeDb ? nomeDb.toLowerCase().trim() : 'da assegnare';
     const flt = filtro.toLowerCase().trim();
 
     if (db === flt) return true;
-    if (flt === 'da assegnare') return db === 'da assegnare';
-    if (db === 'da assegnare') return flt === 'da assegnare';
+    if (flt === 'da assegnare' && (db === '' || db === 'da assegnare' || db === 'null')) return true;
 
     const partiFiltro = flt.split(' ').filter(Boolean);
     const partiDb = db.split(' ').filter(Boolean);
@@ -313,23 +315,23 @@ export default function Home() {
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
-  const attivitaPianificateAttive = programmati.filter(p => {
-    if (p.stato !== 'pianificato') return false;
+  // 🎯 FILTRO MAGLIA LARGA: Prendi TUTTO ciò che NON è completato/annullato (anche null, stringhe vuote, vecchi stati)
+  const attivitaPianificateAttive = storicoCompleto.filter(p => {
+    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
+    if (isChiuso) return false;
     return matchNomeDipendente(p.dipendente, targetDipendente);
   });
 
+  // 🎯 FILTRO ARCHIVIO: Prendi TUTTO ciò che È completato/annullato
   const attivitaArchiviate = storicoCompleto.filter(p => {
-    if (p.stato !== 'consuntivo' && p.stato !== 'annullato') return false;
+    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
+    if (!isChiuso) return false;
     return matchNomeDipendente(p.dipendente, targetDipendente);
   });
 
   const daConfermare = attivitaPianificateAttive.filter(p => p.data <= getTodayStr());
   const ieriStr = getYesterdayStr();
-  const attivitaInScadenzaRitardo = programmati.filter(p => 
-    (currentUser.ruolo === 'admin' || matchNomeDipendente(p.dipendente, currentUser.nome)) && 
-    p.stato === 'pianificato' && 
-    p.data < ieriStr
-  );
+  const attivitaInScadenzaRitardo = attivitaPianificateAttive.filter(p => p.data < ieriStr);
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
@@ -355,19 +357,18 @@ export default function Home() {
           <span className={`text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200`}>
             {item.data === getTodayStr() ? 'Oggi' : item.data}
           </span>
-          <span className="font-bold text-slate-900 text-sm truncate">{item.cliente}</span>
+          <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
         </div>
-        <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto}</div>
+        <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
         
-        {/* REINTRODUZIONE DEL SELETTORE PER LA RIASSEGNAZIONE RAPIDA (SOLO ADMIN) */}
         {currentUser.ruolo === 'admin' && (
           <div className="mt-2 flex items-center gap-2">
             <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
             <select 
-              value={item.dipendente} 
+              value={item.dipendente || 'Da Assegnare'} 
               onChange={e => handleQuickReassign(item, e.target.value)}
               className={`text-xs font-bold px-2 py-0.5 rounded border outline-none cursor-pointer ${
-                item.dipendente === 'Da Assegnare' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                (!item.dipendente || item.dipendente === 'Da Assegnare') ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
               }`}
             >
               <option value="Da Assegnare">❓ Da Assegnare</option>
@@ -552,13 +553,14 @@ export default function Home() {
               ) : attivitaPianificateAttive.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
                   <span className="text-4xl block mb-2">🎉</span>
-                  <p className="text-sm font-medium">Nessuna attività pianificata in corso per questo utente!</p>
-                  <p className="text-xs text-slate-400 mt-1">Le attività completate si trovano nella sezione "Archivio Storico" in basso.</p>
+                  <p className="text-sm font-medium">Nessuna attività in sospeso o da assegnare per questo filtro!</p>
+                  <p className="text-xs text-slate-400 mt-1">Le attività completate si trovano nell'Archivio Storico in basso.</p>
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente))).map(dipNome => {
-                    const attivitaDip = attivitaPianificateAttive.filter(e => e.dipendente === dipNome);
+                  {/* RAGGRUPPAMENTO DINAMICO (Gestisce anche "Da Assegnare") */}
+                  {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente || 'Da Assegnare'))).map(dipNome => {
+                    const attivitaDip = attivitaPianificateAttive.filter(e => (e.dipendente || 'Da Assegnare') === dipNome);
                     const inRitardo = attivitaDip.filter(e => e.data < getTodayStr());
                     const oggi = attivitaDip.filter(e => e.data === getTodayStr());
                     const future = attivitaDip.filter(e => e.data > getTodayStr());
@@ -778,7 +780,7 @@ export default function Home() {
                 {listaDipendenti.map(nomeDip => {
                   const attivitaDip = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, nomeDip));
                   const consuntivate = attivitaDip.filter(s => s.stato === 'consuntivo');
-                  const inRitardoScadute = attivitaDip.filter(s => s.stato === 'pianificato' && s.data < ieriStr);
+                  const inRitardoScadute = attivitaDip.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && s.data < ieriStr);
 
                   const totaleRilevante = consuntivate.length + inRitardoScadute.length;
                   const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
