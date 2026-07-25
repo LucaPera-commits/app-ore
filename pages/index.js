@@ -48,17 +48,27 @@ const getNomeMeseText = (annoMeseStr) => {
 
 const getNormalizedDate = (d) => {
   if (!d) return getTodayStr();
+  if (typeof d !== 'string' && typeof d !== 'number') return getTodayStr();
   return String(d).split('T')[0].split(' ')[0];
 };
 
 const formatDateSafely = (dateVal) => {
   if (!dateVal) return '-';
-  const d = new Date(dateVal);
-  if (isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString('it-IT', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
+  try {
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return String(dateVal).split('T')[0];
+    return d.toLocaleDateString('it-IT', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  } catch (e) {
+    return String(dateVal);
+  }
+};
+
+const renderStars = (rating) => {
+  const count = Math.max(1, Math.min(5, Math.floor(Number(rating) || 5)));
+  return '⭐'.repeat(count);
 };
 
 const getGiorniLavorativiMese = (annoMeseStr) => {
@@ -141,12 +151,15 @@ export default function Home() {
   useEffect(() => {
     setIsMounted(true);
     const saved = localStorage.getItem('bw_user');
-    if (saved) setCurrentUser(JSON.parse(saved));
+    if (saved) {
+      try { setCurrentUser(JSON.parse(saved)); } catch (e) {}
+    }
 
     const savedRead = localStorage.getItem('bw_read_feedbacks');
     if (savedRead) {
       try {
-        setReadFeedbackIds(JSON.parse(savedRead));
+        const parsed = JSON.parse(savedRead);
+        if (Array.isArray(parsed)) setReadFeedbackIds(parsed);
       } catch (e) {}
     }
   }, []);
@@ -217,10 +230,11 @@ export default function Home() {
   const getFeedbackKey = (fb) => fb ? (fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`) : '';
 
   useEffect(() => {
-    if (activeTab === 'feedback' && feedbackList.length > 0) {
+    if (activeTab === 'feedback' && Array.isArray(feedbackList) && feedbackList.length > 0) {
       const keysToMark = feedbackList.map(getFeedbackKey).filter(Boolean);
       setReadFeedbackIds(prev => {
-        const nextSet = new Set([...prev, ...keysToMark]);
+        const currentArr = Array.isArray(prev) ? prev : [];
+        const nextSet = new Set([...currentArr, ...keysToMark]);
         const nextArr = Array.from(nextSet);
         localStorage.setItem('bw_read_feedbacks', JSON.stringify(nextArr));
         return nextArr;
@@ -228,15 +242,19 @@ export default function Home() {
     }
   }, [activeTab, feedbackList]);
 
-  const unreadFeedbackCount = feedbackList.filter(fb => {
+  const safeReadIds = Array.isArray(readFeedbackIds) ? readFeedbackIds : [];
+  const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
+  const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
+
+  const unreadFeedbackCount = safeFeedbackList.filter(fb => {
     if (!fb || fb.is_deleted) return false;
     const key = getFeedbackKey(fb);
     
     if (currentUser?.ruolo === 'admin') {
-      return !fb.risposta && !readFeedbackIds.includes(key);
+      return !fb.risposta && !safeReadIds.includes(key);
     } else {
       const isMyReply = currentUser?.nome && matchNomeDipendente(fb.autore, currentUser.nome) && fb.risposta;
-      return (isMyReply || !readFeedbackIds.includes(String(fb.id))) && !readFeedbackIds.includes(key);
+      return (isMyReply || !safeReadIds.includes(String(fb.id))) && !safeReadIds.includes(key);
     }
   }).length;
 
@@ -309,6 +327,7 @@ export default function Home() {
   };
 
   const handleApprovaAssenza = async (item) => {
+    if (!item) return;
     setLoading(true);
     try {
       const res = await fetch('/api/gestisci', {
@@ -327,6 +346,7 @@ export default function Home() {
   };
 
   const handleRifiutaAssenza = async (item) => {
+    if (!item) return;
     if (!confirm(`Vuoi RIFIUTARE la richiesta di ${item.progetto} di ${item.dipendente}?`)) return;
     setLoading(true);
     try {
@@ -347,7 +367,7 @@ export default function Home() {
       const res = await fetch(`/api/documenti?folder=${encodeURIComponent(folderPath)}&query=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (res.ok) {
-        setRisultatiNC(data.risultati || []);
+        setRisultatiNC(Array.isArray(data.risultati) ? data.risultati : []);
         setIsSearchMode(data.isSearch || false);
       } else {
         setErrorNC(data.message || 'Errore nel caricamento documenti');
@@ -416,7 +436,7 @@ export default function Home() {
 
   const handleQuickReassign = async (item, nuovoDipendente) => {
     if (currentUser?.ruolo !== 'admin') return alert("Solo l'amministratore può riassegnare le attività.");
-    if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
+    if (!item || !nuovoDipendente || nuovoDipendente === item.dipendente) return;
     try {
       const res = await fetch('/api/gestisci', {
         method: 'PUT',
@@ -541,8 +561,9 @@ export default function Home() {
 
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true; 
-    const db = nomeDb ? nomeDb.toLowerCase().trim() : '';
-    const flt = filtro.toLowerCase().trim();
+    if (!nomeDb) return false;
+    const db = String(nomeDb).toLowerCase().trim();
+    const flt = String(filtro).toLowerCase().trim();
 
     if (db === flt) return true;
     const partiFiltro = flt.split(' ').filter(Boolean);
@@ -558,6 +579,7 @@ export default function Home() {
   };
 
   const handleElimina = async (item) => {
+    if (!item) return;
     if (!canEditItem(item)) return alert("Puoi annullare solo le tue attività.");
     if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
     setLoading(true);
@@ -572,6 +594,7 @@ export default function Home() {
   };
 
   const openEditModal = (item) => {
+    if (!item) return;
     if (!canEditItem(item)) return alert("Puoi modificare solo le tue attività.");
     setModalItem(item);
     setOreEffettive(item.ore || 0);
@@ -585,7 +608,8 @@ export default function Home() {
     let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore Impegnate\n";
     
     listaDipendenti.forEach(nomeDip => {
-      const eventi = storicoCompleto.filter(item => {
+      const eventi = safeStorico.filter(item => {
+        if (!item) return false;
         const dNorm = getNormalizedDate(item.data);
         return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo';
       });
@@ -615,7 +639,8 @@ export default function Home() {
   const exportCSVFatturazione = () => {
     let csv = "Cliente;Commessa / Progetto;Dipendente;Data;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Note\n";
     
-    const consuntivi = storicoCompleto.filter(item => {
+    const consuntivi = safeStorico.filter(item => {
+      if (!item) return false;
       const dNorm = getNormalizedDate(item.data);
       const inMese = dNorm && dNorm.startsWith(filtroMeseReport);
       const matchCliente = filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione;
@@ -640,16 +665,15 @@ export default function Home() {
   const todayStr = getTodayStr();
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
-  const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
+  const daAssegnareItems = safeStorico.filter(p => p && (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
   const dipendentiVisibili = listaDipendenti;
 
   // CONTEGGI PER CRUSCOTTO COMPITI E AZIONI PENDENTI
-  const assenzeDaApprovareAdmin = storicoCompleto.filter(s => s.stato === 'in_approvazione');
-  const feedbackSenzaRisposta = feedbackList.filter(f => !f.risposta && !f.is_deleted);
-  const mieAttivitaArretrato = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
-  const mieAttivitaProssime = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
-  const mieiFeedbackRisposti = feedbackList.filter(f => matchNomeDipendente(f.autore, currentUser?.nome) && f.risposta);
-  const consuntiviTeamDaChiudere = storicoCompleto.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
+  const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
+  const mieAttivitaArretrato = safeStorico.filter(s => s && matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
+  const mieAttivitaProssime = safeStorico.filter(s => s && matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
+  const mieiFeedbackRisposti = safeFeedbackList.filter(f => f && matchNomeDipendente(f.autore, currentUser?.nome) && f.risposta);
+  const consuntiviTeamDaChiudere = safeStorico.filter(s => s && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
 
   // CALCOLO DISPONIBILITÀ MESE SUCCESSIVO
   const nextMonthStr = getNextMonthStr();
@@ -658,7 +682,8 @@ export default function Home() {
   const oreLavorativeTotaliProssimoMese = giorniLavorativiProssimoMese * 8;
 
   const riepilogoDisponibilitaProssimoMese = listaDipendenti.map(nomeDip => {
-    const eventiDipMese = storicoCompleto.filter(item => {
+    const eventiDipMese = safeStorico.filter(item => {
+      if (!item) return false;
       const dNorm = getNormalizedDate(item.data);
       return dNorm && dNorm.startsWith(nextMonthStr) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
     });
@@ -676,6 +701,7 @@ export default function Home() {
   });
 
   const renderRigaAttivita = (item, colorTheme) => {
+    if (!item) return null;
     const normDate = getNormalizedDate(item.data);
     const isAssenzaFlag = isFerie(item) || isPermesso(item) || isMalattia(item);
     const isInApprovazione = item.stato === 'in_approvazione';
@@ -1378,7 +1404,7 @@ export default function Home() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {dipendentiVisibili.map(dipNome => {
-                      const eventiDip = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, dipNome));
+                      const eventiDip = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, dipNome));
                       const daConsuntivare = eventiDip.filter(e => e.stato !== 'consuntivo' && e.stato !== 'annullato' && getNormalizedDate(e.data) <= todayStr);
                       const inProgramma = eventiDip.filter(e => e.stato !== 'consuntivo' && e.stato !== 'annullato' && getNormalizedDate(e.data) > todayStr);
                       const concluse = eventiDip.filter(e => e.stato === 'consuntivo');
@@ -1456,7 +1482,7 @@ export default function Home() {
             {/* CARTELE DIPENDENTI */}
             <div className="space-y-4">
               {dipendentiVisibili.map(dipNome => {
-                const eventiDip = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, dipNome));
+                const eventiDip = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, dipNome));
                 const interventiLavoro = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) === 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
                 const backofficeProgetti = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) > 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
                 const assenzeGiustificativi = eventiDip.filter(e => isAssenza(e) && e.stato !== 'consuntivo' && e.stato !== 'annullato');
@@ -1574,7 +1600,7 @@ export default function Home() {
                   <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
                     <span>💡 Suggerimenti &amp; Feedback App</span>
                     <span className="bg-purple-600 text-white text-xs px-2.5 py-0.5 rounded-full font-black">
-                      {feedbackList.length}
+                      {safeFeedbackList.length}
                     </span>
                   </h2>
                   <p className="text-xs text-slate-300 mt-0.5">Aiutaci a migliorare l'applicazione: proponi nuove funzioni o segnala problemi.</p>
@@ -1668,7 +1694,7 @@ export default function Home() {
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                 <div>
                   <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                    <span>💬</span> Bacheca Idee &amp; Feedback ({feedbackList.length})
+                    <span>💬</span> Bacheca Idee &amp; Feedback ({safeFeedbackList.length})
                   </h3>
                   <p className="text-xs text-slate-400">Suggerimenti inviati dai collaboratori</p>
                 </div>
@@ -1694,16 +1720,15 @@ export default function Home() {
 
               {loadingFeedback ? (
                 <p className="text-center py-8 text-xs text-slate-400 font-medium">Caricamento suggerimenti in corso...</p>
-              ) : feedbackList.length === 0 ? (
+              ) : safeFeedbackList.length === 0 ? (
                 <div className="text-center py-10 bg-slate-50 border border-dashed rounded-2xl text-xs text-slate-400">
                   <span className="text-3xl block mb-1">💡</span>
                   Nessun suggerimento visibile al momento.
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {feedbackList.map((fb) => {
+                  {safeFeedbackList.map((fb) => {
                     if (!fb) return null;
-                    const starsCount = Math.max(1, Math.min(5, Number(fb.valutazione || 5)));
                     return (
                       <div 
                         key={fb.id} 
@@ -1728,7 +1753,7 @@ export default function Home() {
 
                           <div className="flex items-center space-x-2">
                             <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                              {'⭐'.repeat(starsCount)}
+                              {renderStars(fb.valutazione)}
                             </span>
                             <span className="text-[10px] text-slate-400">
                               {formatDateSafely(fb.created_at || fb.data_ora)}
@@ -1955,7 +1980,8 @@ export default function Home() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
                       {listaDipendenti.map(nomeDip => {
-                        const eventi = storicoCompleto.filter(item => {
+                        const eventi = safeStorico.filter(item => {
+                          if (!item) return false;
                           const dNorm = getNormalizedDate(item.data);
                           return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo';
                         });
@@ -2028,8 +2054,9 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
-                      {storicoCompleto
+                      {safeStorico
                         .filter(item => {
+                          if (!item) return false;
                           const dNorm = getNormalizedDate(item.data);
                           const inMese = dNorm && dNorm.startsWith(filtroMeseReport);
                           const matchCliente = filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione;
@@ -2068,8 +2095,9 @@ export default function Home() {
 
                 <div className="space-y-5">
                   {listaDipendenti.map(nomeDip => {
-                    const inApprovazione = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato === 'in_approvazione');
-                    const approvate = storicoCompleto.filter(e => {
+                    const inApprovazione = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato === 'in_approvazione');
+                    const approvate = safeStorico.filter(e => {
+                      if (!e) return false;
                       const dNorm = getNormalizedDate(e.data);
                       return matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato !== 'in_approvazione' && e.stato !== 'annullato' && dNorm && dNorm.startsWith(filtroMeseReport);
                     });
@@ -2142,8 +2170,9 @@ export default function Home() {
                   })}
                   
                   {listaDipendenti.every(nomeDip => {
-                    const inApprovazione = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato === 'in_approvazione');
-                    const approvate = storicoCompleto.filter(e => {
+                    const inApprovazione = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato === 'in_approvazione');
+                    const approvate = safeStorico.filter(e => {
+                      if (!e) return false;
                       const dNorm = getNormalizedDate(e.data);
                       return matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato !== 'in_approvazione' && e.stato !== 'annullato' && dNorm && dNorm.startsWith(filtroMeseReport);
                     });
