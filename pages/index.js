@@ -143,6 +143,33 @@ export default function Home() {
     }
   };
 
+  // --- RIASSEGNAZIONE RAPIDA (REINTRODOTTA) ---
+  const handleQuickReassign = async (item, nuovoDipendente) => {
+    if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
+    setLoadingProgrammati(true);
+    try {
+      const res = await fetch('/api/gestisci', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.id,
+          calendar_event_id: item.calendar_event_id,
+          dipendente: nuovoDipendente,
+          chiudi_consuntivo: false
+        })
+      });
+      if (res.ok) {
+        fetchProgrammati(); // Ricarica i dati per spostare graficamente il blocco
+      } else {
+        alert("Errore durante la riassegnazione.");
+        setLoadingProgrammati(false);
+      }
+    } catch (e) {
+      alert("Errore di rete durante la riassegnazione.");
+      setLoadingProgrammati(false);
+    } 
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
@@ -266,7 +293,7 @@ export default function Home() {
     );
   }
 
-  // --- LOGICA DI CONFRONTO NOMI SENZA AMBIGUITÀ ---
+  // --- LOGICA DI CONFRONTO NOMI ---
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true;
     if (!nomeDb) return false;
@@ -286,13 +313,11 @@ export default function Home() {
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
-  // 🎯 FILTRAGGIO ATTIVITÀ PIANIFICATE ATTIVE
   const attivitaPianificateAttive = programmati.filter(p => {
     if (p.stato !== 'pianificato') return false;
     return matchNomeDipendente(p.dipendente, targetDipendente);
   });
 
-  // 🎯 FILTRAGGIO ARCHIVIO STORICO
   const attivitaArchiviate = storicoCompleto.filter(p => {
     if (p.stato !== 'consuntivo' && p.stato !== 'annullato') return false;
     return matchNomeDipendente(p.dipendente, targetDipendente);
@@ -321,6 +346,43 @@ export default function Home() {
   const totMeseBackoffice = consuntiviMese.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
   const totMeseTrasferta = consuntiviMese.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
   const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta;
+
+  // --- FUNZIONE PER RENDERIZZARE LA SINGOLA RIGA ATTIVITÀ ---
+  const renderRigaAttivita = (item, colorTheme) => (
+    <div key={item.id} className={`p-3 bg-${colorTheme}-50/30 border border-${colorTheme}-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className={`text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200`}>
+            {item.data === getTodayStr() ? 'Oggi' : item.data}
+          </span>
+          <span className="font-bold text-slate-900 text-sm truncate">{item.cliente}</span>
+        </div>
+        <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto}</div>
+        
+        {/* REINTRODUZIONE DEL SELETTORE PER LA RIASSEGNAZIONE RAPIDA (SOLO ADMIN) */}
+        {currentUser.ruolo === 'admin' && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
+            <select 
+              value={item.dipendente} 
+              onChange={e => handleQuickReassign(item, e.target.value)}
+              className={`text-xs font-bold px-2 py-0.5 rounded border outline-none cursor-pointer ${
+                item.dipendente === 'Da Assegnare' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <option value="Da Assegnare">❓ Da Assegnare</option>
+              {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
+        <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 whitespace-nowrap">✅ Conferma</button>
+        <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50 whitespace-nowrap">🗑️ Annulla</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-12">
@@ -402,6 +464,7 @@ export default function Home() {
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Dipendente / Tecnico</label>
                   {currentUser.ruolo === 'admin' ? (
                     <select value={formData.dipendente} onChange={e => setFormData({...formData, dipendente: e.target.value})} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-sm">
+                      <option value="Da Assegnare">❓ Da Assegnare</option>
                       {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                   ) : (
@@ -503,8 +566,8 @@ export default function Home() {
                     return (
                       <div key={dipNome} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                         <div className="bg-slate-100 px-4 py-3 flex items-center justify-between border-b border-slate-200">
-                          <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                            <span>👤</span> {dipNome}
+                          <h3 className={`font-bold text-base flex items-center gap-2 ${dipNome === 'Da Assegnare' ? 'text-indigo-600' : 'text-slate-800'}`}>
+                            <span>{dipNome === 'Da Assegnare' ? '❓' : '👤'}</span> {dipNome}
                           </h3>
                           <span className="text-xs font-bold text-slate-500 bg-white px-2.5 py-0.5 rounded-lg border">{attivitaDip.length} attive</span>
                         </div>
@@ -514,19 +577,7 @@ export default function Home() {
                             <div>
                               <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
                               <div className="space-y-2">
-                                {inRitardo.map(item => (
-                                  <div key={item.id} className="p-3 bg-rose-50/50 border border-rose-200 rounded-xl flex justify-between items-center gap-4">
-                                    <div>
-                                      <span className="text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border mr-2">{item.data}</span>
-                                      <span className="font-bold text-slate-900 text-sm">{item.cliente}</span>
-                                      <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto}</div>
-                                    </div>
-                                    <div className="flex space-x-2">
-                                      <button onClick={() => openEditModal(item)} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700">✅ Conferma</button>
-                                      <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50">🗑️ Annulla</button>
-                                    </div>
-                                  </div>
-                                ))}
+                                {inRitardo.map(item => renderRigaAttivita(item, 'rose'))}
                               </div>
                             </div>
                           )}
@@ -535,19 +586,7 @@ export default function Home() {
                             <div>
                               <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
                               <div className="space-y-2">
-                                {oggi.map(item => (
-                                  <div key={item.id} className="p-3 bg-amber-50/30 border border-amber-200 rounded-xl flex justify-between items-center gap-4">
-                                    <div>
-                                      <span className="text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border mr-2">Oggi</span>
-                                      <span className="font-bold text-slate-900 text-sm">{item.cliente}</span>
-                                      <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto}</div>
-                                    </div>
-                                    <div className="flex space-x-2">
-                                      <button onClick={() => openEditModal(item)} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700">✅ Conferma</button>
-                                      <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50">🗑️ Annulla</button>
-                                    </div>
-                                  </div>
-                                ))}
+                                {oggi.map(item => renderRigaAttivita(item, 'amber'))}
                               </div>
                             </div>
                           )}
@@ -556,16 +595,7 @@ export default function Home() {
                             <div>
                               <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
                               <div className="space-y-2">
-                                {future.map(item => (
-                                  <div key={item.id} className="p-3 bg-sky-50/30 border border-sky-200 rounded-xl flex justify-between items-center gap-4">
-                                    <div>
-                                      <span className="text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border mr-2">{item.data}</span>
-                                      <span className="font-bold text-slate-900 text-sm">{item.cliente}</span>
-                                      <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto}</div>
-                                    </div>
-                                    <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50">🗑️ Annulla</button>
-                                  </div>
-                                ))}
+                                {future.map(item => renderRigaAttivita(item, 'sky'))}
                               </div>
                             </div>
                           )}
