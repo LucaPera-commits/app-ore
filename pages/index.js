@@ -263,14 +263,11 @@ function HomeContent() {
     return matchNomeDipendente(item?.dipendente, currentUser.nome);
   }
 
-  // FUNZIONE UNIFICATA DI NAVIGAZIONE CON HISTORICO GENERALE
   function navigateTo(targetTab, targetPathNC = '') {
     const cleanTargetFolder = targetPathNC ? String(targetPathNC).replace(/^\/+|\/+$/g, '') : '';
     
-    // Evita duplicazioni se lo stato è identico
     if (targetTab === activeTab && cleanTargetFolder === pathNC) return;
 
-    // Registra lo stato corrente nello storico
     setNavHistory(prev => [...prev, { tab: activeTab, pathNC: pathNC }]);
 
     setActiveTab(targetTab);
@@ -291,7 +288,6 @@ function HomeContent() {
     }
   }
 
-  // TASTO INDIETRO UNIFICATO (PULL DALLO STORICO)
   function handleGoBack() {
     if (navHistory.length === 0) return;
     const lastState = navHistory[navHistory.length - 1];
@@ -302,7 +298,6 @@ function HomeContent() {
     setSearchQueryNC('');
   }
 
-  // NAVIGAZIONE PER LE CARTELLE ARUBA
   function handleApriCartella(percorso) {
     setSearchQueryNC('');
     navigateTo('documenti', percorso);
@@ -2066,7 +2061,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON NAVIGAZIONE BREADCRUMB & CARTELLA SUPERIORE */}
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON PULSANTI VISUALIZZA / SCARICA */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -2112,13 +2107,14 @@ function HomeContent() {
                 </form>
               </div>
 
+              {/* ELENCO FILE CON TASTI VISUALIZZA / SCARICA DEDICATI */}
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                 {safeRisultatiNC.map((item, idx) => (
                   <div 
                     key={idx} 
                     onClick={() => {
                       if (item?.isFolder) handleApriCartella(item.percorso);
-                      else window.open(`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`, '_blank');
+                      else window.open(`/api/download?path=${encodeURIComponent(item?.percorso || '')}`, '_blank');
                     }}
                     className="p-3.5 hover:bg-sky-50/80 flex items-center justify-between gap-4 cursor-pointer transition-all group"
                   >
@@ -2126,8 +2122,24 @@ function HomeContent() {
                       <span className="text-2xl">{item?.isFolder ? '📁' : '📄'}</span>
                       <span className="font-bold text-sm text-slate-800 truncate group-hover:text-sky-700">{toText(item?.nome)}</span>
                     </div>
+
                     {!item?.isFolder && (
-                      <a href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} onClick={e => e.stopPropagation()} className="bg-slate-100 text-slate-700 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all">📥 Scarica</a>
+                      <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
+                        <a 
+                          href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}`} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="bg-sky-100 text-sky-800 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                        >
+                          👁️ Visualizza
+                        </a>
+                        <a 
+                          href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} 
+                          className="bg-slate-100 text-slate-700 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                        >
+                          📥 Scarica
+                        </a>
+                      </div>
                     )}
                   </div>
                 ))}
