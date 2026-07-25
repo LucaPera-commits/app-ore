@@ -51,6 +51,16 @@ const getNormalizedDate = (d) => {
   return String(d).split('T')[0].split(' ')[0];
 };
 
+const formatDateSafely = (dateVal) => {
+  if (!dateVal) return '-';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('it-IT', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+};
+
 const getGiorniLavorativiMese = (annoMeseStr) => {
   if (!annoMeseStr) return 22;
   const [year, month] = annoMeseStr.split('-').map(Number);
@@ -82,7 +92,7 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
-  // --- STATI SUGGERIMENTI, LETTURE & MODERAZIONE ---
+  // --- STATI SUGGERIMENTI & MODERAZIONE ---
   const [feedbackList, setFeedbackList] = useState([]);
   const [readFeedbackIds, setReadFeedbackIds] = useState([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
@@ -165,7 +175,7 @@ export default function Home() {
       const res = await fetch(`/api/gestisci?mode=all&_t=${Date.now()}`);
       if (res.ok) {
         const dati = await res.json();
-        setStoricoCompleto(dati);
+        setStoricoCompleto(Array.isArray(dati) ? dati : []);
       }
     } catch (e) { console.error("Errore fetch:", e); } 
     finally { setLoadingProgrammati(false); }
@@ -178,7 +188,7 @@ export default function Home() {
       const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}&_t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        setFeedbackList(data);
+        setFeedbackList(Array.isArray(data) ? data : []);
       }
     } catch (e) { console.error("Errore caricamento feedback:", e); }
     finally { setLoadingFeedback(false); }
@@ -204,13 +214,11 @@ export default function Home() {
     }
   }, [currentUser, activeTab, filtroArchivioAdmin, isMounted]);
 
-  // HELPER PER CHIAVE UNICA DEL MESSAGGIO/RISPOSTA
-  const getFeedbackKey = (fb) => fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
+  const getFeedbackKey = (fb) => fb ? (fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`) : '';
 
-  // EFFETTO CHE MARCA I MESSAGGI COME LETTI QUANDO L'UTENTE APRE LA TAB SUGGERIMENTI
   useEffect(() => {
     if (activeTab === 'feedback' && feedbackList.length > 0) {
-      const keysToMark = feedbackList.map(getFeedbackKey);
+      const keysToMark = feedbackList.map(getFeedbackKey).filter(Boolean);
       setReadFeedbackIds(prev => {
         const nextSet = new Set([...prev, ...keysToMark]);
         const nextArr = Array.from(nextSet);
@@ -220,17 +228,14 @@ export default function Home() {
     }
   }, [activeTab, feedbackList]);
 
-  // CALCOLO CONTEGGIO MESSAGGI NON LETTI
   const unreadFeedbackCount = feedbackList.filter(fb => {
-    if (fb.is_deleted) return false;
+    if (!fb || fb.is_deleted) return false;
     const key = getFeedbackKey(fb);
     
     if (currentUser?.ruolo === 'admin') {
-      // Per l'admin: nuovi suggerimenti ricevuti senza risposta e non ancora letti
       return !fb.risposta && !readFeedbackIds.includes(key);
     } else {
-      // Per i dipendenti: risposte inviate dalla direzione o nuovi post non letti
-      const isMyReply = matchNomeDipendente(fb.autore, currentUser?.nome) && fb.risposta;
+      const isMyReply = currentUser?.nome && matchNomeDipendente(fb.autore, currentUser.nome) && fb.risposta;
       return (isMyReply || !readFeedbackIds.includes(String(fb.id))) && !readFeedbackIds.includes(key);
     }
   }).length;
@@ -529,10 +534,10 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
-  const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
-  const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
-  const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
-  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
+  const isFerie = (item) => (item?.progetto || '').toLowerCase().includes('ferie');
+  const isPermesso = (item) => (item?.progetto || '').toLowerCase().includes('permesso') || (item?.progetto || '').toLowerCase().includes('rol');
+  const isMalattia = (item) => (item?.progetto || '').toLowerCase().includes('malattia');
+  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item?.cliente || '').toLowerCase().includes('assenze');
 
   const matchNomeDipendente = (nomeDb, filtro) => {
     if (!filtro || filtro === 'Tutti') return true; 
@@ -1696,105 +1701,109 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {feedbackList.map((fb) => (
-                    <div 
-                      key={fb.id} 
-                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
-                        fb.is_deleted 
-                          ? 'bg-rose-50/40 border-rose-200 opacity-75' 
-                          : 'bg-slate-50/80 border-slate-200'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-bold text-xs text-slate-900">👤 {fb.autore}</span>
-                          <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-lg border border-purple-200">
-                            {fb.categoria}
-                          </span>
-                          {fb.is_deleted && (
-                            <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded-lg shadow-2xs">
-                              🔒 Archiviato Admin
+                  {feedbackList.map((fb) => {
+                    if (!fb) return null;
+                    const starsCount = Math.max(1, Math.min(5, Number(fb.valutazione || 5)));
+                    return (
+                      <div 
+                        key={fb.id} 
+                        className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                          fb.is_deleted 
+                            ? 'bg-rose-50/40 border-rose-200 opacity-75' 
+                            : 'bg-slate-50/80 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-bold text-xs text-slate-900">👤 {fb.autore || 'Anonimo'}</span>
+                            <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-lg border border-purple-200">
+                              {fb.categoria || 'Suggerimento'}
                             </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                            {'⭐'.repeat(Number(fb.valutazione || 5))}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {new Date(fb.created_at || fb.data_ora).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">
-                        {fb.messaggio}
-                      </p>
-
-                      {fb.risposta && (
-                        <div className="bg-sky-50/90 border border-sky-200 p-3 rounded-xl space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-extrabold text-sky-900 uppercase tracking-wider flex items-center gap-1">
-                              <span>💬</span> Risposta della Direzione
-                            </span>
-                            {fb.risposta_at && (
-                              <span className="text-[9px] text-sky-600 font-medium">
-                                {new Date(fb.risposta_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            {fb.is_deleted && (
+                              <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded-lg shadow-2xs">
+                                🔒 Archiviato Admin
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-sky-950 font-semibold leading-relaxed">
-                            {fb.risposta}
-                          </p>
-                        </div>
-                      )}
 
-                      {currentUser?.ruolo === 'admin' && (
-                        <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center space-x-2">
+                            <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                              {'⭐'.repeat(starsCount)}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {formatDateSafely(fb.created_at || fb.data_ora)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">
+                          {fb.messaggio}
+                        </p>
+
+                        {fb.risposta && (
+                          <div className="bg-sky-50/90 border border-sky-200 p-3 rounded-xl space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-extrabold text-sky-900 uppercase tracking-wider flex items-center gap-1">
+                                <span>💬</span> Risposta della Direzione
+                              </span>
+                              {fb.risposta_at && (
+                                <span className="text-[9px] text-sky-600 font-medium">
+                                  {formatDateSafely(fb.risposta_at)}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-sky-950 font-semibold leading-relaxed">
+                              {fb.risposta}
+                            </p>
+                          </div>
+                        )}
+
+                        {currentUser?.ruolo === 'admin' && (
+                          <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => {
+                                  setRispostaApertaId(rispostaApertaId === fb.id ? null : fb.id);
+                                  setTestoRispostaAdmin(fb.risposta || '');
+                                }}
+                                className="text-[11px] font-bold bg-sky-100 hover:bg-sky-200 text-sky-800 px-3 py-1 rounded-lg border border-sky-300 transition-all"
+                              >
+                                {fb.risposta ? '✏️ Modifica Risposta' : '💬 Rispondi al Dipendente'}
+                              </button>
+                            </div>
+
                             <button
-                              onClick={() => {
-                                setRispostaApertaId(rispostaApertaId === fb.id ? null : fb.id);
-                                setTestoRispostaAdmin(fb.risposta || '');
-                              }}
-                              className="text-[11px] font-bold bg-sky-100 hover:bg-sky-200 text-sky-800 px-3 py-1 rounded-lg border border-sky-300 transition-all"
+                              onClick={() => handleToggleSoftDelete(fb.id, fb.is_deleted)}
+                              className={`text-[11px] font-bold px-3 py-1 rounded-lg border transition-all ${
+                                fb.is_deleted 
+                                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300' 
+                                  : 'bg-rose-100 hover:bg-rose-200 text-rose-800 border-rose-300'
+                              }`}
                             >
-                              {fb.risposta ? '✏️ Modifica Risposta' : '💬 Rispondi al Dipendente'}
+                              {fb.is_deleted ? '🔄 Ripristina in Bacheca' : '🗑️ Rimuovi dalla Bacheca'}
                             </button>
                           </div>
+                        )}
 
-                          <button
-                            onClick={() => handleToggleSoftDelete(fb.id, fb.is_deleted)}
-                            className={`text-[11px] font-bold px-3 py-1 rounded-lg border transition-all ${
-                              fb.is_deleted 
-                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300' 
-                                : 'bg-rose-100 hover:bg-rose-200 text-rose-800 border-rose-300'
-                            }`}
-                          >
-                            {fb.is_deleted ? '🔄 Ripristina in Bacheca' : '🗑️ Rimuovi dalla Bacheca'}
-                          </button>
-                        </div>
-                      )}
-
-                      {currentUser?.ruolo === 'admin' && rispostaApertaId === fb.id && (
-                        <div className="p-3 bg-white border border-sky-200 rounded-xl space-y-2 mt-2">
-                          <textarea
-                            rows={2}
-                            placeholder="Scrivi una risposta pubblica da parte della direzione..."
-                            value={testoRispostaAdmin}
-                            onChange={e => setTestoRispostaAdmin(e.target.value)}
-                            className="w-full text-xs font-medium p-2.5 bg-slate-50 border rounded-lg outline-none focus:ring-2 focus:ring-sky-200"
-                          ></textarea>
-                          <div className="flex justify-end space-x-2">
-                            <button onClick={() => setRispostaApertaId(null)} className="px-3 py-1 text-xs font-bold text-slate-500 bg-slate-100 rounded-lg">Annulla</button>
-                            <button onClick={() => handleInviaRispostaAdmin(fb.id)} disabled={loading} className="px-4 py-1 text-xs font-bold text-white bg-sky-600 rounded-lg shadow-sm">Pubblica Risposta ✅</button>
+                        {currentUser?.ruolo === 'admin' && rispostaApertaId === fb.id && (
+                          <div className="p-3 bg-white border border-sky-200 rounded-xl space-y-2 mt-2">
+                            <textarea
+                              rows={2}
+                              placeholder="Scrivi una risposta pubblica da parte della direzione..."
+                              value={testoRispostaAdmin}
+                              onChange={e => setTestoRispostaAdmin(e.target.value)}
+                              className="w-full text-xs font-medium p-2.5 bg-slate-50 border rounded-lg outline-none focus:ring-2 focus:ring-sky-200"
+                            ></textarea>
+                            <div className="flex justify-end space-x-2">
+                              <button onClick={() => setRispostaApertaId(null)} className="px-3 py-1 text-xs font-bold text-slate-500 bg-slate-100 rounded-lg">Annulla</button>
+                              <button onClick={() => handleInviaRispostaAdmin(fb.id)} disabled={loading} className="px-4 py-1 text-xs font-bold text-white bg-sky-600 rounded-lg shadow-sm">Pubblica Risposta ✅</button>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
