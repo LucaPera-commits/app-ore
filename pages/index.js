@@ -182,7 +182,7 @@ function HomeContent() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   
-  // --- NAVEGAZIONE CON STORICO ---
+  // --- NAVIGAZIONE CON STORICO ---
   const [activeTab, setActiveTab] = useState('home');
   const [tabHistory, setTabHistory] = useState([]);
 
@@ -254,7 +254,6 @@ function HomeContent() {
     return matchNomeDipendente(item?.dipendente, currentUser.nome);
   }
 
-  // CAMBIO TAB CON REGISTRAZIONE NELLO STORICO
   function handleTabChange(targetTab, isBackAzione = false) {
     if (targetTab === activeTab) return;
 
@@ -279,12 +278,21 @@ function HomeContent() {
     }
   }
 
-  // FUNZIONE PER TORNARE INDIETRO
   function handleGoBack() {
     if (tabHistory.length === 0) return;
     const lastTab = tabHistory[tabHistory.length - 1];
     setTabHistory(prev => prev.slice(0, prev.length - 1));
     handleTabChange(lastTab, true);
+  }
+
+  // GESTIONE CARTELLA SUPERIORE ARUBA NEXTCLOUD
+  function handleCartellaSuperioreNC() {
+    if (!pathNC) return;
+    const parti = pathNC.split('/').filter(Boolean);
+    parti.pop();
+    const newPath = parti.join('/');
+    setSearchQueryNC('');
+    setPathNC(newPath);
   }
 
   useEffect(() => {
@@ -958,7 +966,7 @@ function HomeContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100/80 text-slate-800 font-sans pb-12">
+    <div className="min-h-screen bg-slate-100/80 text-slate-800 font-sans flex flex-col md:flex-row">
       <Head>
         <title>BW Solutions APP</title>
         <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2225%22 fill=%22%230284c7%22/><text y=%2255%25%22 x=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2255%22 font-weight=%22900%22 fill=%22white%22 font-family=%22sans-serif%22>bw</text></svg>" />
@@ -970,44 +978,54 @@ function HomeContent() {
         ))}
       </datalist>
 
-      {/* HEADER PRINCIPALE */}
-      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleTabChange('home')}>
-            <div className="bg-sky-500 text-slate-950 font-black text-base px-2.5 py-1 rounded-xl shadow-sm">bw</div>
+      {/* STRUTTURA A SIDEBAR LATERALE (COLONNA A SINISTRA) */}
+      <aside className="w-full md:w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col justify-between p-4 sticky top-0 md:h-screen shadow-xl z-40 border-r border-slate-800">
+        <div className="space-y-6">
+          <div className="flex items-center space-x-3 p-2 cursor-pointer border-b border-slate-800 pb-4" onClick={() => handleTabChange('home')}>
+            <div className="bg-sky-500 text-slate-950 font-black text-lg px-3 py-1 rounded-xl shadow-sm">bw</div>
             <div>
               <span className="font-bold text-base text-white leading-none block">bw solutions</span>
-              <span className="text-[10px] text-emerald-400 font-bold uppercase block mt-0.5 tracking-wider">Zo&amp;annA S.R.L.</span>
+              <span className="text-[10px] text-emerald-400 font-bold uppercase block mt-1 tracking-wider">Zo&amp;annA S.R.L.</span>
             </div>
           </div>
-          
-          <nav className="flex items-center space-x-1.5 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold overflow-x-auto">
-            {/* TASTO INDIETRO NELL'HEADER */}
+
+          <nav className="flex md:flex-col space-x-1 md:space-x-0 md:space-y-1.5 overflow-x-auto md:overflow-x-visible text-xs font-semibold">
             {tabHistory.length > 0 && (
               <button 
                 onClick={handleGoBack}
-                className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition-all flex items-center space-x-1 shadow-sm whitespace-nowrap"
-                title="Torna alla scheda precedente"
+                className="px-3.5 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition-all flex items-center space-x-2 shadow-sm whitespace-nowrap mb-2"
               >
-                <span>⬅️ Indietro</span>
+                <span>⬅️ Torna Indietro</span>
               </button>
             )}
 
             <button 
               onClick={() => handleTabChange('home')} 
-              className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
-                activeTab === 'home' ? 'bg-sky-500 text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'
+              className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
+                activeTab === 'home' ? 'bg-sky-500 text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <span>🏠 Home</span>
+              <span className="flex items-center gap-2"><span>🏠</span> Home</span>
             </button>
 
-            <button onClick={() => handleTabChange('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📝 Inserimento Ore</button>
-            
-            <button onClick={() => handleTabChange('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
-              <span>⏳ Gestione Attività</span>
+            <button 
+              onClick={() => handleTabChange('nuovo')} 
+              className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
+                activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <span className="flex items-center gap-2"><span>📝</span> Inserimento Ore</span>
+            </button>
+
+            <button 
+              onClick={() => handleTabChange('programmati')} 
+              className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
+                activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <span className="flex items-center gap-2"><span>⏳</span> Gestione Attività</span>
               {(daAssegnareItems.length > 0 || (currentUser?.ruolo === 'admin' && assenzeDaApprovareAdmin.length > 0)) && (
-                <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">
+                <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-full text-[10px]">
                   {daAssegnareItems.length + (currentUser?.ruolo === 'admin' ? assenzeDaApprovareAdmin.length : 0)}
                 </span>
               )}
@@ -1017,60 +1035,71 @@ function HomeContent() {
               href="https://calendar.google.com/" 
               target="_blank" 
               rel="noreferrer" 
-              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shadow-sm transition-all flex items-center space-x-1"
+              className="w-full px-3.5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-all flex items-center space-x-2 shadow-sm whitespace-nowrap"
             >
-              <span>📅 Google Calendar</span>
+              <span>📅</span> <span>Google Calendar</span>
             </a>
-            
-            <button onClick={() => handleTabChange('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
-              <span>💡 Suggerimenti</span>
+
+            <button 
+              onClick={() => handleTabChange('feedback')} 
+              className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
+                activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <span className="flex items-center gap-2"><span>💡</span> Suggerimenti</span>
               {unreadFeedbackCount > 0 && (
-                <span className="bg-purple-500 text-white font-black px-1.5 py-0.2 rounded-full text-[10px] shadow-xs animate-pulse">
+                <span className="bg-purple-500 text-white font-black px-2 py-0.5 rounded-full text-[10px] animate-pulse">
                   {unreadFeedbackCount}
                 </span>
               )}
             </button>
 
-            <button onClick={() => handleTabChange('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
-            
+            <button 
+              onClick={() => handleTabChange('documenti')} 
+              className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
+                activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <span className="flex items-center gap-2"><span>📂</span> Cloud Aruba</span>
+            </button>
+
             <a 
               href="https://ug.link/naszoeanna" 
               target="_blank" 
               rel="noreferrer" 
-              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold whitespace-nowrap shadow-sm transition-all flex items-center space-x-1"
+              className="w-full px-3.5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all flex items-center space-x-2 shadow-sm whitespace-nowrap"
             >
-              <span>🖥️ NAS UGREEN</span>
+              <span>🖥️</span> <span>NAS UGREEN</span>
             </a>
 
             {currentUser?.ruolo === 'admin' && (
               <>
-                <button onClick={() => handleTabChange('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📊 Reportistica Mensile</button>
-                <a href="/preventivi" className="px-3.5 py-2 rounded-xl bg-sky-900/60 hover:bg-sky-800 text-sky-200 font-bold whitespace-nowrap border border-sky-700/50">💰 Preventivi</a>
+                <button 
+                  onClick={() => handleTabChange('cruscotto')} 
+                  className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${
+                    activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-2"><span>📊</span> Reportistica</span>
+                </button>
+                <a href="/preventivi" className="w-full px-3.5 py-3 rounded-xl bg-sky-900/60 hover:bg-sky-800 text-sky-200 font-bold border border-sky-700/50 flex items-center gap-2 whitespace-nowrap">
+                  <span>💰</span> Preventivi
+                </a>
               </>
             )}
           </nav>
+        </div>
 
-          <div className="flex items-center space-x-3 text-xs bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
-            <span className="text-slate-200 font-semibold">👤 {currentUser?.nome}</span>
-            <button onClick={handleLogout} className="bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white px-2 py-0.5 rounded-lg font-bold transition-all">Esci</button>
+        <div className="hidden md:flex flex-col space-y-2 pt-4 border-t border-slate-800 text-xs">
+          <div className="flex items-center justify-between bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+            <span className="text-slate-200 font-bold truncate">👤 {currentUser?.nome}</span>
+            <button onClick={handleLogout} className="bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white px-2 py-1 rounded-lg font-bold transition-all">Esci</button>
           </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-
-        {/* PULSANTE INDIETRO DI CORTESIA SOPRA IL CONTENUTO */}
-        {tabHistory.length > 0 && activeTab !== 'home' && (
-          <div>
-            <button
-              onClick={handleGoBack}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs rounded-2xl border border-slate-200 shadow-sm transition-all group cursor-pointer"
-            >
-              <span className="group-hover:-translate-x-1 transition-transform">⬅️</span>
-              <span>Torna alla scheda precedente</span>
-            </button>
-          </div>
-        )}
+      {/* AREA PRINCIPALE DI CONTENUTO */}
+      <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto space-y-6">
 
         {/* TAB 0: HOME */}
         {activeTab === 'home' && (
@@ -1820,7 +1849,7 @@ function HomeContent() {
                 <button
                   type="submit"
                   disabled={loading || !feedbackForm.messaggio.trim()}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-md transition-all text-sm disabled:opacity-50"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-md transition-all text-sm disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? 'Invio in corso...' : 'Invia Suggerimento alla Squadra 🚀'}
                 </button>
@@ -1973,7 +2002,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD */}
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON TASTO INDIETRO / CARTELLA SUPERIORE */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -1998,10 +2027,33 @@ function HomeContent() {
                 </a>
               </div>
 
+              {/* BARRA PERCORSO E PULSANTE CARTELLA SUPERIORE */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                <div className="flex items-center space-x-2 text-xs font-bold text-slate-700 truncate">
+                  <button onClick={() => setPathNC('')} className="hover:text-sky-600 underline">🏠 Root</button>
+                  {pathNC && (
+                    <span className="text-slate-400">
+                      / {pathNC.split('/').filter(Boolean).map((p, idx) => (
+                        <span key={idx}> 📁 {p} </span>
+                      ))}
+                    </span>
+                  )}
+                </div>
+
+                {pathNC && (
+                  <button 
+                    onClick={handleCartellaSuperioreNC}
+                    className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-1 cursor-pointer"
+                  >
+                    <span>⬆️ Cartella Superiore</span>
+                  </button>
+                )}
+              </div>
+
               <div className="space-y-3">
                 <form onSubmit={handleCercaNextcloud} className="flex gap-2">
                   <input type="text" value={searchQueryNC} onChange={e => setSearchQueryNC(e.target.value)} placeholder="Filtra / Cerca un file su Aruba (es. ALSTOM)..." className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" />
-                  <button type="submit" disabled={loadingNC} className="bg-sky-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs">{loadingNC ? '...' : 'Cerca 🔍'}</button>
+                  <button type="submit" disabled={loadingNC} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all cursor-pointer">{loadingNC ? '...' : 'Cerca 🔍'}</button>
                 </form>
               </div>
 
@@ -2042,7 +2094,7 @@ function HomeContent() {
                 <div className="flex items-center space-x-2 bg-slate-800 p-1.5 rounded-2xl border border-slate-700 overflow-x-auto">
                   <button 
                     onClick={() => setSubTabReport('paghe')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                       subTabReport === 'paghe' ? 'bg-sky-500 text-slate-950 shadow' : 'text-slate-300 hover:text-white'
                     }`}
                   >
@@ -2050,7 +2102,7 @@ function HomeContent() {
                   </button>
                   <button 
                     onClick={() => setSubTabReport('fatturazione')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                       subTabReport === 'fatturazione' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-300 hover:text-white'
                     }`}
                   >
@@ -2058,7 +2110,7 @@ function HomeContent() {
                   </button>
                   <button 
                     onClick={() => setSubTabReport('ferie')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                       subTabReport === 'ferie' ? 'bg-amber-500 text-slate-950 shadow' : 'text-slate-300 hover:text-white'
                     }`}
                   >
@@ -2081,7 +2133,7 @@ function HomeContent() {
                 {subTabReport === 'paghe' && (
                   <button 
                     onClick={exportCSVPaghe} 
-                    className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2"
+                    className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2 cursor-pointer"
                   >
                     <span>📥 Esporta Excel/CSV per Paghe</span>
                   </button>
@@ -2090,7 +2142,7 @@ function HomeContent() {
                 {subTabReport === 'fatturazione' && (
                   <button 
                     onClick={exportCSVFatturazione} 
-                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2"
+                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2 cursor-pointer"
                   >
                     <span>📥 Esporta Excel/CSV per Fatture</span>
                   </button>
