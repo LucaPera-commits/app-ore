@@ -1,5 +1,39 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import Head from 'next/head';
+
+// COMPONENTE DI PROTEZIONE ANTI-SCHERMATA BIANCA
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Errore React intercettato:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-900 text-white p-8 flex flex-col items-center justify-center font-sans">
+          <div className="max-w-xl bg-slate-800 p-6 rounded-3xl border border-rose-500/50 shadow-2xl space-y-4 text-center">
+            <div className="text-4xl">⚠️</div>
+            <h2 className="text-xl font-bold text-rose-400">Si è verificato un errore nell'interfaccia</h2>
+            <p className="text-xs text-slate-300">Dettaglio tecnico dell'eccezione:</p>
+            <pre className="bg-black/60 p-4 rounded-2xl text-[11px] text-rose-300 text-left overflow-x-auto whitespace-pre-wrap font-mono border border-slate-700">
+              {this.state.error?.toString()}
+            </pre>
+            <button onClick={() => window.location.reload()} className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 font-bold rounded-xl text-xs transition-all shadow-md">
+              🔄 Ricarica l'Applicazione
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
@@ -103,7 +137,7 @@ const getGiorniLavorativiMese = (annoMeseStr) => {
   }
 };
 
-export default function Home() {
+function HomeContent() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -255,9 +289,10 @@ export default function Home() {
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
 
+  // CORRETTO: Nessun loop infinito sulle dipendenze
   useEffect(() => {
-    if (activeTab === 'feedback' && safeFeedbackList.length > 0) {
-      const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
+    if (activeTab === 'feedback' && feedbackList && feedbackList.length > 0) {
+      const keysToMark = feedbackList.map(getFeedbackKey).filter(Boolean);
       if (keysToMark.length === 0) return;
 
       setReadFeedbackIds(prev => {
@@ -272,7 +307,7 @@ export default function Home() {
         return updated;
       });
     }
-  }, [activeTab, safeFeedbackList]);
+  }, [activeTab, feedbackList]);
 
   const unreadFeedbackCount = safeFeedbackList.filter(fb => {
     if (!fb || fb.is_deleted) return false;
@@ -832,7 +867,9 @@ export default function Home() {
     );
   };
 
-  if (!isMounted) return null;
+  if (!isMounted) {
+    return <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center font-sans text-xs">Caricamento in corso...</div>;
+  }
 
   if (!currentUser) {
     return (
@@ -2269,5 +2306,13 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <HomeContent />
+    </ErrorBoundary>
   );
 }
