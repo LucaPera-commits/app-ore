@@ -82,8 +82,9 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
-  // --- STATI SUGGERIMENTI & MODERAZIONE ---
+  // --- STATI SUGGERIMENTI, LETTURE & MODERAZIONE ---
   const [feedbackList, setFeedbackList] = useState([]);
+  const [readFeedbackIds, setReadFeedbackIds] = useState([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [filtroArchivioAdmin, setFiltroArchivioAdmin] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({
@@ -131,6 +132,13 @@ export default function Home() {
     setIsMounted(true);
     const saved = localStorage.getItem('bw_user');
     if (saved) setCurrentUser(JSON.parse(saved));
+
+    const savedRead = localStorage.getItem('bw_read_feedbacks');
+    if (savedRead) {
+      try {
+        setReadFeedbackIds(JSON.parse(savedRead));
+      } catch (e) {}
+    }
   }, []);
 
   useEffect(() => {
@@ -195,6 +203,37 @@ export default function Home() {
       }
     }
   }, [currentUser, activeTab, filtroArchivioAdmin, isMounted]);
+
+  // HELPER PER CHIAVE UNICA DEL MESSAGGIO/RISPOSTA
+  const getFeedbackKey = (fb) => fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
+
+  // EFFETTO CHE MARCA I MESSAGGI COME LETTI QUANDO L'UTENTE APRE LA TAB SUGGERIMENTI
+  useEffect(() => {
+    if (activeTab === 'feedback' && feedbackList.length > 0) {
+      const keysToMark = feedbackList.map(getFeedbackKey);
+      setReadFeedbackIds(prev => {
+        const nextSet = new Set([...prev, ...keysToMark]);
+        const nextArr = Array.from(nextSet);
+        localStorage.setItem('bw_read_feedbacks', JSON.stringify(nextArr));
+        return nextArr;
+      });
+    }
+  }, [activeTab, feedbackList]);
+
+  // CALCOLO CONTEGGIO MESSAGGI NON LETTI
+  const unreadFeedbackCount = feedbackList.filter(fb => {
+    if (fb.is_deleted) return false;
+    const key = getFeedbackKey(fb);
+    
+    if (currentUser?.ruolo === 'admin') {
+      // Per l'admin: nuovi suggerimenti ricevuti senza risposta e non ancora letti
+      return !fb.risposta && !readFeedbackIds.includes(key);
+    } else {
+      // Per i dipendenti: risposte inviate dalla direzione o nuovi post non letti
+      const isMyReply = matchNomeDipendente(fb.autore, currentUser?.nome) && fb.risposta;
+      return (isMyReply || !readFeedbackIds.includes(String(fb.id))) && !readFeedbackIds.includes(key);
+    }
+  }).length;
 
   const handleInviaFeedback = async (e) => {
     e.preventDefault();
@@ -833,9 +872,9 @@ export default function Home() {
             
             <button onClick={() => setActiveTab('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
               <span>💡 Suggerimenti</span>
-              {feedbackList.length > 0 && (
-                <span className="bg-purple-500 text-white font-black px-1.5 py-0.2 rounded-full text-[10px] shadow-xs">
-                  {feedbackList.length}
+              {unreadFeedbackCount > 0 && (
+                <span className="bg-purple-500 text-white font-black px-1.5 py-0.2 rounded-full text-[10px] shadow-xs animate-pulse">
+                  {unreadFeedbackCount}
                 </span>
               )}
             </button>
@@ -966,7 +1005,7 @@ export default function Home() {
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-indigo-900 uppercase">Suggerimenti Nuovi</span>
                       <span className="text-base font-black text-indigo-900 bg-indigo-200/80 px-2 py-0.5 rounded-lg border border-indigo-300">
-                        {feedbackSenzaRisposta.length}
+                        {unreadFeedbackCount}
                       </span>
                     </div>
                     <p className="text-[11px] text-indigo-800 font-medium">Idee dipendenti in attesa di risposta.</p>
@@ -1007,7 +1046,7 @@ export default function Home() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-emerald-900 uppercase">Risposte Direzione</span>
                       <span className="text-lg font-black text-emerald-900 bg-emerald-200/80 px-2.5 py-0.5 rounded-xl border border-emerald-300">
-                        {mieiFeedbackRisposti.length}
+                        {unreadFeedbackCount}
                       </span>
                     </div>
                     <p className="text-xs text-emerald-800 font-medium">Risposte ai tuoi suggerimenti.</p>
@@ -1081,9 +1120,9 @@ export default function Home() {
                   <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold group-hover:scale-110 transition-transform">
                     💡
                   </div>
-                  {feedbackList.length > 0 && (
+                  {unreadFeedbackCount > 0 && (
                     <span className="bg-purple-100 text-purple-800 font-extrabold text-xs px-2.5 py-1 rounded-full border border-purple-200">
-                      {feedbackList.length} arrivati
+                      {unreadFeedbackCount} nuovi
                     </span>
                   )}
                 </div>
