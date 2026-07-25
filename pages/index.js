@@ -341,46 +341,6 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
-        <div className="w-full max-w-md">
-          <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-700/50 space-y-6">
-            <div className="flex flex-col items-center text-center space-y-3 pb-5 border-b border-slate-100">
-              <div className="flex items-center justify-center space-x-3">
-                <div className="bg-sky-600 text-white font-extrabold text-xl px-3.5 py-1.5 rounded-2xl shadow-lg tracking-wider">bw</div>
-                <div className="text-left">
-                  <span className="text-xl font-bold text-slate-900 tracking-tight block leading-tight">bw solutions</span>
-                  <span className="text-[11px] text-emerald-600 font-bold tracking-wide uppercase block">Zo&amp;annA S.R.L.</span>
-                </div>
-              </div>
-              <p className="text-xs text-slate-500 font-medium">Portale Gestionale Ingegneria &amp; Servizi</p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
-                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Inserisci nome utente" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
-                <div className="relative">
-                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm pr-12 outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Inserisci password" />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-base p-1">
-                    {showPassword ? '👁️' : '🙈'}
-                  </button>
-                </div>
-              </div>
-
-              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">Accedi al Portale ➔</button>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
   const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
   const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
@@ -406,9 +366,9 @@ export default function Home() {
 
   const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
   
-  const dipendentiVisibili = currentUser.ruolo === 'admin' 
+  const dipendentiVisibili = currentUser?.ruolo === 'admin' 
     ? listaDipendenti 
-    : listaDipendenti.filter(d => matchNomeDipendente(d, currentUser.nome));
+    : listaDipendenti.filter(d => matchNomeDipendente(d, currentUser?.nome));
 
   const tuttiEventiMese = storicoCompleto.filter(item => {
     const dNorm = getNormalizedDate(item.data);
@@ -507,10 +467,55 @@ export default function Home() {
     );
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
+        <Head>
+          <title>BW Solutions APP</title>
+          <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2225%22 fill=%22%230284c7%22/><text y=%2255%25%22 x=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2255%22 font-weight=%22900%22 fill=%22white%22 font-family=%22sans-serif%22>bw</text></svg>" />
+        </Head>
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-700/50 space-y-6">
+            <div className="flex flex-col items-center text-center space-y-3 pb-5 border-b border-slate-100">
+              <div className="flex items-center justify-center space-x-3">
+                <div className="bg-sky-600 text-white font-extrabold text-xl px-3.5 py-1.5 rounded-2xl shadow-lg tracking-wider">bw</div>
+                <div className="text-left">
+                  <span className="text-xl font-bold text-slate-900 tracking-tight block leading-tight">bw solutions</span>
+                  <span className="text-[11px] text-emerald-600 font-bold tracking-wide uppercase block">Zo&amp;annA S.R.L.</span>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">Portale Gestionale Ingegneria &amp; Servizi</p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
+                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Inserisci nome utente" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
+                <div className="relative">
+                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm pr-12 outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Inserisci password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-base p-1">
+                    {showPassword ? '👁️' : '🙈'}
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">Accedi al Portale ➔</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100/80 text-slate-800 font-sans pb-12">
       <Head>
-        <title>Gestionale Ore &amp; Documenti | bw solutions</title>
+        <title>BW Solutions APP</title>
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2225%22 fill=%22%230284c7%22/><text y=%2255%25%22 x=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2255%22 font-weight=%22900%22 fill=%22white%22 font-family=%22sans-serif%22>bw</text></svg>" />
       </Head>
 
       <datalist id="lista-aziende">
@@ -745,7 +750,6 @@ export default function Home() {
         {activeTab === 'programmati' && (
           <div className="space-y-6">
             
-            {/* BARRA INTESTAZIONE CON SYNC */}
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-wrap items-center justify-between gap-4 border border-slate-800">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">📁 Gestione Attività Team</h2>
@@ -881,7 +885,6 @@ export default function Home() {
               {dipendentiVisibili.map(dipNome => {
                 const eventiDip = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, dipNome));
                 
-                // SUDDIVISIONE PER TIPOLOGIA
                 const interventiLavoro = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) === 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
                 const backofficeProgetti = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) > 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
                 const assenzeGiustificativi = eventiDip.filter(e => isAssenza(e) && e.stato !== 'consuntivo' && e.stato !== 'annullato');
@@ -892,7 +895,6 @@ export default function Home() {
                 return (
                   <div key={dipNome} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all">
                     
-                    {/* INTESTAZIONE CARTELLA DIPENDENTE */}
                     <div 
                       onClick={() => toggleCartella(dipNome)}
                       className="bg-slate-900 hover:bg-slate-800 text-white p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none transition-all"
@@ -922,11 +924,9 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* CONTENUTO DIPENDENTE: SOTTO-CARTELE PER TIPOLOGIA */}
                     {isAperta && (
                       <div className="p-5 space-y-4 bg-slate-50/50">
                         
-                        {/* SOTTO-CARTELLA 1: INTERVENTI LAVORO / CANTIERE */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div 
                             onClick={() => toggleSottoCartella(`${dipNome}_lavoro`)}
@@ -955,7 +955,6 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* SOTTO-CARTELLA 2: BACKOFFICE & PROGETTI */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div 
                             onClick={() => toggleSottoCartella(`${dipNome}_backoffice`)}
@@ -984,7 +983,6 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* SOTTO-CARTELLA 3: ASSENZE & GIUSTIFICATIVI */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div 
                             onClick={() => toggleSottoCartella(`${dipNome}_assenze`)}
@@ -1013,7 +1011,6 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* SOTTO-CARTELLA 4: STORICO CONCLUSE */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div 
                             onClick={() => toggleSottoCartella(`${dipNome}_concluse`)}
