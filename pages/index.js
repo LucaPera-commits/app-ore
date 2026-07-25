@@ -29,6 +29,7 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
+// FUNZIONI HELPER GLOBALI
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
 const getYesterdayStr = () => {
@@ -74,7 +75,7 @@ export default function Home() {
   // --- STATI SUGGERIMENTI & MODERAZIONE ---
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
-  const [filtroArchivioAdmin, setFiltroArchivioAdmin] = useState(false); // false = solo attivi, true = con archiviati
+  const [filtroArchivioAdmin, setFiltroArchivioAdmin] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({
     categoria: '💡 Nuova Funzionalità',
     valutazione: 5,
@@ -151,26 +152,6 @@ export default function Home() {
     finally { setLoadingProgrammati(false); }
   };
 
-  const handleSilentSync = async () => {
-    if (currentUser?.ruolo !== 'admin') return;
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      if (res.ok) fetchProgrammati();
-    } catch (e) {}
-  };
-
-  useEffect(() => {
-    if (currentUser) {
-      fetchProgrammati();
-      if (currentUser.ruolo === 'admin') {
-        handleSilentSync();
-        const interval = setInterval(handleSilentSync, 180000);
-        return () => clearInterval(interval);
-      }
-    }
-  }, [currentUser, activeTab]);
-
-  // GESTIONE SUGGERIMENTI E MODERAZIONE
   const fetchFeedback = async () => {
     setLoadingFeedback(true);
     try {
@@ -184,9 +165,23 @@ export default function Home() {
     finally { setLoadingFeedback(false); }
   };
 
+  const handleSilentSync = async () => {
+    if (currentUser?.ruolo !== 'admin') return;
+    try {
+      const res = await fetch('/api/sync', { method: 'POST' });
+      if (res.ok) fetchProgrammati();
+    } catch (e) {}
+  };
+
   useEffect(() => {
-    if (currentUser && activeTab === 'feedback') {
+    if (currentUser) {
+      fetchProgrammati();
       fetchFeedback();
+      if (currentUser.ruolo === 'admin') {
+        handleSilentSync();
+        const interval = setInterval(handleSilentSync, 180000);
+        return () => clearInterval(interval);
+      }
     }
   }, [currentUser, activeTab, filtroArchivioAdmin]);
 
@@ -221,7 +216,6 @@ export default function Home() {
     }
   };
 
-  // AZIONI MODERATORE: RISPONDI / ELIMINA (ARCHIVIA)
   const handleInviaRispostaAdmin = async (id) => {
     if (!testoRispostaAdmin.trim()) return;
     setLoading(true);
@@ -542,6 +536,13 @@ export default function Home() {
   const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
   const dipendentiVisibili = listaDipendenti;
 
+  // CONTEGGI PER CRUSCOTTO COMPITI E AZIONI PENDENTI
+  const feedbackSenzaRisposta = feedbackList.filter(f => !f.risposta && !f.is_deleted);
+  const mieAttivitaArretrato = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
+  const mieAttivitaProssime = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
+  const mieiFeedbackRisposti = feedbackList.filter(f => matchNomeDipendente(f.autore, currentUser?.nome) && f.risposta);
+  const consuntiviTeamDaChiudere = storicoCompleto.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
+
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
     const isAssenzaFlag = isFerie(item) || isPermesso(item) || isMalattia(item);
@@ -711,8 +712,13 @@ export default function Home() {
               {daAssegnareItems.length > 0 && <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
             
-            <button onClick={() => setActiveTab('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
               <span>💡 Suggerimenti</span>
+              {feedbackList.length > 0 && (
+                <span className="bg-purple-500 text-white font-black px-1.5 py-0.2 rounded-full text-[10px] shadow-xs">
+                  {feedbackList.length}
+                </span>
+              )}
             </button>
 
             <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
@@ -743,7 +749,7 @@ export default function Home() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
 
-        {/* TAB 0: HOME */}
+        {/* TAB 0: HOME CON CRUSCOTTO OPERATIVO AZIONI & COMPITI */}
         {activeTab === 'home' && (
           <div className="space-y-8">
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 rounded-3xl p-8 text-white shadow-xl border border-slate-800 relative overflow-hidden">
@@ -761,6 +767,108 @@ export default function Home() {
               <div className="absolute right-6 bottom-4 text-8xl opacity-10 pointer-events-none select-none">
                 🏢
               </div>
+            </div>
+
+            {/* CRUSCOTTO OPERATIVO AZIONI E COMPITI PENDENTI */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-md space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <span>🎯</span> Cruscotto Azioni &amp; Compiti Pendenti
+                </h3>
+                <span className="text-xs text-slate-400 font-semibold">Aggiornato in tempo reale</span>
+              </div>
+
+              {currentUser?.ruolo === 'admin' ? (
+                /* PANNELLO PENDENZE ADMIN */
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div 
+                    onClick={() => setActiveTab('programmati')} 
+                    className="p-4 rounded-2xl border border-amber-200 bg-amber-50/50 hover:bg-amber-100/50 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-900 uppercase">Da Assegnare</span>
+                      <span className="text-lg font-black text-amber-900 bg-amber-200/80 px-2.5 py-0.5 rounded-xl border border-amber-300">
+                        {daAssegnareItems.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-800 font-medium">Interventi da associare ad un tecnico del team.</p>
+                    <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">Vai alle Cartelle ➔</span>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab('programmati')} 
+                    className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/50 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-900 uppercase">Consuntivi Team</span>
+                      <span className="text-lg font-black text-rose-900 bg-rose-200/80 px-2.5 py-0.5 rounded-xl border border-rose-300">
+                        {consuntiviTeamDaChiudere.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-rose-800 font-medium">Schede ore scadute non ancora consuntivate dal team.</p>
+                    <span className="text-[11px] font-bold text-rose-900 flex items-center gap-1">Verifica Situazione ➔</span>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab('feedback')} 
+                    className="p-4 rounded-2xl border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-purple-900 uppercase">Suggerimenti da Leggere</span>
+                      <span className="text-lg font-black text-purple-900 bg-purple-200/80 px-2.5 py-0.5 rounded-xl border border-purple-300">
+                        {feedbackSenzaRisposta.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-purple-800 font-medium">Idee dei dipendenti in attesa di risposta dalla direzione.</p>
+                    <span className="text-[11px] font-bold text-purple-900 flex items-center gap-1">Rispondi Ora ➔</span>
+                  </div>
+                </div>
+              ) : (
+                /* PANNELLO PENDENZE DIPENDENTI */
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div 
+                    onClick={() => setActiveTab('programmati')} 
+                    className="p-4 rounded-2xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/50 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-900 uppercase">Da Consuntivare</span>
+                      <span className="text-lg font-black text-rose-900 bg-rose-200/80 px-2.5 py-0.5 rounded-xl border border-rose-300">
+                        {mieAttivitaArretrato.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-rose-800 font-medium">Tue attività passate in attesa di conferma o modifica ore.</p>
+                    <span className="text-[11px] font-bold text-rose-900 flex items-center gap-1">Chiudi Consuntivi ➔</span>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab('programmati')} 
+                    className="p-4 rounded-2xl border border-sky-200 bg-sky-50/50 hover:bg-sky-100/50 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-sky-900 uppercase">Prossimi Interventi</span>
+                      <span className="text-lg font-black text-sky-900 bg-sky-200/80 px-2.5 py-0.5 rounded-xl border border-sky-300">
+                        {mieAttivitaProssime.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-sky-800 font-medium">Attività e cantieri già programmati per i prossimi giorni.</p>
+                    <span className="text-[11px] font-bold text-sky-900 flex items-center gap-1">Vedi Calendario ➔</span>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab('feedback')} 
+                    className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/50 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900 uppercase">Risposte Direzione</span>
+                      <span className="text-lg font-black text-emerald-900 bg-emerald-200/80 px-2.5 py-0.5 rounded-xl border border-emerald-300">
+                        {mieiFeedbackRisposti.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-800 font-medium">Risposte ricevute dalla direzione ai tuoi suggerimenti.</p>
+                    <span className="text-[11px] font-bold text-emerald-900 flex items-center gap-1">Leggi Risposte ➔</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -782,9 +890,16 @@ export default function Home() {
                 <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Apri Cartelle ➔</span>
               </div>
 
-              <div onClick={() => setActiveTab('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-                <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
-                  💡
+              <div onClick={() => setActiveTab('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold group-hover:scale-110 transition-transform">
+                    💡
+                  </div>
+                  {feedbackList.length > 0 && (
+                    <span className="bg-purple-100 text-purple-800 font-extrabold text-xs px-2.5 py-1 rounded-full border border-purple-200">
+                      {feedbackList.length} arrivati
+                    </span>
+                  )}
                 </div>
                 <h3 className="font-bold text-slate-900 text-base mb-1">Suggerimenti App</h3>
                 <p className="text-xs text-slate-500 leading-relaxed mb-4">Lascia idee, segnala bug o esprimi la tua opinione sull'app.</p>
@@ -1172,13 +1287,18 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: SUGGERIMENTI E FEEDBACK SULL'APP CON MODERAZIONE ED ARCHIVIO */}
+        {/* TAB 3: SUGGERIMENTI E FEEDBACK SULL'APP */}
         {activeTab === 'feedback' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
               <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight">💡 Suggerimenti &amp; Feedback App</h2>
+                  <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+                    <span>💡 Suggerimenti &amp; Feedback App</span>
+                    <span className="bg-purple-600 text-white text-xs px-2.5 py-0.5 rounded-full font-black">
+                      {feedbackList.length}
+                    </span>
+                  </h2>
                   <p className="text-xs text-slate-300 mt-0.5">Aiutaci a migliorare l'applicazione: proponi nuove funzioni o segnala problemi.</p>
                 </div>
                 <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">🚀</span>
@@ -1339,7 +1459,6 @@ export default function Home() {
                         {fb.messaggio}
                       </p>
 
-                      {/* BLOCCO RISPOSTA DIREZIONE (SE PRESENTE) */}
                       {fb.risposta && (
                         <div className="bg-sky-50/90 border border-sky-200 p-3 rounded-xl space-y-1">
                           <div className="flex items-center justify-between">
@@ -1358,7 +1477,6 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* AZIONI RISERVATE ALL'ADMIN (LUCA) */}
                       {currentUser?.ruolo === 'admin' && (
                         <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center space-x-2">
@@ -1386,7 +1504,6 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* BOX SCRITTURA RISPOSTA ADMIN */}
                       {currentUser?.ruolo === 'admin' && rispostaApertaId === fb.id && (
                         <div className="p-3 bg-white border border-sky-200 rounded-xl space-y-2 mt-2">
                           <textarea
