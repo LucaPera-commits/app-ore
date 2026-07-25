@@ -35,7 +35,7 @@ export default function Home() {
   // 1. STATI E HOOK
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [showPassword, setShowPassword] = useState(false); // STATO PER VISIBILITÀ PASSWORD
+  const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState('nuovo');
 
   const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -99,10 +99,8 @@ export default function Home() {
       const res = await fetch('/api/gestisci');
       if (res.ok) setProgrammati(await res.json());
       
-      if (currentUser?.ruolo === 'admin') {
-        const resAll = await fetch('/api/gestisci?mode=all');
-        if (resAll.ok) setStoricoCompleto(await resAll.json());
-      }
+      const resAll = await fetch('/api/gestisci?mode=all');
+      if (resAll.ok) setStoricoCompleto(await resAll.json());
     } catch (e) { console.error(e); } 
     finally { setLoadingProgrammati(false); }
   };
@@ -231,7 +229,7 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  // 4. LOGIN SCREEN CON TASTO MOSTRA/NASCONDI PASSWORD
+  // 4. LOGIN SCREEN
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
@@ -294,12 +292,25 @@ export default function Home() {
     );
   }
 
-  // 5. CALCOLI DASHBOARD UTENTE
+  // 5. CALCOLI DASHBOARD & FILTRAGGIO CORRETTO
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
-  const dipendenteFiltro = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
-  const eventiFiltrati = dipendenteFiltro === 'Tutti' ? programmati : programmati.filter(p => p.dipendente === dipendenteFiltro);
-  
-  const daConfermare = eventiFiltrati.filter(p => p.data <= getTodayStr() && p.stato !== 'consuntivo');
+  const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
+
+  // 🎯 FILTRAGGIO ATTIVITÀ IN CORSO (Solo 'pianificato')
+  const attivitaPianificateAttive = programmati.filter(p => {
+    if (p.stato !== 'pianificato') return false; // Ignora consuntivi e annullati
+    if (targetDipendente === 'Tutti') return true;
+    return p.dipendente?.trim().toLowerCase() === targetDipendente.trim().toLowerCase();
+  });
+
+  // 🎯 FILTRAGGIO ARCHIVIO STORICO (Solo 'consuntivo' e 'annullato')
+  const attivitaArchiviate = storicoCompleto.filter(p => {
+    if (p.stato !== 'consuntivo' && p.stato !== 'annullato') return false;
+    if (targetDipendente === 'Tutti') return true;
+    return p.dipendente?.trim().toLowerCase() === targetDipendente.trim().toLowerCase();
+  });
+
+  const daConfermare = attivitaPianificateAttive.filter(p => p.data <= getTodayStr());
   const ieriStr = getYesterdayStr();
   const attivitaInScadenzaRitardo = programmati.filter(p => 
     (currentUser.ruolo === 'admin' || p.dipendente === currentUser.nome) && 
@@ -452,7 +463,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ */}
+        {/* TAB 2: GESTIONE ATTIVITÀ (CORRETTA ED EFFICIENTE) */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
@@ -485,18 +496,21 @@ export default function Home() {
             </div>
 
             <div className="p-6">
-              {loadingProgrammati ? <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso...</p> : programmati.length === 0 ? (
+              {loadingProgrammati ? (
+                <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso...</p>
+              ) : attivitaPianificateAttive.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
                   <span className="text-4xl block mb-2">🎉</span>
-                  <p className="text-sm font-medium">Nessuna attività in sospeso!</p>
+                  <p className="text-sm font-medium">Nessuna attività in programma da svolgere!</p>
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {Array.from(new Set(eventiFiltrati.map(e => e.dipendente))).map(dipNome => {
-                    const attivitaDipendente = eventiFiltrati.filter(e => e.dipendente === dipNome);
-                    const inRitardo = attivitaDipendente.filter(e => e.data < getTodayStr());
-                    const oggi = attivitaDipendente.filter(e => e.data === getTodayStr());
-                    const future = attivitaDipendente.filter(e => e.data > getTodayStr());
+                  {/* RAGGRUPPAMENTO DINAMICO PER DIPENDENTE */}
+                  {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente))).map(dipNome => {
+                    const attivitaDip = attivitaPianificateAttive.filter(e => e.dipendente === dipNome);
+                    const inRitardo = attivitaDip.filter(e => e.data < getTodayStr());
+                    const oggi = attivitaDip.filter(e => e.data === getTodayStr());
+                    const future = attivitaDip.filter(e => e.data > getTodayStr());
 
                     return (
                       <div key={dipNome} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -504,10 +518,11 @@ export default function Home() {
                           <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
                             <span>👤</span> {dipNome}
                           </h3>
-                          <span className="text-xs font-bold text-slate-500 bg-white px-2 py-0.5 rounded-lg border">{attivitaDipendente.length} attività</span>
+                          <span className="text-xs font-bold text-slate-500 bg-white px-2.5 py-0.5 rounded-lg border">{attivitaDip.length} attive</span>
                         </div>
 
                         <div className="p-4 space-y-4 bg-white">
+                          {/* IN RITARDO */}
                           {inRitardo.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
@@ -520,8 +535,8 @@ export default function Home() {
                                       <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto}</div>
                                     </div>
                                     <div className="flex space-x-2">
-                                      <button onClick={() => openEditModal(item)} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm">✅ Conferma</button>
-                                      <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg">🗑️ Annulla</button>
+                                      <button onClick={() => openEditModal(item)} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700">✅ Conferma</button>
+                                      <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50">🗑️ Annulla</button>
                                     </div>
                                   </div>
                                 ))}
@@ -529,6 +544,7 @@ export default function Home() {
                             </div>
                           )}
 
+                          {/* OGGI */}
                           {oggi.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
@@ -541,8 +557,8 @@ export default function Home() {
                                       <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto}</div>
                                     </div>
                                     <div className="flex space-x-2">
-                                      <button onClick={() => openEditModal(item)} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm">✅ Conferma</button>
-                                      <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg">🗑️ Annulla</button>
+                                      <button onClick={() => openEditModal(item)} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700">✅ Conferma</button>
+                                      <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50">🗑️ Annulla</button>
                                     </div>
                                   </div>
                                 ))}
@@ -550,6 +566,7 @@ export default function Home() {
                             </div>
                           )}
 
+                          {/* FUTURE */}
                           {future.length > 0 && (
                             <div>
                               <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
@@ -575,46 +592,50 @@ export default function Home() {
               )}
             </div>
 
-            {/* ARCHIVIO STORICO */}
+            {/* SEZIONE: ARCHIVIO STORICO ATTIVITÀ */}
             <div className="bg-slate-50 border-t border-slate-200 p-6">
               <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <span>🗂️</span> Archivio Storico (Concluse e Annullate)
+                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci)
               </h3>
               
               <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-xl bg-white shadow-inner">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="sticky top-0 bg-slate-100 z-10 shadow-sm">
-                    <tr className="text-slate-500 font-bold uppercase">
-                      <th className="py-2 px-3">Stato</th>
-                      <th className="py-2 px-3">Data</th>
-                      <th className="py-2 px-3">Dipendente</th>
-                      <th className="py-2 px-3">Cliente</th>
-                      <th className="py-2 px-3">Dettagli / Ore</th>
+                    <tr className="text-slate-500 font-bold uppercase border-b">
+                      <th className="py-2.5 px-3">Stato</th>
+                      <th className="py-2.5 px-3">Data</th>
+                      <th className="py-2.5 px-3">Dipendente</th>
+                      <th className="py-2.5 px-3">Cliente</th>
+                      <th className="py-2.5 px-3">Dettagli / Ore</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {storicoCompleto
-                      .filter(item => item.stato === 'consuntivo' || item.stato === 'annullato')
-                      .filter(item => filtroDipendente === 'Tutti' || item.dipendente === filtroDipendente)
-                      .sort((a, b) => new Date(b.data) - new Date(a.data))
-                      .map(item => (
-                      <tr key={item.id} className={`hover:bg-slate-50 ${item.stato === 'annullato' ? 'opacity-60' : ''}`}>
-                        <td className="py-2 px-3">
-                          {item.stato === 'consuntivo' ? (
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">✅ Conclusa</span>
-                          ) : (
-                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">❌ Annullata</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-3 font-medium text-slate-600">{item.data}</td>
-                        <td className="py-2 px-3 font-semibold text-slate-800">{item.dipendente}</td>
-                        <td className="py-2 px-3 font-bold text-slate-900">{item.cliente}</td>
-                        <td className="py-2 px-3">
-                          <span className="text-slate-500">{item.progetto}</span>
-                          {item.stato === 'consuntivo' && <span className="ml-2 font-bold text-sky-700">({item.ore}h)</span>}
-                        </td>
+                    {attivitaArchiviate.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività conclusa o annullata nell'archivio.</td>
                       </tr>
-                    ))}
+                    ) : (
+                      attivitaArchiviate
+                        .sort((a, b) => new Date(b.data) - new Date(a.data))
+                        .map(item => (
+                        <tr key={item.id} className={`hover:bg-slate-50 ${item.stato === 'annullato' ? 'opacity-60' : ''}`}>
+                          <td className="py-2 px-3">
+                            {item.stato === 'consuntivo' ? (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">✅ Conclusa</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">❌ Annullata</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 font-medium text-slate-600">{item.data}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-800">{item.dipendente}</td>
+                          <td className="py-2 px-3 font-bold text-slate-900">{item.cliente}</td>
+                          <td className="py-2 px-3">
+                            <span className="text-slate-500">{item.progetto}</span>
+                            {item.stato === 'consuntivo' && <span className="ml-2 font-bold text-sky-700">({item.ore}h)</span>}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
