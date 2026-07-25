@@ -29,7 +29,6 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
-// FUNZIONI HELPER PER LE DATE DEFINITE A LIVELLO GLOBALE (PREVIENE ERRORE DI PRERENDERING)
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
 const getYesterdayStr = () => {
@@ -168,7 +167,6 @@ export default function Home() {
     }
   }, [currentUser, activeTab]);
 
-  // CARICAMENTO FEEDBACK
   const fetchFeedback = async () => {
     setLoadingFeedback(true);
     try {
@@ -762,7 +760,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 1: INSERIMENTO ORE CON OPZIONE PERIODO PLURIGIORNALIERO E STRAORDINARI */}
+        {/* TAB 1: INSERIMENTO ORE */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -1258,7 +1256,7 @@ export default function Home() {
                             {'⭐'.repeat(Number(fb.valutazione || 5))}
                           </span>
                           <span className="text-[10px] text-slate-400">
-                            {new Date(fb.data_ora).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {new Date(fb.created_at || fb.data_ora).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                       </div>
