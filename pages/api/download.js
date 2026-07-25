@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: 'Metodo non consentito' });
   }
 
-  const { path } = req.query;
+  const { path, forceDownload } = req.query;
   if (!path) {
     return res.status(400).json({ message: 'Percorso file mancante' });
   }
@@ -39,17 +39,23 @@ export default async function handler(req, res) {
     const fileName = path.split('/').pop();
     const ext = fileName.split('.').pop().toLowerCase();
 
-    // Mappatura Tipi MIME per consultazione INLINE (senza download)
+    // Mappatura Mime Types
     let contentType = 'application/octet-stream';
     if (ext === 'pdf') contentType = 'application/pdf';
     else if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
-    else if (ext === 'txt') contentType = 'text/plain; charset=utf-8';
+    else if (ext === 'docx') contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    else if (ext === 'doc') contentType = 'application/msword';
+    else if (ext === 'xlsx') contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    else if (ext === 'xls') contentType = 'application/vnd.ms-excel';
 
     const buffer = Buffer.from(await fileRes.arrayBuffer());
 
-    // FONDAMENTALE: Content-Disposition inline FORZA il browser ad aprirlo a schermo senza scaricarlo
+    const disposition = (forceDownload === 'true' || !['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt'].includes(ext))
+      ? `attachment; filename="${encodeURIComponent(fileName)}"`
+      : `inline; filename="${encodeURIComponent(fileName)}"`;
+
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader('Content-Disposition', disposition);
     return res.send(buffer);
 
   } catch (error) {
