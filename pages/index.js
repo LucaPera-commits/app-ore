@@ -67,7 +67,8 @@ const formatDateSafely = (dateVal) => {
 };
 
 const renderStars = (rating) => {
-  const count = Math.max(1, Math.min(5, Math.floor(Number(rating) || 5)));
+  const parsed = Math.floor(Number(rating));
+  const count = isNaN(parsed) || parsed < 1 ? 5 : Math.min(5, parsed);
   return '⭐'.repeat(count);
 };
 
@@ -672,7 +673,6 @@ export default function Home() {
   const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
   const mieAttivitaArretrato = safeStorico.filter(s => s && matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
   const mieAttivitaProssime = safeStorico.filter(s => s && matchNomeDipendente(s.dipendente, currentUser?.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
-  const mieiFeedbackRisposti = safeFeedbackList.filter(f => f && matchNomeDipendente(f.autore, currentUser?.nome) && f.risposta);
   const consuntiviTeamDaChiudere = safeStorico.filter(s => s && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
 
   // CALCOLO DISPONIBILITÀ MESE SUCCESSIVO
@@ -719,7 +719,7 @@ export default function Home() {
     const isEditable = canEditItem(item);
 
     return (
-      <div key={item.id} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm`}>
+      <div key={item.id || item.calendar_event_id || Math.random()} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm`}>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 shadow-xs">
@@ -1167,7 +1167,7 @@ export default function Home() {
                   📅
                 </div>
                 <h3 className="font-bold text-slate-950 text-base mb-1">Google Calendar</h3>
-                <p className="text-xs text-slate-900 leading-relaxed mb-4">Apri direttamente l'applicazione Google Calendar aziendale.</p>
+                <p className="text-xs text-slate-950 leading-relaxed mb-4">Apri direttamente l'applicazione Google Calendar aziendale.</p>
                 <span className="text-xs font-extrabold text-slate-950 flex items-center gap-1">Apri Calendar ➔</span>
               </a>
             </div>
@@ -1346,8 +1346,8 @@ export default function Home() {
                 </div>
 
                 <div className="space-y-3">
-                  {assenzeDaApprovareAdmin.map(item => (
-                    <div key={item.id} className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+                  {assenzeDaApprovareAdmin.map((item, idx) => (
+                    <div key={item.id || idx} className="bg-white/10 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
                           <span className="font-extrabold text-sm text-amber-300">👤 {item.dipendente}</span>
@@ -1727,11 +1727,11 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {safeFeedbackList.map((fb) => {
+                  {safeFeedbackList.map((fb, idx) => {
                     if (!fb) return null;
                     return (
                       <div 
-                        key={fb.id} 
+                        key={fb.id || idx} 
                         className={`p-4 rounded-2xl border transition-all space-y-3 ${
                           fb.is_deleted 
                             ? 'bg-rose-50/40 border-rose-200 opacity-75' 
@@ -2063,8 +2063,8 @@ export default function Home() {
                           return inMese && matchCliente && item.stato === 'consuntivo' && !isAssenza(item);
                         })
                         .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
-                        .map(item => (
-                          <tr key={item.id} className="hover:bg-slate-50">
+                        .map((item, idx) => (
+                          <tr key={item.id || idx} className="hover:bg-slate-50">
                             <td className="py-2.5 px-3 text-slate-500 font-bold">{getNormalizedDate(item.data)}</td>
                             <td className="py-2.5 px-3 font-bold text-slate-900">{item.cliente}</td>
                             <td className="py-2.5 px-3 text-slate-700">{item.progetto}</td>
@@ -2122,8 +2122,8 @@ export default function Home() {
                               <p className="text-xs text-slate-400 italic">Nessuna richiesta in sospeso.</p>
                             ) : (
                               <div className="space-y-2">
-                                {inApprovazione.map(item => (
-                                  <div key={item.id} className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col gap-2">
+                                {inApprovazione.map((item, idx) => (
+                                  <div key={item.id || idx} className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col gap-2">
                                       <div className="flex justify-between items-start">
                                         <div>
                                           <div className="text-xs font-bold text-amber-900">{getNormalizedDate(item.data)}</div>
@@ -2149,8 +2149,8 @@ export default function Home() {
                               <p className="text-xs text-slate-400 italic">Nessuna ferie approvata in questo mese.</p>
                             ) : (
                               <div className="space-y-2">
-                                {approvate.sort((a,b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map(item => (
-                                  <div key={item.id} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center">
+                                {approvate.sort((a,b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => (
+                                  <div key={item.id || idx} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center">
                                       <div className="flex flex-col">
                                         <span className="text-xs font-bold text-emerald-900">{getNormalizedDate(item.data)}</span>
                                         <span className="text-[10px] font-bold text-emerald-700">{item.progetto} ({item.ore}h)</span>
