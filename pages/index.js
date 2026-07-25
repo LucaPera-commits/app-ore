@@ -63,11 +63,16 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
-// UTILITIES DI SUPPORTO POSIZIONATE PRIMA DEL COMPONENTE
-const getTodayStr = () => new Date().toISOString().split('T')[0];
-const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
+// UTILITIES CON SINTASSI FUNCTION TRADIZIONALE (GARANZIA HOISTING JAVASCRIPT)
+function getTodayStr() {
+  return new Date().toISOString().split('T')[0];
+}
 
-const getNextMonthStr = () => {
+function getCurrentMonthStr() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function getNextMonthStr() {
   const d = new Date();
   let year = d.getFullYear();
   let month = d.getMonth() + 2;
@@ -76,9 +81,9 @@ const getNextMonthStr = () => {
     year += 1;
   }
   return `${year}-${String(month).padStart(2, '0')}`;
-};
+}
 
-const getNomeMeseText = (annoMeseStr) => {
+function getNomeMeseText(annoMeseStr) {
   if (!annoMeseStr) return '';
   try {
     const [year, month] = annoMeseStr.split('-').map(Number);
@@ -87,15 +92,15 @@ const getNomeMeseText = (annoMeseStr) => {
   } catch (e) {
     return String(annoMeseStr);
   }
-};
+}
 
-const getNormalizedDate = (d) => {
+function getNormalizedDate(d) {
   if (!d) return getTodayStr();
   if (typeof d !== 'string' && typeof d !== 'number') return getTodayStr();
   return String(d).split('T')[0].split(' ')[0];
-};
+}
 
-const formatDateSafely = (dateVal) => {
+function formatDateSafely(dateVal) {
   if (!dateVal) return '-';
   try {
     const d = new Date(dateVal);
@@ -107,21 +112,21 @@ const formatDateSafely = (dateVal) => {
   } catch (e) {
     return String(dateVal);
   }
-};
+}
 
-const toText = (val) => {
+function toText(val) {
   if (val === null || val === undefined) return '';
   if (typeof val === 'object') return JSON.stringify(val);
   return String(val);
-};
+}
 
-const renderStars = (rating) => {
+function renderStars(rating) {
   const parsed = Math.floor(Number(rating));
   const count = isNaN(parsed) || parsed < 1 ? 5 : Math.min(5, parsed);
   return '⭐'.repeat(count);
-};
+}
 
-const matchNomeDipendente = (nomeDb, filtro) => {
+function matchNomeDipendente(nomeDb, filtro) {
   if (!filtro || filtro === 'Tutti') return true; 
   if (!nomeDb) return false;
   const db = String(nomeDb).toLowerCase().trim();
@@ -132,25 +137,36 @@ const matchNomeDipendente = (nomeDb, filtro) => {
   const partiDb = db.split(' ').filter(Boolean);
 
   return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
-};
+}
 
-const isFerie = (item) => toText(item?.progetto).toLowerCase().includes('ferie');
-const isPermesso = (item) => toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol');
-const isMalattia = (item) => toText(item?.progetto).toLowerCase().includes('malattia');
-const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze');
+function isFerie(item) {
+  return toText(item?.progetto).toLowerCase().includes('ferie');
+}
 
-const canEditItem = (item, currentUser) => {
+function isPermesso(item) {
+  return toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol');
+}
+
+function isMalattia(item) {
+  return toText(item?.progetto).toLowerCase().includes('malattia');
+}
+
+function isAssenza(item) {
+  return isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze');
+}
+
+function canEditItem(item, currentUser) {
   if (!currentUser) return false;
   if (currentUser.ruolo === 'admin') return true;
   return matchNomeDipendente(item?.dipendente, currentUser.nome);
-};
+}
 
-const getFeedbackKey = (fb) => {
+function getFeedbackKey(fb) {
   if (!fb || !fb.id) return null;
   return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
-};
+}
 
-const getGiorniLavorativiMese = (annoMeseStr) => {
+function getGiorniLavorativiMese(annoMeseStr) {
   if (!annoMeseStr) return 22;
   try {
     const [year, month] = annoMeseStr.split('-').map(Number);
@@ -165,7 +181,7 @@ const getGiorniLavorativiMese = (annoMeseStr) => {
   } catch (e) {
     return 22;
   }
-};
+}
 
 function HomeContent() {
   const [isMounted, setIsMounted] = useState(false);
@@ -462,7 +478,7 @@ function HomeContent() {
       }
     } catch (err) {
       setErrorNC('Impossibile contattare il server Nextcloud');
-    } fontally {
+    } finally {
       setLoadingNC(false);
     }
   };
