@@ -5,7 +5,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// AUTENTICAZIONE GOOGLE CALENDAR (SERVICE ACCOUNT O CREDENZIALI GOOGLE)
+// AUTENTICAZIONE GOOGLE CALENDAR
 function getGoogleAuth() {
   const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
   const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -46,7 +46,14 @@ export default async function handler(req, res) {
 
     let calendarEventId = null;
 
-    // 1. TENTATIVO DI CREAZIONE EVENTO SU GOOGLE CALENDAR PER QUALSIASI STATO (CONSUNTIVO & PIANIFICATO)
+    // CALCOLO DATE RIGOROSO PER GOOGLE CALENDAR (start = data, end = giorno dopo)
+    const startDateStr = String(data).split('T')[0];
+    const startDateObj = new Date(startDateStr);
+    const endDateObj = new Date(startDateObj);
+    endDateObj.setDate(endDateObj.getDate() + 1);
+    const endDateStr = endDateObj.toISOString().split('T')[0];
+
+    // 1. CREAZIONE EVENTO SU GOOGLE CALENDAR (PER CONSUNTIVO E PIANIFICATO)
     try {
       const auth = getGoogleAuth();
       const calendarId = process.env.GOOGLE_CALENDAR_ID;
@@ -54,7 +61,6 @@ export default async function handler(req, res) {
       if (auth && calendarId) {
         const calendar = google.calendar({ version: 'v3', auth });
 
-        // Titolo dinamico in base allo stato
         let etichettaStato = '✅ [SVOLTO]';
         if (stato === 'pianificato') etichettaStato = '⏳ [PIANIFICATO]';
         if (stato === 'in_approvazione') etichettaStato = '⏳ [IN APPROVAZIONE]';
@@ -67,12 +73,11 @@ export default async function handler(req, res) {
         if (Number(ore_straordinario) > 0) descriptionText += `\nOre Straordinario: ${ore_straordinario}h`;
         if (note) descriptionText += `\n\nNote: ${note}`;
 
-        // Definizione orario giornata intera per Google Calendar
         const eventResource = {
           summary: summaryText,
           description: descriptionText,
-          start: { date: data },
-          end: { date: data }
+          start: { date: startDateStr },
+          end: { date: endDateStr }
         };
 
         const calRes = await calendar.events.insert({
@@ -83,10 +88,11 @@ export default async function handler(req, res) {
         if (calRes && calRes.data && calRes.data.id) {
           calendarEventId = calRes.data.id;
         }
+      } else {
+        console.warn("Google Calendar non configurato: verificare le variabili d'ambiente su Vercel.");
       }
     } catch (calErr) {
-      console.error("Avviso: Impossibile creare evento su Google Calendar:", calErr?.message || calErr);
-      // Continuiamo comunque con il salvataggio nel database per non bloccare l'utente
+      console.error("Errore creazione evento Google Calendar:", calErr?.response?.data || calErr?.message || calErr);
     }
 
     // 2. SALVATAGGIO NEL DATABASE SUPABASE
@@ -94,7 +100,7 @@ export default async function handler(req, res) {
       dipendente,
       cliente: cliente || '',
       progetto: progetto || '',
-      data,
+      data: startDateStr,
       ore: Number(ore) || 0,
       ore_backoffice: Number(ore_backoffice) || 0,
       ore_trasferta: Number(ore_trasferta) || 0,
