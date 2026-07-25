@@ -47,19 +47,6 @@ export default function Home() {
     return String(d).split('T')[0].split(' ')[0];
   };
 
-  const getGiorniLavorativiMese = (annoMeseStr) => {
-    if (!annoMeseStr) return 22;
-    const [year, month] = annoMeseStr.split('-').map(Number);
-    let count = 0;
-    const date = new Date(year, month - 1, 1);
-    while (date.getMonth() === month - 1) {
-      const day = date.getDay();
-      if (day !== 0 && day !== 6) count++;
-      date.setDate(date.getDate() + 1);
-    }
-    return count;
-  };
-
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
     dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
@@ -91,9 +78,10 @@ export default function Home() {
   const [errorNC, setErrorNC] = useState(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
 
-  const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
-  const [filtroCruscottoDip, setFiltroCruscottoDip] = useState('Tutti');
-  const [filtroCruscottoCliente, setFiltroCruscottoCliente] = useState('Tutti');
+  // --- STATI PER REPORTISTICA BUSTE PAGA / FATTURAZIONE ---
+  const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
+  const [subTabReport, setSubTabReport] = useState('paghe'); // 'paghe' | 'fatturazione'
+  const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
 
   const [modalItem, setModalItem] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
@@ -169,7 +157,7 @@ export default function Home() {
       }
     } catch (err) {
       setErrorNC('Impossibile contattare il server Nextcloud');
-    } finally {
+    } fontally {
       setLoadingNC(false);
     }
   };
@@ -303,6 +291,29 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
+  const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
+  const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
+  const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
+  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
+
+  const matchNomeDipendente = (nomeDb, filtro) => {
+    if (!filtro || filtro === 'Tutti') return true; 
+    const db = nomeDb ? nomeDb.toLowerCase().trim() : '';
+    const flt = filtro.toLowerCase().trim();
+
+    if (db === flt) return true;
+    const partiFiltro = flt.split(' ').filter(Boolean);
+    const partiDb = db.split(' ').filter(Boolean);
+
+    return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
+  };
+
+  const canEditItem = (item) => {
+    if (!currentUser) return false;
+    if (currentUser.ruolo === 'admin') return true;
+    return matchNomeDipendente(item?.dipendente, currentUser.nome);
+  };
+
   const handleElimina = async (item) => {
     if (!canEditItem(item)) return alert("Puoi annullare solo le tue attività.");
     if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
@@ -326,46 +337,59 @@ export default function Home() {
     setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser?.nome : item.dipendente);
   };
 
-  const exportCSV = (datiDaEsportare) => {
-    let csv = "Data;Dipendente;Categoria;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
-    datiDaEsportare.forEach(row => {
-      const tot = Number(row.ore || 0) + Number(row.ore_backoffice || 0) + Number(row.ore_trasferta || 0);
-      const cat = isFerie(row) ? "Ferie" : isPermesso(row) ? "Permesso" : isMalattia(row) ? "Malattia" : "Lavoro";
-      csv += `"${getNormalizedDate(row.data)}";"${row.dipendente}";"${cat}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
-    });
+  // --- ESPORTAZIONI CSV DEDICATE (PAge & FATTURAZIONE) ---
+  const exportCSVPaghe = () => {
+    let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore Impegnate\n";
     
+    listaDipendenti.forEach(nomeDip => {
+      const eventi = storicoCompleto.filter(item => {
+        const dNorm = getNormalizedDate(item.data);
+        return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo';
+      });
+
+      const oreCantiere = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+      const oreBackoffice = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+      const oreTrasferta = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+      const oreFerie = eventi.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+      const orePermesso = eventi.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+      const oreMalattia = eventi.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+      const tot = oreCantiere + oreBackoffice + oreFerie + orePermesso + oreMalattia;
+
+      csv += `"${nomeDip}";"${filtroMeseReport}";"${oreCantiere}";"${oreBackoffice}";"${oreTrasferta}";"${oreFerie}";"${orePermesso}";"${oreMalattia}";"${tot}"\n`;
+    });
+
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Report_Ore_${filtroMese}.csv`);
+    link.setAttribute("download", `Report_Buste_Paga_${filtroMeseReport}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
-  const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
-  const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
-  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
+  const exportCSVFatturazione = () => {
+    let csv = "Cliente;Commessa / Progetto;Dipendente;Data;Ore Cantiere;Ore Backoffice;Ore Trasferta;Note\n";
+    
+    const consuntivi = storicoCompleto.filter(item => {
+      const dNorm = getNormalizedDate(item.data);
+      const inMese = dNorm && dNorm.startsWith(filtroMeseReport);
+      const matchCliente = filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione;
+      return inMese && matchCliente && item.stato === 'consuntivo' && !isAssenza(item);
+    });
 
-  const matchNomeDipendente = (nomeDb, filtro) => {
-    if (!filtro || filtro === 'Tutti') return true; 
-    const db = nomeDb ? nomeDb.toLowerCase().trim() : '';
-    const flt = filtro.toLowerCase().trim();
+    consuntivi.sort((a, b) => (a.cliente || '').localeCompare(b.cliente || '')).forEach(row => {
+      csv += `"${row.cliente}";"${row.progetto}";"${row.dipendente}";"${getNormalizedDate(row.data)}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+    });
 
-    if (db === flt) return true;
-    const partiFiltro = flt.split(' ').filter(Boolean);
-    const partiDb = db.split(' ').filter(Boolean);
-
-    return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
-  };
-
-  // CONTROLLO RIGOROSO PERMESSI DI MODIFICA
-  const canEditItem = (item) => {
-    if (!currentUser) return false;
-    if (currentUser.ruolo === 'admin') return true;
-    return matchNomeDipendente(item.dipendente, currentUser.nome);
+    const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Report_Fatturazione_${filtroMeseReport}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
@@ -373,59 +397,8 @@ export default function Home() {
   const ieriStr = getYesterdayStr();
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
-
   const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
-  
-  // Tutti i dipendenti vedono l'overview di tutti i colleghi
   const dipendentiVisibili = listaDipendenti;
-
-  const tuttiEventiMese = storicoCompleto.filter(item => {
-    const dNorm = getNormalizedDate(item.data);
-    const isInMese = dNorm && dNorm.startsWith(filtroMese);
-    const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
-    const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
-    return isInMese && matchDip && matchCliente && item.stato !== 'annullato';
-  });
-
-  const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
-
-  const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
-  const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
-
-  const totMeseFerie = consuntiviMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMesePermesso = consuntiviMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMeseMalattia = consuntiviMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-
-  const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMese);
-  const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
-
-  const riepilogoCapienzaDipendenti = listaDipendenti.map(nomeDip => {
-    const eventiDipMese = storicoCompleto.filter(item => {
-      const dNorm = getNormalizedDate(item.data);
-      return dNorm && dNorm.startsWith(filtroMese) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
-    });
-
-    const oreLavoro = eventiDipMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0) + Number(b.ore_backoffice || 0) + Number(b.ore_trasferta || 0), 0);
-    const oreFerie = eventiDipMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-    const orePermesso = eventiDipMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-    const oreMalattia = eventiDipMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-
-    const oreImpegnateTotali = oreLavoro + oreFerie + orePermesso + oreMalattia;
-    const oreDisponibiliResidue = oreLavorativeTotaliMese - oreImpegnateTotali;
-    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
-
-    return {
-      nome: nomeDip,
-      oreLavoro,
-      oreFerie,
-      orePermesso,
-      oreMalattia,
-      oreImpegnateTotali,
-      oreDisponibiliResidue,
-      giorniDisponibiliResidui
-    };
-  });
 
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
@@ -450,7 +423,7 @@ export default function Home() {
           <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
           {item.note && <div className="text-[11px] text-slate-400 italic mt-0.5 truncate max-w-xs">📝 {item.note}</div>}
           
-          {currentUser.ruolo === 'admin' && (
+          {currentUser?.ruolo === 'admin' && (
             <div className="mt-2 flex items-center gap-2">
               <span className="text-[10px] uppercase font-bold text-slate-400">Assegna a:</span>
               <select 
@@ -467,7 +440,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* PULSANTI D'AZIONE VISIBILI SOLO SE L'ATTIVITÀ È DELL'UTENTE O SE È ADMIN */}
         <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
           {isEditable ? (
             <>
@@ -582,17 +554,16 @@ export default function Home() {
               <span>🖥️ NAS UGREEN</span>
             </a>
 
-            {currentUser.ruolo === 'admin' && (
+            {currentUser?.ruolo === 'admin' && (
               <>
-                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📊 Cruscotto</button>
-                <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'report' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>⚡ Performance</button>
+                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📊 Reportistica Mensile</button>
                 <a href="/preventivi" className="px-3.5 py-2 rounded-xl bg-sky-900/60 hover:bg-sky-800 text-sky-200 font-bold whitespace-nowrap border border-sky-700/50">💰 Preventivi</a>
               </>
             )}
           </nav>
 
           <div className="flex items-center space-x-3 text-xs bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
-            <span className="text-slate-200 font-semibold">👤 {currentUser.nome}</span>
+            <span className="text-slate-200 font-semibold">👤 {currentUser?.nome}</span>
             <button onClick={handleLogout} className="bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white px-2 py-0.5 rounded-lg font-bold transition-all">Esci</button>
           </div>
         </div>
@@ -600,7 +571,7 @@ export default function Home() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
 
-        {/* TAB 0: SCHERMATA PRINCIPALE (HOME) */}
+        {/* TAB 0: HOME */}
         {activeTab === 'home' && (
           <div className="space-y-8">
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 rounded-3xl p-8 text-white shadow-xl border border-slate-800 relative overflow-hidden">
@@ -609,31 +580,16 @@ export default function Home() {
                   Pannello Operativo Aziendale
                 </span>
                 <h1 className="text-3xl font-extrabold tracking-tight">
-                  Bentornato, <span className="text-sky-400">{currentUser.nome}</span>! 👋
+                  Bentornato, <span className="text-sky-400">{currentUser?.nome}</span>! 👋
                 </h1>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Accedi a tutte le risorse aziendali: registra le ore, consulta il Cloud Aruba o accedi direttamente al Server NAS UGREEN.
+                  Accedi a tutte le risorse aziendali: registra le ore, consulta il Cloud Aruba o accedi al Server NAS UGREEN.
                 </p>
               </div>
               <div className="absolute right-6 bottom-4 text-8xl opacity-10 pointer-events-none select-none">
                 🏢
               </div>
             </div>
-
-            {daAssegnareItems.length > 0 && currentUser.ruolo === 'admin' && (
-              <div className="bg-amber-50/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
-                <div className="flex items-center space-x-3">
-                  <span className="text-2xl">❓</span>
-                  <div>
-                    <h3 className="font-bold text-amber-900 text-sm">Ci sono {daAssegnareItems.length} attività ancora "Da Assegnare"</h3>
-                    <p className="text-xs text-amber-700">Assegna ciascuna attività al relativo dipendente nella sezione Attività.</p>
-                  </div>
-                </div>
-                <button onClick={() => setActiveTab('programmati')} className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm whitespace-nowrap">
-                  Vedi Cartella ➔
-                </button>
-              </div>
-            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
@@ -675,7 +631,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 1: NUOVO INSERIMENTO ORE */}
+        {/* TAB 1: INSERIMENTO ORE */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -704,7 +660,7 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Dipendente / Tecnico</label>
-                  {currentUser.ruolo === 'admin' ? (
+                  {currentUser?.ruolo === 'admin' ? (
                     <select value={formData.dipendente} onChange={e => setFormData({...formData, dipendente: e.target.value})} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-sm">
                       <option value="Da Assegnare">❓ Da Assegnare</option>
                       {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
@@ -765,10 +721,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON CRUSCOTTO E SOTTO-CARTELE TEMATICHE */}
+        {/* TAB 2: GESTIONE ATTIVITÀ CON CRUSCOTTO E CARTELE PER TIPOLOGIA */}
         {activeTab === 'programmati' && (
           <div className="space-y-6">
-            
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-wrap items-center justify-between gap-4 border border-slate-800">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">📁 Gestione Attività Team</h2>
@@ -776,7 +731,7 @@ export default function Home() {
               </div>
 
               <div className="flex items-center space-x-2">
-                {currentUser.ruolo === 'admin' && (
+                {currentUser?.ruolo === 'admin' && (
                   <button 
                     onClick={handleSyncCalendar} 
                     disabled={loadingProgrammati} 
@@ -795,7 +750,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* CRUSCOTTO PANORAMICA DIPENDENTI A COLPO D'OCCHIO */}
+            {/* QUADRO GENERALE DIPENDENTI */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
@@ -839,15 +794,9 @@ export default function Home() {
                               <span className="text-slate-400 font-bold">0</span>
                             )}
                           </td>
-                          <td className="py-3 px-3 text-center font-bold text-sky-700">
-                            {inProgramma.length}
-                          </td>
-                          <td className="py-3 px-3 text-center font-bold text-emerald-700">
-                            {concluse.length}
-                          </td>
-                          <td className="py-3 px-3 text-center font-bold text-purple-700">
-                            {assenze.length}
-                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-sky-700">{inProgramma.length}</td>
+                          <td className="py-3 px-3 text-center font-bold text-emerald-700">{concluse.length}</td>
+                          <td className="py-3 px-3 text-center font-bold text-purple-700">{assenze.length}</td>
                           <td className="py-3 px-3 text-center">
                             {daConsuntivare.length > 0 ? (
                               <span className="text-[10px] font-bold bg-rose-500 text-white px-2 py-0.5 rounded-lg">Attenzione</span>
@@ -863,7 +812,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* CARTELLA "DA ASSEGNARE" */}
+            {/* CARTELLA DA ASSEGNARE */}
             {(currentUser?.ruolo === 'admin' || daAssegnareItems.length > 0) && (
               <div className="bg-amber-50/80 border-2 border-amber-300 rounded-3xl overflow-hidden shadow-sm transition-all">
                 <div 
@@ -899,11 +848,10 @@ export default function Home() {
               </div>
             )}
 
-            {/* SEZIONE CARTELE DIPENDENTI CON SOTTO-CARTELE PER TIPOLOGIA */}
+            {/* CARTELE DIPENDENTI */}
             <div className="space-y-4">
               {dipendentiVisibili.map(dipNome => {
                 const eventiDip = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, dipNome));
-                
                 const interventiLavoro = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) === 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
                 const backofficeProgetti = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) > 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
                 const assenzeGiustificativi = eventiDip.filter(e => isAssenza(e) && e.stato !== 'consuntivo' && e.stato !== 'annullato');
@@ -913,7 +861,6 @@ export default function Home() {
 
                 return (
                   <div key={dipNome} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all">
-                    
                     <div 
                       onClick={() => toggleCartella(dipNome)}
                       className="bg-slate-900 hover:bg-slate-800 text-white p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none transition-all"
@@ -945,133 +892,75 @@ export default function Home() {
 
                     {isAperta && (
                       <div className="p-5 space-y-4 bg-slate-50/50">
-                        
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-                          <div 
-                            onClick={() => toggleSottoCartella(`${dipNome}_lavoro`)}
-                            className="p-3.5 bg-sky-50/80 hover:bg-sky-100/80 flex items-center justify-between cursor-pointer border-b border-sky-100 transition-all select-none"
-                          >
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_lavoro`)} className="p-3.5 bg-sky-50/80 hover:bg-sky-100/80 flex items-center justify-between cursor-pointer border-b border-sky-100 select-none">
                             <div className="flex items-center space-x-2.5">
                               <span className="text-xl">💼</span>
                               <span className="font-bold text-slate-900 text-sm">Interventi Lavoro &amp; Cantiere</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="bg-sky-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
-                                {interventiLavoro.length}
-                              </span>
-                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_lavoro`] ? '▲' : '▼'}</span>
-                            </div>
+                            <span className="bg-sky-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{interventiLavoro.length}</span>
                           </div>
-
                           {sottoCartelleAperte[`${dipNome}_lavoro`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {interventiLavoro.length === 0 ? (
-                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessun intervento cantiere in programma.</p>
-                              ) : (
-                                interventiLavoro.map(item => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky'))
-                              )}
+                              {interventiLavoro.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun intervento in programma.</p> : interventiLavoro.map(item => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky'))}
                             </div>
                           )}
                         </div>
 
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-                          <div 
-                            onClick={() => toggleSottoCartella(`${dipNome}_backoffice`)}
-                            className="p-3.5 bg-indigo-50/80 hover:bg-indigo-100/80 flex items-center justify-between cursor-pointer border-b border-indigo-100 transition-all select-none"
-                          >
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_backoffice`)} className="p-3.5 bg-indigo-50/80 hover:bg-indigo-100/80 flex items-center justify-between cursor-pointer border-b border-indigo-100 select-none">
                             <div className="flex items-center space-x-2.5">
                               <span className="text-xl">🖥️</span>
                               <span className="font-bold text-slate-900 text-sm">Backoffice &amp; Progetti Interni</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="bg-indigo-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
-                                {backofficeProgetti.length}
-                              </span>
-                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_backoffice`] ? '▲' : '▼'}</span>
-                            </div>
+                            <span className="bg-indigo-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{backofficeProgetti.length}</span>
                           </div>
-
                           {sottoCartelleAperte[`${dipNome}_backoffice`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {backofficeProgetti.length === 0 ? (
-                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessuna attività di backoffice programmata.</p>
-                              ) : (
-                                backofficeProgetti.map(item => renderRigaAttivita(item, 'indigo'))
-                              )}
+                              {backofficeProgetti.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun backoffice programmato.</p> : backofficeProgetti.map(item => renderRigaAttivita(item, 'indigo'))}
                             </div>
                           )}
                         </div>
 
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-                          <div 
-                            onClick={() => toggleSottoCartella(`${dipNome}_assenze`)}
-                            className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 flex items-center justify-between cursor-pointer border-b border-purple-100 transition-all select-none"
-                          >
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_assenze`)} className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 flex items-center justify-between cursor-pointer border-b border-purple-100 select-none">
                             <div className="flex items-center space-x-2.5">
                               <span className="text-xl">🏖️</span>
                               <span className="font-bold text-slate-900 text-sm">Ferie, Permessi &amp; Malattie</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="bg-purple-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
-                                {assenzeGiustificativi.length}
-                              </span>
-                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_assenze`] ? '▲' : '▼'}</span>
-                            </div>
+                            <span className="bg-purple-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{assenzeGiustificativi.length}</span>
                           </div>
-
                           {sottoCartelleAperte[`${dipNome}_assenze`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {assenzeGiustificativi.length === 0 ? (
-                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessuna assenza registrata in programma.</p>
-                              ) : (
-                                assenzeGiustificativi.map(item => renderRigaAttivita(item, 'purple'))
-                              )}
+                              {assenzeGiustificativi.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna assenza programmata.</p> : assenzeGiustificativi.map(item => renderRigaAttivita(item, 'purple'))}
                             </div>
                           )}
                         </div>
 
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-                          <div 
-                            onClick={() => toggleSottoCartella(`${dipNome}_concluse`)}
-                            className="p-3.5 bg-emerald-50/80 hover:bg-emerald-100/80 flex items-center justify-between cursor-pointer border-b border-emerald-100 transition-all select-none"
-                          >
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_concluse`)} className="p-3.5 bg-emerald-50/80 hover:bg-emerald-100/80 flex items-center justify-between cursor-pointer border-b border-emerald-100 select-none">
                             <div className="flex items-center space-x-2.5">
                               <span className="text-xl">✅</span>
                               <span className="font-bold text-slate-900 text-sm">Storico Attività Concluse</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
-                                {concluseConsuntivate.length}
-                              </span>
-                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_concluse`] ? '▲' : '▼'}</span>
-                            </div>
+                            <span className="bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{concluseConsuntivate.length}</span>
                           </div>
-
                           {sottoCartelleAperte[`${dipNome}_concluse`] && (
                             <div className="p-4 space-y-2 bg-white">
-                              {concluseConsuntivate.length === 0 ? (
-                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessuna attività conclusa registrata.</p>
-                              ) : (
-                                concluseConsuntivate
-                                  .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
-                                  .map(item => renderRigaAttivita(item, 'emerald'))
-                              )}
+                              {concluseConsuntivate.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna attività conclusa.</p> : concluseConsuntivate.sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map(item => renderRigaAttivita(item, 'emerald'))}
                             </div>
                           )}
                         </div>
-
                       </div>
                     )}
-
                   </div>
                 );
               })}
             </div>
-
           </div>
         )}
 
-        {/* TAB 3: ESPLORATORE ARUBA NEXTCLOUD + PROMEMORIA UGREEN */}
+        {/* TAB 3: ESPLORATORE ARUBA NEXTCLOUD */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -1083,7 +972,6 @@ export default function Home() {
             </div>
 
             <div className="p-6 space-y-6">
-              
               <div className="bg-gradient-to-r from-blue-900 to-slate-900 text-white p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm border border-blue-800">
                 <div className="flex items-center space-x-3">
                   <span className="text-2xl">🖥️</span>
@@ -1092,326 +980,217 @@ export default function Home() {
                     <p className="text-xs text-blue-200">Accedi direttamente all'interfaccia di UGREEN per sfogliare e caricare nuovi file.</p>
                   </div>
                 </div>
-                <a 
-                  href="https://ug.link/naszoeanna" 
-                  target="_blank" 
-                  rel="noreferrer" 
-                  className="bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all whitespace-nowrap shadow-sm"
-                >
+                <a href="https://ug.link/naszoeanna" target="_blank" rel="noreferrer" className="bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm">
                   Apri NAS UGREEN ➔
                 </a>
               </div>
 
               <div className="space-y-3">
                 <form onSubmit={handleCercaNextcloud} className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={searchQueryNC} 
-                    onChange={e => setSearchQueryNC(e.target.value)} 
-                    placeholder="Filtra / Cerca un file o una commessa su Aruba (es. ALSTOM)..." 
-                    className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200"
-                  />
-                  <button type="submit" disabled={loadingNC} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all shadow-sm">
-                    {loadingNC ? '...' : 'Cerca 🔍'}
-                  </button>
-                  {(searchQueryNC || isSearchMode) && (
-                    <button type="button" onClick={() => { setSearchQueryNC(''); setIsSearchMode(false); caricaContenutoNC(pathNC, ''); }} className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2.5 rounded-xl text-xs">
-                      ✖ Reset
-                    </button>
-                  )}
+                  <input type="text" value={searchQueryNC} onChange={e => setSearchQueryNC(e.target.value)} placeholder="Filtra / Cerca un file su Aruba (es. ALSTOM)..." className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" />
+                  <button type="submit" disabled={loadingNC} className="bg-sky-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs">{loadingNC ? '...' : 'Cerca 🔍'}</button>
                 </form>
-
-                {!isSearchMode && (
-                  <div className="flex items-center justify-between bg-slate-100 px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold">
-                    <div className="flex items-center space-x-1.5 overflow-x-auto">
-                      <button onClick={() => setPathNC('')} className="text-sky-700 font-bold hover:underline">🏠 Cloud Aruba</button>
-                      {pathNC.split('/').filter(Boolean).map((part, idx, arr) => {
-                        const targetPath = arr.slice(0, idx + 1).join('/');
-                        return (
-                          <span key={targetPath} className="flex items-center space-x-1.5">
-                            <span className="text-slate-400">/</span>
-                            <button onClick={() => setPathNC(targetPath)} className="text-slate-800 hover:underline font-bold">{part}</button>
-                          </span>
-                        );
-                      })}
-                    </div>
-
-                    {pathNC && (
-                      <button onClick={handleTornaSu} className="bg-white hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all shadow-sm whitespace-nowrap">
-                        ⬆️ Cartella Superiore
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
 
-              <div className="space-y-3">
-                <div className="flex justify-between items-center text-xs font-bold uppercase text-slate-400 border-b pb-2">
-                  <span>Contenuto Cartella Aruba ({risultatiNC.length})</span>
-                  <button onClick={() => caricaContenutoNC(pathNC, searchQueryNC)} disabled={loadingNC} className="text-sky-600 hover:underline text-[11px] uppercase">
-                    {loadingNC ? '⏳ Aggiornamento...' : '🔄 Ricarica'}
-                  </button>
-                </div>
-
-                {loadingNC ? (
-                  <div className="text-center py-12 text-slate-400 text-xs font-medium">
-                    <span className="animate-spin inline-block text-xl mb-1">⏳</span>
-                    <p>Lettura file da Nextcloud in corso...</p>
+              <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+                {risultatiNC.map((item, idx) => (
+                  <div key={idx} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-4">
+                    <div className="flex items-center space-x-3 truncate cursor-pointer" onClick={() => item.isFolder && handleApriCartella(item.percorso)}>
+                      <span className="text-2xl">{item.isFolder ? '📁' : '📄'}</span>
+                      <span className="font-bold text-sm text-slate-800 truncate">{item.nome}</span>
+                    </div>
+                    {!item.isFolder && (
+                      <a href={`/api/download?path=${encodeURIComponent(item.percorso)}&forceDownload=true`} className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold">📥 Scarica</a>
+                    )}
                   </div>
-                ) : risultatiNC.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 text-xs bg-slate-50 border border-dashed rounded-2xl">
-                    <span className="text-3xl block mb-1">📂</span>
-                    <p className="font-bold">Cartella vuota o nessun elemento trovato.</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-                    {risultatiNC.map((item, idx) => {
-                      const ext = (item.nome.split('.').pop() || '').toLowerCase();
-                      const isInline = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt'].includes(ext);
-
-                      return (
-                        <div key={idx} className="p-3.5 hover:bg-slate-50/80 flex items-center justify-between gap-4 transition-all">
-                          <div className="flex items-center space-x-3 overflow-hidden flex-1 cursor-pointer" onClick={() => item.isFolder && handleApriCartella(item.percorso)}>
-                            <span className="text-2xl">{item.isFolder ? '📁' : (isInline ? '📄' : '📊')}</span>
-                            <div className="truncate">
-                              <span className={`font-bold text-sm block truncate ${item.isFolder ? 'text-sky-900 hover:underline' : 'text-slate-800'}`}>
-                                {item.nome}
-                              </span>
-                              <span className="text-[11px] text-slate-400 block truncate">{item.percorso || '/'}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center space-x-2">
-                            {item.isFolder ? (
-                              <button onClick={() => handleApriCartella(item.percorso)} className="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">
-                                Apri Cartella ➔
-                              </button>
-                            ) : (
-                              <>
-                                {isInline ? (
-                                  <a 
-                                    href={`/api/download?path=${encodeURIComponent(item.percorso)}`} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
-                                  >
-                                    <span>👁️ Leggi PDF</span>
-                                  </a>
-                                ) : (
-                                  <button 
-                                    onClick={() => handleApriOnlineSenzaLogin(item.percorso)}
-                                    className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
-                                  >
-                                    <span>👁️ Guarda Online</span>
-                                  </button>
-                                )}
-
-                                <a 
-                                  href={`/api/download?path=${encodeURIComponent(item.percorso)}&forceDownload=true`} 
-                                  className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center space-x-1"
-                                >
-                                  <span>📥 Scarica</span>
-                                </a>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                ))}
               </div>
             </div>
           </div>
         )}
 
-        {/* TAB 4: CRUSCOTTO MENSILE */}
-        {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
+        {/* TAB 4: CENTRO REPORTISTICA MENSILE (BUSTE PAGA & FATTURAZIONE) */}
+        {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="space-y-6">
+            
+            {/* BARRA SUPERIORE CONTROLLO E SCELTA REPORT */}
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile &amp; Presenze</h2>
-                  <p className="text-xs text-slate-300 mt-0.5">Riepilogo consuntivi e suddivisione ore di lavoro e assenze.</p>
+                  <h2 className="text-xl font-bold tracking-tight">📊 Centro Reportistica Mensile</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Esporta dati pronti per lo Studio Paghe e la Fatturazione Clienti.</p>
                 </div>
-                <button onClick={() => exportCSV(consuntiviMese)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
-                  <span>📥 Esporta per Excel (CSV)</span>
-                </button>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Mese &amp; Anno</label>
-                  <input type="month" value={filtroMese} onChange={e => setFiltroMese(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Dipendente</label>
-                  <select value={filtroCruscottoDip} onChange={e => setFiltroCruscottoDip(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
-                    <option value="Tutti">Tutti i Dipendenti</option>
-                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Cliente</label>
-                  <select value={filtroCruscottoCliente} onChange={e => setFiltroCruscottoCliente(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
-                    <option value="Tutti">Tutti i Clienti</option>
-                    {LISTA_CLIENTI.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                <div className="flex items-center space-x-2 bg-slate-800 p-1.5 rounded-2xl border border-slate-700">
+                  <button 
+                    onClick={() => setSubTabReport('paghe')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      subTabReport === 'paghe' ? 'bg-sky-500 text-slate-950 shadow' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    💶 Report Buste Paga
+                  </button>
+                  <button 
+                    onClick={() => setSubTabReport('fatturazione')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      subTabReport === 'fatturazione' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    🧾 Report Fatturazione
+                  </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2">
-                <div className="bg-slate-800/80 border border-slate-700 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block">Cantiere</span>
-                  <span className="text-base font-bold text-white">{totMeseCantiere} h</span>
+              <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                <div className="flex items-center space-x-3">
+                  <label className="text-xs font-bold uppercase text-slate-400">Mese di Riferimento:</label>
+                  <input 
+                    type="month" 
+                    value={filtroMeseReport} 
+                    onChange={e => setFiltroMeseReport(e.target.value)} 
+                    className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none" 
+                  />
                 </div>
-                <div className="bg-slate-800/80 border border-sky-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-sky-400 block">Backoffice</span>
-                  <span className="text-base font-bold text-sky-300">{totMeseBackoffice} h</span>
-                </div>
-                <div className="bg-slate-800/80 border border-purple-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-purple-400 block">Trasferta</span>
-                  <span className="text-base font-bold text-purple-300">{totMeseTrasferta} h</span>
-                </div>
-                <div className="bg-amber-950/40 border border-amber-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-amber-400 block">🏖️ Ferie</span>
-                  <span className="text-base font-bold text-amber-300">{totMeseFerie} h</span>
-                </div>
-                <div className="bg-indigo-950/40 border border-indigo-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-indigo-400 block">⏱️ Permessi</span>
-                  <span className="text-base font-bold text-indigo-300">{totMesePermesso} h</span>
-                </div>
-                <div className="bg-rose-950/40 border border-rose-500/30 p-2.5 rounded-2xl text-center">
-                  <span className="text-[9px] font-bold uppercase text-rose-400 block">🏥 Malattia</span>
-                  <span className="text-base font-bold text-rose-300">{totMeseMalattia} h</span>
-                </div>
+
+                {subTabReport === 'paghe' ? (
+                  <button 
+                    onClick={exportCSVPaghe} 
+                    className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2"
+                  >
+                    <span>📥 Esporta Excel/CSV per Paghe</span>
+                  </button>
+                ) : (
+                  <button 
+                    onClick={exportCSVFatturazione} 
+                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2"
+                  >
+                    <span>📥 Esporta Excel/CSV per Fatture</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div>
+            {/* SEZIONE SUB-TAB 1: REPORT BUSTE PAGA */}
+            {subTabReport === 'paghe' && (
+              <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+                <div className="border-b border-slate-100 pb-3">
                   <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                    <span>📅</span> Disponibilità &amp; Giornate Lavorative Residue Mese
+                    <span>💶</span> Prospetto Ore Dipendenti ({filtroMeseReport})
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Giorni lavorativi teorici nel mese: <strong className="text-slate-800">{giorniLavorativiTotaliMese} giorni ({oreLavorativeTotaliMese} ore)</strong>
-                  </p>
+                  <p className="text-xs text-slate-500">Riepilogo ore ordinarie, straordinarie e giustificativi da trasmettere al consulente del lavoro.</p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-600 font-bold uppercase border-b">
+                        <th className="py-3 px-3">Dipendente</th>
+                        <th className="py-3 px-3 text-center">Cantiere</th>
+                        <th className="py-3 px-3 text-center">Backoffice</th>
+                        <th className="py-3 px-3 text-center">Trasferta</th>
+                        <th className="py-3 px-3 text-center text-amber-700">Ferie</th>
+                        <th className="py-3 px-3 text-center text-indigo-700">Permessi</th>
+                        <th className="py-3 px-3 text-center text-rose-700">Malattia</th>
+                        <th className="py-3 px-3 text-center font-black">Totale Impegnate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {listaDipendenti.map(nomeDip => {
+                        const eventi = storicoCompleto.filter(item => {
+                          const dNorm = getNormalizedDate(item.data);
+                          return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo';
+                        });
+
+                        const oreCantiere = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                        const oreBackoffice = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+                        const oreTrasferta = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+                        const oreFerie = eventi.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                        const orePermesso = eventi.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                        const oreMalattia = eventi.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                        const tot = oreCantiere + oreBackoffice + oreFerie + orePermesso + oreMalattia;
+
+                        return (
+                          <tr key={nomeDip} className="hover:bg-slate-50">
+                            <td className="py-3 px-3 font-bold text-slate-900">{nomeDip}</td>
+                            <td className="py-3 px-3 text-center font-bold">{oreCantiere} h</td>
+                            <td className="py-3 px-3 text-center font-bold text-sky-700">{oreBackoffice} h</td>
+                            <td className="py-3 px-3 text-center font-bold text-purple-700">{oreTrasferta} h</td>
+                            <td className="py-3 px-3 text-center font-bold text-amber-700">{oreFerie} h</td>
+                            <td className="py-3 px-3 text-center font-bold text-indigo-700">{orePermesso} h</td>
+                            <td className="py-3 px-3 text-center font-bold text-rose-700">{oreMalattia} h</td>
+                            <td className="py-3 px-3 text-center font-black bg-slate-50 text-slate-900">{tot} h</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {riepilogoCapienzaDipendenti.map(dip => {
-                  const haDisponibilita = Number(dip.giorniDisponibiliResidui) > 0;
-                  return (
-                    <div key={dip.nome} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
-                      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-                        <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                          <span>👤</span> {dip.nome}
-                        </span>
-                        <span className={`px-3 py-1 rounded-xl text-xs font-black shadow-sm ${
-                          haDisponibilita 
-                            ? 'bg-emerald-500 text-white' 
-                            : Number(dip.giorniDisponibiliResidui) === 0 
-                            ? 'bg-amber-500 text-white' 
-                            : 'bg-rose-600 text-white'
-                        }`}>
-                          {dip.giorniDisponibiliResidui} giorni liberi ({dip.oreDisponibiliResidue}h)
-                        </span>
-                      </div>
+            {/* SEZIONE SUB-TAB 2: REPORT FATTURAZIONE CLIENTE */}
+            {subTabReport === 'fatturazione' && (
+              <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                      <span>🧾</span> Report Ore da Fatturare per Cliente ({filtroMeseReport})
+                    </h3>
+                    <p className="text-xs text-slate-500">Dettaglio interventi svolti in cantiere e backoffice suddivisi per commessa.</p>
+                  </div>
 
-                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="bg-white p-2 rounded-xl border border-slate-200">
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Lavoro</span>
-                          <span className="font-bold text-slate-800">{dip.oreLavoro}h</span>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-amber-200">
-                          <span className="text-[9px] uppercase font-bold text-amber-600 block">Ferie / Perm.</span>
-                          <span className="font-bold text-amber-800">{dip.oreFerie + dip.orePermesso}h</span>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-rose-200">
-                          <span className="text-[9px] uppercase font-bold text-rose-600 block">Malattia</span>
-                          <span className="font-bold text-rose-800">{dip.oreMalattia}h</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: REPORT PERFORMANCE */}
-        {activeTab === 'report' && currentUser.ruolo === 'admin' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
-              <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight">Performance &amp; Reattività Team</h2>
-                  <p className="text-xs text-slate-300 mt-0.5">Valuta la tempestività di consuntivazione delle schede ore.</p>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-slate-400 uppercase">Filtra Cliente:</span>
+                    <select 
+                      value={filtroClienteFatturazione} 
+                      onChange={e => setFiltroClienteFatturazione(e.target.value)}
+                      className="text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 outline-none"
+                    >
+                      <option value="Tutti">Tutti i Clienti</option>
+                      {LISTA_CLIENTI.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
                 </div>
-                <button onClick={fetchProgrammati} className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/20 font-medium">🔄 Aggiorna</button>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-600 font-bold uppercase border-b">
+                        <th className="py-3 px-3">Data</th>
+                        <th className="py-3 px-3">Cliente</th>
+                        <th className="py-3 px-3">Commessa / Progetto</th>
+                        <th className="py-3 px-3">Eseguito da</th>
+                        <th className="py-3 px-3 text-center">Cantiere</th>
+                        <th className="py-3 px-3 text-center">Backoffice</th>
+                        <th className="py-3 px-3 text-center">Trasferta</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {storicoCompleto
+                        .filter(item => {
+                          const dNorm = getNormalizedDate(item.data);
+                          const inMese = dNorm && dNorm.startsWith(filtroMeseReport);
+                          const matchCliente = filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione;
+                          return inMese && matchCliente && item.stato === 'consuntivo' && !isAssenza(item);
+                        })
+                        .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
+                        .map(item => (
+                          <tr key={item.id} className="hover:bg-slate-50">
+                            <td className="py-2.5 px-3 text-slate-500 font-bold">{getNormalizedDate(item.data)}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{item.cliente}</td>
+                            <td className="py-2.5 px-3 text-slate-700">{item.progetto}</td>
+                            <td className="py-2.5 px-3 font-semibold text-slate-800">{item.dipendente}</td>
+                            <td className="py-2.5 px-3 text-center font-bold text-slate-900">{item.ore || 0} h</td>
+                            <td className="py-2.5 px-3 text-center font-bold text-sky-700">{item.ore_backoffice || 0} h</td>
+                            <td className="py-2.5 px-3 text-center font-bold text-purple-700">{item.ore_trasferta || 0} h</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+            )}
 
-              <div className="p-6 space-y-6">
-                {listaDipendenti.map(nomeDip => {
-                  const attivitaDip = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, nomeDip));
-                  const consuntivate = attivitaDip.filter(s => s.stato === 'consuntivo');
-                  const inRitardoScadute = attivitaDip.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) < ieriStr);
-
-                  const totaleRilevante = consuntivate.length + inRitardoScadute.length;
-                  const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
-
-                  const totOreLavorate = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore || 0), 0);
-                  const totOreBackoffice = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_backoffice || 0), 0);
-                  const totOreTrasferta = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_trasferta || 0), 0);
-
-                  return (
-                    <div key={nomeDip} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-lg">👤</span>
-                          <h3 className="font-bold text-slate-900 text-base">{nomeDip}</h3>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs font-bold text-slate-500 uppercase">Indice Reattività:</span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                            indiceReattivita >= 90 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                            indiceReattivita >= 70 ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                            'bg-rose-100 text-rose-800 border-rose-300'
-                          }`}>
-                            {indiceReattivita}% {indiceReattivita >= 90 ? '💯' : indiceReattivita >= 70 ? '⚠️' : '🚨'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Ore Svolte Totali</p>
-                          <p className="text-lg font-bold text-slate-800">{totOreLavorate} h</p>
-                        </div>
-                        <div className="bg-white p-3 rounded-2xl border border-sky-200 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase text-sky-600">Backoffice</p>
-                          <p className="text-lg font-bold text-sky-700">{totOreBackoffice} h</p>
-                        </div>
-                        {nomeDip === 'Alessandro Ciule' && (
-                          <div className="bg-white p-3 rounded-2xl border border-purple-200 shadow-sm">
-                            <p className="text-[10px] font-bold uppercase text-purple-600">Trasferta</p>
-                            <p className="text-lg font-bold text-purple-700">{totOreTrasferta} h</p>
-                          </div>
-                        )}
-                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Ritardi (&gt;24h)</p>
-                          <p className={`text-lg font-bold ${inRitardoScadute.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{inRitardoScadute.length}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         )}
 
@@ -1429,7 +1208,7 @@ export default function Home() {
             </p>
 
             <div className="grid grid-cols-2 gap-4">
-              {(modalItem.dipendente === 'Da Assegnare' || currentUser.ruolo === 'admin') && (
+              {(modalItem.dipendente === 'Da Assegnare' || currentUser?.ruolo === 'admin') && (
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
                   <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3 py-2 border rounded-xl bg-indigo-50 border-indigo-200 text-sm font-bold text-indigo-800">
