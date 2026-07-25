@@ -190,6 +190,20 @@ export default function Home() {
     setPathNC(parti.join('/'));
   };
 
+  const handleApriOnlineSenzaLogin = async (percorso) => {
+    try {
+      const res = await fetch(`/api/share?path=${encodeURIComponent(percorso)}`);
+      const data = await res.json();
+      if (res.ok && data.shareUrl) {
+        window.open(data.shareUrl, '_blank');
+      } else {
+        alert("Impossibile aprire l'anteprima cloud. Usa il pulsante Scarica File.");
+      }
+    } catch (e) {
+      alert("Errore durante l'apertura del documento.");
+    }
+  };
+
   const handleLogin = (e) => {
     e.preventDefault();
     const user = UTENTI[loginForm.username.toLowerCase().trim()];
@@ -256,7 +270,6 @@ export default function Home() {
 
         while (curr <= end) {
           const dayOfWeek = curr.getDay();
-          // Escludiamo i fine settimana (sabato 6 e domenica 0) di default
           if (dayOfWeek !== 0 && dayOfWeek !== 6) {
             dateDaSalvare.push(curr.toISOString().split('T')[0]);
           }
@@ -264,9 +277,7 @@ export default function Home() {
         }
       }
 
-      if (dateDaSalvare.length === 0) {
-        dateDaSalvare = [formData.data];
-      }
+      if (dateDaSalvare.length === 0) dateDaSalvare = [formData.data];
 
       let salvatiOk = 0;
       for (const d of dateDaSalvare) {
@@ -425,41 +436,113 @@ export default function Home() {
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
+  const ieriStr = getYesterdayStr();
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
   const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
   const dipendentiVisibili = listaDipendenti;
 
+  const tuttiEventiMese = storicoCompleto.filter(item => {
+    const dNorm = getNormalizedDate(item.data);
+    const isInMese = dNorm && dNorm.startsWith(filtroMeseReport);
+    const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
+    const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
+    return isInMese && matchDip && matchCliente && item.stato !== 'annullato';
+  });
+
+  const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
+
+  const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+  const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+
+  const totMeseFerie = consuntiviMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMesePermesso = consuntiviMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseMalattia = consuntiviMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+
+  const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMeseReport);
+  const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
+
+  const riepilogoCapienzaDipendenti = listaDipendenti.map(nomeDip => {
+    const eventiDipMese = storicoCompleto.filter(item => {
+      const dNorm = getNormalizedDate(item.data);
+      return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
+    });
+
+    const oreLavoro = eventiDipMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0) + Number(b.ore_backoffice || 0) + Number(b.ore_trasferta || 0), 0);
+    const oreFerie = eventiDipMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+    const orePermesso = eventiDipMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+    const oreMalattia = eventiDipMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+
+    const oreImpegnateTotali = oreLavoro + oreFerie + orePermesso + oreMalattia;
+    const oreDisponibiliResidue = oreLavorativeTotaliMese - oreImpegnateTotali;
+    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
+
+    return {
+      nome: nomeDip,
+      oreLavoro,
+      oreFerie,
+      orePermesso,
+      oreMalattia,
+      oreImpegnateTotali,
+      oreDisponibiliResidue,
+      giorniDisponibiliResidui
+    };
+  });
+
+  // FUNZIONE PER IL RENDERING DI OGNI SINGOLA RIGA/SCHEDA CON LE ICONE
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
-    const badgeAssenza = isFerie(item) ? '🏖️ Ferie' : isPermesso(item) ? '⏱️ Permesso' : isMalattia(item) ? '🏥 Malattia' : null;
+    const isAssenzaFlag = isFerie(item) || isPermesso(item) || isMalattia(item);
+    
+    // Logica Badge Icona e Colore
+    let icona = '💼';
+    let etichetta = 'Cantiere';
+    let badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
+
+    if (isFerie(item)) { icona = '🏖️'; etichetta = 'Ferie'; badgeStyle = 'bg-amber-100 text-amber-800 border-amber-300'; }
+    else if (isPermesso(item)) { icona = '⏱️'; etichetta = 'Permesso'; badgeStyle = 'bg-indigo-100 text-indigo-800 border-indigo-300'; }
+    else if (isMalattia(item)) { icona = '🏥'; etichetta = 'Malattia'; badgeStyle = 'bg-rose-100 text-rose-800 border-rose-300'; }
+    else if (Number(item.ore_trasferta || 0) > 0) { icona = '🚗'; etichetta = 'Trasferta'; badgeStyle = 'bg-purple-100 text-purple-800 border-purple-300'; }
+    else if (Number(item.ore_backoffice || 0) > 0) { icona = '🖥️'; etichetta = 'Backoffice'; badgeStyle = 'bg-sky-100 text-sky-800 border-sky-300'; }
+
     const isEditable = canEditItem(item);
 
     return (
-      <div key={item.id} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm`}>
+      <div key={item.id} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm`}>
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 shadow-xs">
               {normDate === todayStr ? 'Oggi' : normDate}
             </span>
-            {badgeAssenza ? (
-              <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-lg border border-purple-200">
-                {badgeAssenza}
-              </span>
-            ) : (
-              <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
-            )}
+            
+            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border flex items-center gap-1 shadow-xs ${badgeStyle}`}>
+              <span>{icona}</span> {etichetta}
+            </span>
+
             {Number(item.ore_straordinario || 0) > 0 && (
-              <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300">
+              <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300 shadow-xs">
                 ⚡ +{item.ore_straordinario}h Straord.
               </span>
             )}
           </div>
-          <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
-          {item.note && <div className="text-[11px] text-slate-400 italic mt-0.5 truncate max-w-xs">📝 {item.note}</div>}
+          
+          <div className="font-bold text-slate-900 text-sm truncate">
+            {isAssenzaFlag ? item.progetto : (item.cliente || "Senza Cliente")}
+          </div>
+          
+          {!isAssenzaFlag && (
+            <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
+          )}
+          
+          {item.note && (
+            <div className="text-[11px] text-slate-500 italic mt-1 bg-white p-1.5 rounded-lg border border-slate-100 max-w-xs truncate shadow-xs">
+              📝 {item.note}
+            </div>
+          )}
           
           {currentUser?.ruolo === 'admin' && (
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2.5 flex items-center gap-2">
               <span className="text-[10px] uppercase font-bold text-slate-400">Assegna a:</span>
               <select 
                 value={item.dipendente || 'Da Assegnare'} 
@@ -475,7 +558,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
+        <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0 items-center h-full">
           {isEditable ? (
             <>
               <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">
@@ -625,6 +708,21 @@ export default function Home() {
                 🏢
               </div>
             </div>
+
+            {daAssegnareItems.length > 0 && currentUser?.ruolo === 'admin' && (
+              <div className="bg-amber-50/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">❓</span>
+                  <div>
+                    <h3 className="font-bold text-amber-900 text-sm">Ci sono {daAssegnareItems.length} attività ancora "Da Assegnare"</h3>
+                    <p className="text-xs text-amber-700">Assegna ciascuna attività al relativo dipendente nella sezione Attività.</p>
+                  </div>
+                </div>
+                <button onClick={() => setActiveTab('programmati')} className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm whitespace-nowrap">
+                  Vedi Cartella ➔
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
@@ -1089,6 +1187,7 @@ export default function Home() {
         {/* TAB 4: CENTRO REPORTISTICA MENSILE (BUSTE PAGA & FATTURAZIONE) */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="space-y-6">
+            
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
