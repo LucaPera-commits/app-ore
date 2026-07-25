@@ -63,6 +63,7 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
+// UTILITIES DI SUPPORTO POSIZIONATE PRIMA DEL COMPONENTE
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
 
@@ -118,6 +119,35 @@ const renderStars = (rating) => {
   const parsed = Math.floor(Number(rating));
   const count = isNaN(parsed) || parsed < 1 ? 5 : Math.min(5, parsed);
   return '⭐'.repeat(count);
+};
+
+const matchNomeDipendente = (nomeDb, filtro) => {
+  if (!filtro || filtro === 'Tutti') return true; 
+  if (!nomeDb) return false;
+  const db = String(nomeDb).toLowerCase().trim();
+  const flt = String(filtro).toLowerCase().trim();
+
+  if (db === flt) return true;
+  const partiFiltro = flt.split(' ').filter(Boolean);
+  const partiDb = db.split(' ').filter(Boolean);
+
+  return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
+};
+
+const isFerie = (item) => toText(item?.progetto).toLowerCase().includes('ferie');
+const isPermesso = (item) => toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol');
+const isMalattia = (item) => toText(item?.progetto).toLowerCase().includes('malattia');
+const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze');
+
+const canEditItem = (item, currentUser) => {
+  if (!currentUser) return false;
+  if (currentUser.ruolo === 'admin') return true;
+  return matchNomeDipendente(item?.dipendente, currentUser.nome);
+};
+
+const getFeedbackKey = (fb) => {
+  if (!fb || !fb.id) return null;
+  return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
 };
 
 const getGiorniLavorativiMese = (annoMeseStr) => {
@@ -280,19 +310,13 @@ function HomeContent() {
     }
   }, [currentUser, activeTab, filtroArchivioAdmin, isMounted]);
 
-  const getFeedbackKey = (fb) => {
-    if (!fb || !fb.id) return null;
-    return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`;
-  };
-
   const safeReadIds = Array.isArray(readFeedbackIds) ? readFeedbackIds : [];
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
 
-  // CORRETTO: Nessun loop infinito sulle dipendenze
   useEffect(() => {
-    if (activeTab === 'feedback' && feedbackList && feedbackList.length > 0) {
-      const keysToMark = feedbackList.map(getFeedbackKey).filter(Boolean);
+    if (activeTab === 'feedback' && safeFeedbackList.length > 0) {
+      const keysToMark = safeFeedbackList.map(getFeedbackKey).filter(Boolean);
       if (keysToMark.length === 0) return;
 
       setReadFeedbackIds(prev => {
@@ -307,7 +331,7 @@ function HomeContent() {
         return updated;
       });
     }
-  }, [activeTab, feedbackList]);
+  }, [activeTab, safeFeedbackList]);
 
   const unreadFeedbackCount = safeFeedbackList.filter(fb => {
     if (!fb || fb.is_deleted) return false;
@@ -438,7 +462,7 @@ function HomeContent() {
       }
     } catch (err) {
       setErrorNC('Impossibile contattare il server Nextcloud');
-    } finally {
+    } fontally {
       setLoadingNC(false);
     }
   };
@@ -618,33 +642,9 @@ function HomeContent() {
     finally { setLoading(false); }
   };
 
-  const isFerie = (item) => toText(item?.progetto).toLowerCase().includes('ferie');
-  const isPermesso = (item) => toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol');
-  const isMalattia = (item) => toText(item?.progetto).toLowerCase().includes('malattia');
-  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze');
-
-  const matchNomeDipendente = (nomeDb, filtro) => {
-    if (!filtro || filtro === 'Tutti') return true; 
-    if (!nomeDb) return false;
-    const db = String(nomeDb).toLowerCase().trim();
-    const flt = String(filtro).toLowerCase().trim();
-
-    if (db === flt) return true;
-    const partiFiltro = flt.split(' ').filter(Boolean);
-    const partiDb = db.split(' ').filter(Boolean);
-
-    return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
-  };
-
-  const canEditItem = (item) => {
-    if (!currentUser) return false;
-    if (currentUser.ruolo === 'admin') return true;
-    return matchNomeDipendente(item?.dipendente, currentUser.nome);
-  };
-
   const handleElimina = async (item) => {
     if (!item) return;
-    if (!canEditItem(item)) return alert("Puoi annullare solo le tue attività.");
+    if (!canEditItem(item, currentUser)) return alert("Puoi annullare solo le tue attività.");
     if (!confirm(`Vuoi annullare l'attività per "${toText(item.cliente)}"?`)) return;
     setLoading(true);
     try {
@@ -659,7 +659,7 @@ function HomeContent() {
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item)) return alert("Puoi modificare solo le tue attività.");
+    if (!canEditItem(item, currentUser)) return alert("Puoi modificare solo le tue attività.");
     setModalItem(item);
     setOreEffettive(item.ore || 0);
     setOreBackofficeEffettive(item.ore_backoffice || 0);
@@ -781,7 +781,7 @@ function HomeContent() {
     else if (Number(item.ore_trasferta || 0) > 0) { icona = '🚗'; etichetta = 'Trasferta'; badgeStyle = 'bg-purple-100 text-purple-800 border-purple-300'; }
     else if (Number(item.ore_backoffice || 0) > 0) { icona = '🖥️'; etichetta = 'Backoffice'; badgeStyle = 'bg-sky-100 text-sky-800 border-sky-300'; }
 
-    const isEditable = canEditItem(item);
+    const isEditable = canEditItem(item, currentUser);
     const keyVal = item.id || item.calendar_event_id || `att_${idx}`;
 
     return (
