@@ -29,23 +29,37 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
+// FUNZIONI HELPER PER LE DATE DEFINITE A LIVELLO GLOBALE
+const getTodayStr = () => new Date().toISOString().split('T')[0];
+const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
+const getYesterdayStr = () => {
+  const t = new Date(); t.setDate(t.getDate() - 1);
+  return t.toISOString().split('T')[0];
+};
+
+const getNormalizedDate = (d) => {
+  if (!d) return getTodayStr();
+  return String(d).split('T')[0].split(' ')[0];
+};
+
+const getGiorniLavorativiMese = (annoMeseStr) => {
+  if (!annoMeseStr) return 22;
+  const [year, month] = annoMeseStr.split('-').map(Number);
+  let count = 0;
+  const date = new Date(year, month - 1, 1);
+  while (date.getMonth() === month - 1) {
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) count++;
+    date.setDate(date.getDate() + 1);
+  }
+  return count;
+};
+
 export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
-
-  const getTodayStr = () => new Date().toISOString().split('T')[0];
-  const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
-  const getYesterdayStr = () => {
-    const t = new Date(); t.setDate(t.getDate() - 1);
-    return t.toISOString().split('T')[0];
-  };
-
-  const getNormalizedDate = (d) => {
-    if (!d) return getTodayStr();
-    return String(d).split('T')[0].split(' ')[0];
-  };
 
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
@@ -188,20 +202,6 @@ export default function Home() {
     const parti = pathNC.split('/').filter(Boolean);
     parti.pop();
     setPathNC(parti.join('/'));
-  };
-
-  const handleApriOnlineSenzaLogin = async (percorso) => {
-    try {
-      const res = await fetch(`/api/share?path=${encodeURIComponent(percorso)}`);
-      const data = await res.json();
-      if (res.ok && data.shareUrl) {
-        window.open(data.shareUrl, '_blank');
-      } else {
-        alert("Impossibile aprire l'anteprima cloud. Usa il pulsante Scarica File.");
-      }
-    } catch (e) {
-      alert("Errore durante l'apertura del documento.");
-    }
   };
 
   const handleLogin = (e) => {
@@ -436,66 +436,15 @@ export default function Home() {
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
-  const ieriStr = getYesterdayStr();
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
   const daAssegnareItems = storicoCompleto.filter(p => (!p.dipendente || p.dipendente === 'Da Assegnare' || p.dipendente === '') && p.stato !== 'annullato');
   const dipendentiVisibili = listaDipendenti;
 
-  const tuttiEventiMese = storicoCompleto.filter(item => {
-    const dNorm = getNormalizedDate(item.data);
-    const isInMese = dNorm && dNorm.startsWith(filtroMeseReport);
-    const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
-    const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
-    return isInMese && matchDip && matchCliente && item.stato !== 'annullato';
-  });
-
-  const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
-
-  const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
-  const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
-
-  const totMeseFerie = consuntiviMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMesePermesso = consuntiviMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMeseMalattia = consuntiviMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-
-  const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMeseReport);
-  const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
-
-  const riepilogoCapienzaDipendenti = listaDipendenti.map(nomeDip => {
-    const eventiDipMese = storicoCompleto.filter(item => {
-      const dNorm = getNormalizedDate(item.data);
-      return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
-    });
-
-    const oreLavoro = eventiDipMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0) + Number(b.ore_backoffice || 0) + Number(b.ore_trasferta || 0), 0);
-    const oreFerie = eventiDipMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-    const orePermesso = eventiDipMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-    const oreMalattia = eventiDipMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-
-    const oreImpegnateTotali = oreLavoro + oreFerie + orePermesso + oreMalattia;
-    const oreDisponibiliResidue = oreLavorativeTotaliMese - oreImpegnateTotali;
-    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
-
-    return {
-      nome: nomeDip,
-      oreLavoro,
-      oreFerie,
-      orePermesso,
-      oreMalattia,
-      oreImpegnateTotali,
-      oreDisponibiliResidue,
-      giorniDisponibiliResidui
-    };
-  });
-
-  // FUNZIONE PER IL RENDERING DI OGNI SINGOLA RIGA/SCHEDA CON LE ICONE
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
     const isAssenzaFlag = isFerie(item) || isPermesso(item) || isMalattia(item);
     
-    // Logica Badge Icona e Colore
     let icona = '💼';
     let etichetta = 'Cantiere';
     let badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
@@ -709,21 +658,6 @@ export default function Home() {
               </div>
             </div>
 
-            {daAssegnareItems.length > 0 && currentUser?.ruolo === 'admin' && (
-              <div className="bg-amber-50/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
-                <div className="flex items-center space-x-3">
-                  <span className="text-2xl">❓</span>
-                  <div>
-                    <h3 className="font-bold text-amber-900 text-sm">Ci sono {daAssegnareItems.length} attività ancora "Da Assegnare"</h3>
-                    <p className="text-xs text-amber-700">Assegna ciascuna attività al relativo dipendente nella sezione Attività.</p>
-                  </div>
-                </div>
-                <button onClick={() => setActiveTab('programmati')} className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm whitespace-nowrap">
-                  Vedi Cartella ➔
-                </button>
-              </div>
-            )}
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
@@ -845,7 +779,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* GRIGLIA ORE (ORDINARIE, BACKOFFICE, TRASFERTA, STRAORDINARI) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore / Giorno (Std. 8h)</label>
@@ -866,7 +799,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* CAMPO STRAORDINARI: VISIBILE SOLO A CONSUNTIVO */}
                     {formData.stato === 'consuntivo' ? (
                       <div>
                         <label className="block text-xs font-bold uppercase text-amber-600 mb-1.5">⚡ Ore Straordinario</label>
@@ -896,7 +828,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON CRUSCOTTO E CARTELE PER TIPOLOGIA */}
+        {/* TAB 2: GESTIONE ATTIVITÀ CON CARTELE E ICONE */}
         {activeTab === 'programmati' && (
           <div className="space-y-6">
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-wrap items-center justify-between gap-4 border border-slate-800">
@@ -1184,10 +1116,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 4: CENTRO REPORTISTICA MENSILE (BUSTE PAGA & FATTURAZIONE) */}
+        {/* TAB 4: CENTRO REPORTISTICA MENSILE */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="space-y-6">
-            
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
