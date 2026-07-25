@@ -32,7 +32,7 @@ const LISTA_CLIENTI = [
 ];
 
 export default function Home() {
-  // 1. TUTTI GLI HOOK E STATI ALL'INIZIO DEL COMPONENTE
+  // 1. STATI E HOOK
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [activeTab, setActiveTab] = useState('nuovo');
@@ -142,7 +142,7 @@ export default function Home() {
       fetchProgrammati();
     } catch (e) {
       alert("Errore durante la connessione a Google Calendar.");
-    } fontally {
+    } finally {
       setLoadingProgrammati(false);
     }
   };
@@ -255,7 +255,7 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  // 4. SCHERMATA DI LOGIN
+  // 4. LOGIN
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
@@ -289,7 +289,7 @@ export default function Home() {
     );
   }
 
-  // 5. VARIABILI CALCOLATE PER UTENTE AUTENTICATO
+  // 5. CALCOLI LOGICI DASHBOARD
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const dipendenteFiltro = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
   const eventiFiltrati = dipendenteFiltro === 'Tutti' ? programmati : programmati.filter(p => p.dipendente === dipendenteFiltro);
