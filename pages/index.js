@@ -51,7 +51,6 @@ export default function Home() {
     return String(d).split('T')[0].split(' ')[0];
   };
 
-  // Calcola i giorni lavorativi (Lun-Ven) di un mese
   const getGiorniLavorativiMese = (annoMeseStr) => {
     if (!annoMeseStr) return 22;
     const [year, month] = annoMeseStr.split('-').map(Number);
@@ -65,8 +64,7 @@ export default function Home() {
     return count;
   };
 
-  const [categoriaForm, setCategoriaForm] = useState('lavoro'); // lavoro, ferie, permesso, malattia
-
+  const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
     dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
     ore: 8, ore_backoffice: 0, ore_trasferta: 0, note: '', stato: 'consuntivo'
@@ -76,7 +74,15 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState(null);
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
-  
+
+  // --- STATI RICERCA DOCUMENTI NEXTCLOUD ---
+  const [searchQueryNC, setSearchQueryNC] = useState('');
+  const [cartellaSelezionataNC, setCartellaSelezionataNC] = useState('Tutto');
+  const [cartellaPersonalizzata, setCartellaPersonalizzata] = useState('');
+  const [risultatiNC, setRisultatiNC] = useState([]);
+  const [loadingNC, setLoadingNC] = useState(false);
+  const [errorNC, setErrorNC] = useState(null);
+
   const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti');
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
 
@@ -101,7 +107,6 @@ export default function Home() {
     }
   }, [currentUser]);
 
-  // Gestione dinamica dei campi quando si seleziona Ferie / Permesso / Malattia
   useEffect(() => {
     if (categoriaForm === 'ferie') {
       setFormData(prev => ({ ...prev, cliente: 'ASSENZE / GIUSTIFICATIVI', progetto: 'Ferie', ore: 8, ore_backoffice: 0, ore_trasferta: 0 }));
@@ -135,7 +140,6 @@ export default function Home() {
   useEffect(() => {
     if (currentUser) {
       fetchProgrammati();
-
       if (currentUser.ruolo === 'admin') {
         handleSilentSync();
         const interval = setInterval(handleSilentSync, 180000);
@@ -143,6 +147,33 @@ export default function Home() {
       }
     }
   }, [currentUser, activeTab]);
+
+  // ESECUZIONE RICERCA DOCUMENTI
+  const handleCercaNextcloud = async (e) => {
+    if (e) e.preventDefault();
+    if (!searchQueryNC.trim()) return;
+
+    setLoadingNC(true);
+    setErrorNC(null);
+
+    const targetFolder = cartellaSelezionataNC === 'Personalizzata' 
+      ? cartellaPersonalizzata 
+      : cartellaSelezionataNC;
+
+    try {
+      const res = await fetch(`/api/documenti?query=${encodeURIComponent(searchQueryNC)}&folder=${encodeURIComponent(targetFolder)}`);
+      const data = await res.json();
+      if (res.ok) {
+        setRisultatiNC(data.risultati || []);
+      } else {
+        setErrorNC(data.message || 'Errore durante la ricerca');
+      }
+    } catch (err) {
+      setErrorNC('Impossibile contattare il server.');
+    } finally {
+      setLoadingNC(false);
+    }
+  };
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -288,14 +319,14 @@ export default function Home() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
-                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" placeholder="Inserisci nome utente" />
+                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm" placeholder="Inserisci nome utente" />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
                 <div className="relative">
-                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium pr-12" placeholder="Inserisci password" />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-base focus:outline-none p-1 transition-all">
+                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm pr-12" placeholder="Inserisci password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-base p-1">
                     {showPassword ? '👁️' : '🙈'}
                   </button>
                 </div>
@@ -304,19 +335,16 @@ export default function Home() {
               <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">Accedi al Portale ➔</button>
             </form>
           </div>
-          <p className="text-center text-[11px] text-slate-400 mt-6 font-medium">© {new Date().getFullYear()} bw solutions • Powered by Zo&amp;annA S.R.L.</p>
         </div>
       </div>
     );
   }
 
-  // --- HELPER CATEGORIE ASSENZE ---
   const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
   const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
   const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
   const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
 
-  // --- LOGICA FILTRI ---
   const matchAssegnazione = (dipDb, filtroAss) => {
     if (!filtroAss || filtroAss === 'Tutti') return true;
     const isDaAssegnare = !dipDb || dipDb === 'Da Assegnare' || dipDb === '';
@@ -367,7 +395,6 @@ export default function Home() {
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
-  // --- CALCOLI CRUSCOTTO MENSILE ---
   const tuttiEventiMese = storicoCompleto.filter(item => {
     const dNorm = getNormalizedDate(item.data);
     const isInMese = dNorm && dNorm.startsWith(filtroMese);
@@ -378,7 +405,6 @@ export default function Home() {
 
   const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
 
-  // Ore divise per tipologia
   const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
   const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
   const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
@@ -389,12 +415,10 @@ export default function Home() {
 
   const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta + totMeseFerie + totMesePermesso + totMeseMalattia;
 
-  // --- CALCOLO CAPENZA E DISPONIBILITÀ PER DIPENDENTE ---
   const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMese);
   const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
 
   const riepilogoCapienzaDipendenti = listaDipendenti.map(nomeDip => {
-    // Prendi TUTTI gli eventi del mese (sia pianificati che consuntivati) per questo dipendente
     const eventiDipMese = storicoCompleto.filter(item => {
       const dNorm = getNormalizedDate(item.data);
       return dNorm && dNorm.startsWith(filtroMese) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
@@ -470,7 +494,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-12">
       <Head>
-        <title>Gestionale Ore | bw solutions</title>
+        <title>Gestionale Ore &amp; Documenti | bw solutions</title>
       </Head>
 
       <datalist id="lista-aziende">
@@ -479,36 +503,36 @@ export default function Home() {
         ))}
       </datalist>
 
+      {/* HEADER COMPLETO CON TUTTI I TAB */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
-            <div className="bg-sky-600 text-white font-bold text-base px-2.5 py-1 rounded-lg tracking-wider shadow-sm">bw</div>
+            <div className="bg-sky-600 text-white font-bold text-base px-2.5 py-1 rounded-lg">bw</div>
             <div>
-              <span className="font-bold text-base text-slate-900 tracking-tight block leading-none">bw solutions</span>
-              <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block mt-0.5">Zo&amp;annA S.R.L.</span>
+              <span className="font-bold text-base text-slate-900 leading-none block">bw solutions</span>
+              <span className="text-[10px] text-emerald-600 font-bold uppercase block mt-0.5">Zo&amp;annA S.R.L.</span>
             </div>
           </div>
           
           <nav className="flex space-x-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-semibold overflow-x-auto">
-            <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📝 Nuovo Inserimento</button>
-            <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'programmati' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+            <button onClick={() => setActiveTab('nuovo')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>📝 Nuovo Inserimento</button>
+            <button onClick={() => setActiveTab('programmati')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>
               <span>⏳ Gestione Attività</span>
-              {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full text-[10px]">{daConfermare.length}</span>}
+              {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-bold px-1.5 rounded-full text-[10px]">{daConfermare.length}</span>}
             </button>
+            <button onClick={() => setActiveTab('documenti')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📂 Ricerca Documenti</button>
             {currentUser.ruolo === 'admin' && (
               <>
-                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📊 Cruscotto &amp; Disponibilità</button>
-                <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>⚡ Performance</button>
-                <a href="/preventivi" className="px-3.5 py-2 ml-1 rounded-xl transition-all bg-sky-100 text-sky-800 hover:bg-sky-200 border border-sky-200 font-bold flex items-center space-x-1 shadow-sm whitespace-nowrap">
-                  <span>💰 Preventivi</span>
-                </a>
+                <button onClick={() => setActiveTab('cruscotto')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>📊 Cruscotto</button>
+                <button onClick={() => setActiveTab('report')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>⚡ Performance</button>
+                <a href="/preventivi" className="px-3 py-2 rounded-xl bg-sky-100 text-sky-800 font-bold whitespace-nowrap">💰 Preventivi</a>
               </>
             )}
           </nav>
 
           <div className="flex items-center space-x-3 text-xs bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
             <span className="text-slate-700 font-semibold">👤 {currentUser.nome}</span>
-            <button onClick={handleLogout} className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-0.5 rounded-lg transition-all font-bold border border-rose-200">Esci</button>
+            <button onClick={handleLogout} className="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-lg font-bold">Esci</button>
           </div>
         </div>
       </header>
@@ -527,7 +551,7 @@ export default function Home() {
 
       <main className="max-w-4xl mx-auto px-4 py-8">
 
-        {/* TAB 1: NUOVO INSERIMENTO CON CATEGORIA ASSENZE */}
+        {/* TAB 1: NUOVO INSERIMENTO */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -538,8 +562,6 @@ export default function Home() {
               <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">📅</span>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
-              
-              {/* TIPO CATEGORIA ATTIVITÀ / ASSENZA */}
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Tipologia Inserimento</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -576,7 +598,7 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Cliente</label>
-                  <input type="text" list="lista-aziende" placeholder="Es. ERREPI s.r.l" required value={formData.cliente} onChange={e => setFormData({ ...formData, cliente: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:ring-2 focus:ring-sky-200 outline-none" />
+                  <input type="text" list="lista-aziende" placeholder="Es. ERREPI s.r.l" required value={formData.cliente} onChange={e => setFormData({ ...formData, cliente: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Progetto / Dettaglio Assenza</label>
@@ -637,7 +659,7 @@ export default function Home() {
                     <select 
                       value={filtroAssegnazione} 
                       onChange={e => setFiltroAssegnazione(e.target.value)} 
-                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200"
+                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none"
                     >
                       <option value="Tutti">Tutti gli stati</option>
                       <option value="Assegnate">📌 Assegnate</option>
@@ -650,7 +672,7 @@ export default function Home() {
                     <select 
                       value={filtroDipendente} 
                       onChange={e => setFiltroDipendente(e.target.value)} 
-                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200"
+                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none"
                     >
                       {['Tutti', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
@@ -782,11 +804,109 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: CRUSCOTTO MENSILE & CAPACITÀ DISPONIBILE */}
+        {/* TAB 3: RICERCA DOCUMENTI NEXTCLOUD CON SELETTORE CARTELLA */}
+        {activeTab === 'documenti' && (
+          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
+            <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">📁 Ricerca Documenti (Nextcloud Aruba)</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Cerca cartelle, disegni e schede tecniche direttamente sul tuo cloud.</p>
+              </div>
+              <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">☁️</span>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <form onSubmit={handleCercaNextcloud} className="space-y-4">
+                
+                {/* SELETTORE CARTELLA DI DESTINAZIONE */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Cartella di Ricerca</label>
+                    <select 
+                      value={cartellaSelezionataNC} 
+                      onChange={e => setCartellaSelezionataNC(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-sky-200"
+                    >
+                      <option value="Tutto">📁 Tutto il Cloud (Radice)</option>
+                      <option value="Commesse">📁 Cartella Commesse</option>
+                      <option value="Clienti">📁 Cartella Clienti</option>
+                      <option value="Certificati">📁 Certificati &amp; Qualifiche</option>
+                      <option value="Personalizzata">⚙️ Specifica nome cartella...</option>
+                    </select>
+                  </div>
+
+                  {cartellaSelezionataNC === 'Personalizzata' && (
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Nome Cartella / Percorso</label>
+                      <input 
+                        type="text" 
+                        value={cartellaPersonalizzata} 
+                        onChange={e => setCartellaPersonalizzata(e.target.value)} 
+                        placeholder="Es. /COMMESSE/2026" 
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={searchQueryNC} 
+                    onChange={e => setSearchQueryNC(e.target.value)} 
+                    placeholder="Digita cliente, commessa o nome file (es. ALSTOM, disegno)..." 
+                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200"
+                  />
+                  <button type="submit" disabled={loadingNC} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-6 py-3 rounded-xl text-sm transition-all shadow-md">
+                    {loadingNC ? 'Ricerca in corso...' : 'Cerca 🔍'}
+                  </button>
+                </div>
+              </form>
+
+              {errorNC && (
+                <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold">
+                  ⚠️ {errorNC}
+                </div>
+              )}
+
+              {/* RISULTATI RICERCA */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase text-slate-400">Risultati Trovati ({risultatiNC.length})</h3>
+                {risultatiNC.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 text-xs">
+                    Nessun documento visualizzato. Digita una parola chiave e clicca su Cerca.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                    {risultatiNC.map((item, idx) => (
+                      <div key={idx} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-4 transition-all">
+                        <div className="flex items-center space-x-3 overflow-hidden">
+                          <span className="text-2xl">{item.isFolder ? '📁' : '📄'}</span>
+                          <div className="truncate">
+                            <span className="font-bold text-slate-900 text-sm block truncate">{item.nome}</span>
+                            <span className="text-[11px] text-slate-400 block truncate">{item.percorso || '/'}</span>
+                          </div>
+                        </div>
+                        <a 
+                          href={item.linkWeb} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="bg-slate-100 hover:bg-sky-100 hover:text-sky-800 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 whitespace-nowrap transition-all"
+                        >
+                          Apri su Nextcloud ➔
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: CRUSCOTTO MENSILE & CAPACITÀ */}
         {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
-            
-            {/* INTESTAZIONE E SUMMARY */}
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
@@ -819,7 +939,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* SCHEDE ORE RIEPILOGATIVE */}
               <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2">
                 <div className="bg-slate-800/80 border border-slate-700 p-2.5 rounded-2xl text-center">
                   <span className="text-[9px] font-bold uppercase text-slate-400 block">Cantiere</span>
@@ -848,7 +967,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* SEZIONE NUOVA: DISPONIBILITÀ E CAPIENZA GIORNATE TEAM */}
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div>
@@ -900,58 +1018,10 @@ export default function Home() {
                 })}
               </div>
             </div>
-
-            {/* TABELLA REGISTRO DETTAGLIATO */}
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
-              <h3 className="font-bold text-slate-900 text-base flex justify-between items-center">
-                <span>Registro Dettagliato Interventi &amp; Assenze ({tuttiEventiMese.length})</span>
-              </h3>
-              <div className="overflow-x-auto max-h-[500px] border border-slate-200 rounded-xl">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 bg-slate-100 z-10">
-                    <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase">
-                      <th className="py-3 px-3">Stato</th>
-                      <th className="py-3 px-2">Data</th>
-                      <th className="py-3 px-2">Tecnico</th>
-                      <th className="py-3 px-2">Cliente / Tipo</th>
-                      <th className="py-3 px-2 text-center">Ore Cant.</th>
-                      <th className="py-3 px-2 text-center">Backoff.</th>
-                      <th className="py-3 px-2 text-center">Trasf.</th>
-                      <th className="py-3 px-2 text-center">Azione</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {tuttiEventiMese.map(item => (
-                      <tr key={item.id} className="hover:bg-slate-50 group">
-                        <td className="py-2.5 px-3">
-                          {item.stato === 'consuntivo' ? (
-                            <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">Chiuso</span>
-                          ) : (
-                            <span className="text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100 animate-pulse">In Sospeso</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{getNormalizedDate(item.data)}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap font-semibold">{item.dipendente}</td>
-                        <td className="py-2.5 px-2">
-                          <div className="font-bold text-slate-900">{item.cliente}</div>
-                          <div className="text-slate-500 text-[10px] truncate max-w-[150px]">{item.progetto}</div>
-                        </td>
-                        <td className="py-2.5 px-2 text-center font-bold text-slate-800">{item.ore || 0}h</td>
-                        <td className="py-2.5 px-2 text-center font-bold text-sky-700">{item.ore_backoffice || 0}h</td>
-                        <td className="py-2.5 px-2 text-center font-bold text-purple-700">{item.ore_trasferta || 0}h</td>
-                        <td className="py-2.5 px-2 text-center">
-                          <button onClick={() => openEditModal(item)} className="bg-white border border-slate-300 text-slate-600 hover:text-sky-700 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-sm">✏️ Modifica</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         )}
 
-        {/* TAB 4: REPORT PERFORMANCE */}
+        {/* TAB 5: REPORT PERFORMANCE */}
         {activeTab === 'report' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
