@@ -29,7 +29,7 @@ const LISTA_CLIENTI = [
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
 
-// FUNZIONI HELPER PER LE DATE DEFINITE A LIVELLO GLOBALE
+// FUNZIONI HELPER PER LE DATE DEFINITE A LIVELLO GLOBALE (PREVIENE ERRORE DI PRERENDERING)
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
 const getYesterdayStr = () => {
@@ -71,6 +71,16 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState(null);
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
+
+  // --- STATI SUGGERIMENTI E FEEDBACK ---
+  const [feedbackList, setFeedbackList] = useState([]);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState({
+    categoria: '💡 Nuova Funzionalità',
+    valutazione: 5,
+    messaggio: ''
+  });
+  const [feedbackStatus, setFeedbackStatus] = useState(null);
 
   // --- STATI APERTURA/CHIUSURA CARTELE E SOTTO-CARTELE ---
   const [cartelleAperte, setCartelleAperte] = useState({});
@@ -157,6 +167,56 @@ export default function Home() {
       }
     }
   }, [currentUser, activeTab]);
+
+  // CARICAMENTO FEEDBACK
+  const fetchFeedback = async () => {
+    setLoadingFeedback(true);
+    try {
+      const res = await fetch('/api/feedback');
+      if (res.ok) {
+        const data = await res.json();
+        setFeedbackList(data);
+      }
+    } catch (e) { console.error("Errore caricamento feedback:", e); }
+    finally { setLoadingFeedback(false); }
+  };
+
+  useEffect(() => {
+    if (currentUser && activeTab === 'feedback') {
+      fetchFeedback();
+    }
+  }, [currentUser, activeTab]);
+
+  const handleInviaFeedback = async (e) => {
+    e.preventDefault();
+    if (!feedbackForm.messaggio.trim()) return;
+    setLoading(true);
+    setFeedbackStatus(null);
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          autore: currentUser.nome,
+          categoria: feedbackForm.categoria,
+          valutazione: feedbackForm.valutazione,
+          messaggio: feedbackForm.messaggio.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFeedbackStatus({ type: 'success', text: 'Grazie! Il tuo suggerimento è stato inviato.' });
+        setFeedbackForm({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' });
+        fetchFeedback();
+      } else {
+        setFeedbackStatus({ type: 'error', text: data.error || 'Errore durante l\'invio.' });
+      }
+    } catch (e) {
+      setFeedbackStatus({ type: 'error', text: 'Errore di connessione al server.' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const caricaContenutoNC = async (folderPath = '', search = '') => {
     setLoadingNC(true);
@@ -610,6 +670,10 @@ export default function Home() {
               {daAssegnareItems.length > 0 && <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
             
+            <button onClick={() => setActiveTab('feedback')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'feedback' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
+              <span>💡 Suggerimenti</span>
+            </button>
+
             <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
             
             <a 
@@ -650,7 +714,7 @@ export default function Home() {
                   Bentornato, <span className="text-sky-400">{currentUser?.nome}</span>! 👋
                 </h1>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Accedi a tutte le risorse aziendali: registra le ore, consulta il Cloud Aruba o accedi al Server NAS UGREEN.
+                  Accedi a tutte le risorse aziendali: registra le ore, proponi idee per l'app, consulta il Cloud Aruba o accedi al Server NAS UGREEN.
                 </p>
               </div>
               <div className="absolute right-6 bottom-4 text-8xl opacity-10 pointer-events-none select-none">
@@ -677,6 +741,15 @@ export default function Home() {
                 <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Apri Cartelle ➔</span>
               </div>
 
+              <div onClick={() => setActiveTab('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
+                  💡
+                </div>
+                <h3 className="font-bold text-slate-900 text-base mb-1">Suggerimenti App</h3>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Lascia idee, segnala bug o esprimi la tua opinione sull'app.</p>
+                <span className="text-xs font-bold text-purple-600 flex items-center gap-1">Lascia un'idea ➔</span>
+              </div>
+
               <div onClick={() => setActiveTab('documenti')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   📂
@@ -685,15 +758,6 @@ export default function Home() {
                 <p className="text-xs text-slate-500 leading-relaxed mb-4">Consulta tavole PDF, documenti ed Excel da Nextcloud Aruba.</p>
                 <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">Esplora Aruba ➔</span>
               </div>
-
-              <a href="https://ug.link/naszoeanna" target="_blank" rel="noreferrer" className="bg-gradient-to-br from-blue-900 to-indigo-950 text-white p-6 rounded-3xl shadow-md hover:shadow-xl transition-all cursor-pointer group border border-blue-800 block">
-                <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
-                  🖥️
-                </div>
-                <h3 className="font-bold text-white text-base mb-1">Server NAS UGREEN</h3>
-                <p className="text-xs text-blue-200 leading-relaxed mb-4">Accedi al portale remoto del NAS UGREEN per scaricare e caricare file.</p>
-                <span className="text-xs font-bold text-sky-300 flex items-center gap-1">Apri Portale UGREEN ➔</span>
-              </a>
             </div>
           </div>
         )}
@@ -1067,7 +1131,149 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: ESPLORATORE ARUBA NEXTCLOUD */}
+        {/* TAB 3: SUGGERIMENTI E FEEDBACK SULL'APP */}
+        {activeTab === 'feedback' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+              <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">💡 Suggerimenti &amp; Feedback App</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Aiutaci a migliorare l'applicazione: proponi nuove funzioni o segnala problemi.</p>
+                </div>
+                <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">🚀</span>
+              </div>
+
+              <form onSubmit={handleInviaFeedback} className="p-6 space-y-5">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Tipo di Suggerimento</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { id: '💡 Nuova Funzionalità', label: '💡 Nuova Funzione' },
+                      { id: '🐞 Segnalazione Problema', label: '🐞 Bug / Problema' },
+                      { id: '⭐ Opinione / Voto App', label: '⭐ Opinione App' },
+                      { id: '✏️ Altro Suggerimento', label: '✏️ Altro' }
+                    ].map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setFeedbackForm({ ...feedbackForm, categoria: item.id })}
+                        className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                          feedbackForm.categoria === item.id 
+                            ? 'bg-purple-600 text-white shadow-sm border-purple-600' 
+                            : 'bg-slate-50 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Autore</label>
+                    <input type="text" readOnly value={currentUser?.nome || ''} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-medium text-sm cursor-not-allowed" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Valutazione Generica App</label>
+                    <div className="flex space-x-2 pt-1">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setFeedbackForm({ ...feedbackForm, valutazione: v })}
+                          className={`flex-1 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                            feedbackForm.valutazione >= v ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-50 text-slate-400 border-slate-200'
+                          }`}
+                        >
+                          {v} ⭐
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Messaggio / Dettagli del Suggerimento</label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="Spiega cosa vorresti aggiungere, modificare o cosa secondo te non funziona bene..."
+                    value={feedbackForm.messaggio}
+                    onChange={e => setFeedbackForm({ ...feedbackForm, messaggio: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-purple-200"
+                  ></textarea>
+                </div>
+
+                {feedbackStatus && (
+                  <div className={`p-4 rounded-xl text-sm font-semibold ${
+                    feedbackStatus.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}>
+                    {feedbackStatus.text}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading || !feedbackForm.messaggio.trim()}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-md transition-all text-sm disabled:opacity-50"
+                >
+                  {loading ? 'Invio in corso...' : 'Invia Suggerimento alla Squadra 🚀'}
+                </button>
+              </form>
+            </div>
+
+            {/* LISTA SUGGERIMENTI INVIATI */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <span>💬</span> Bacheca delle Idee &amp; Feedback ({feedbackList.length})
+                </h3>
+                <button onClick={fetchFeedback} disabled={loadingFeedback} className="text-xs text-sky-600 font-bold hover:underline">
+                  {loadingFeedback ? '⏳' : '🔄 Ricarica'}
+                </button>
+              </div>
+
+              {loadingFeedback ? (
+                <p className="text-center py-8 text-xs text-slate-400 font-medium">Caricamento suggerimenti in corso...</p>
+              ) : feedbackList.length === 0 ? (
+                <div className="text-center py-10 bg-slate-50 border border-dashed rounded-2xl text-xs text-slate-400">
+                  <span className="text-3xl block mb-1">💡</span>
+                  Nessun suggerimento inviato finora. Sii il primo a proporre un'idea!
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {feedbackList.map((fb) => (
+                    <div key={fb.id} className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-xs text-slate-900">👤 {fb.autore}</span>
+                          <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-lg border border-purple-200">
+                            {fb.categoria}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                            {'⭐'.repeat(Number(fb.valutazione || 5))}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(fb.data_ora).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed font-medium pt-1 whitespace-pre-wrap">
+                        {fb.messaggio}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -1116,7 +1322,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 4: CENTRO REPORTISTICA MENSILE */}
+        {/* TAB 5: CENTRO REPORTISTICA MENSILE */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="space-y-6">
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
