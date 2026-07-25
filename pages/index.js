@@ -37,10 +37,6 @@ export default function Home() {
 
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
-  const getTomorrowStr = () => {
-    const t = new Date(); t.setDate(t.getDate() + 1);
-    return t.toISOString().split('T')[0];
-  };
   const getYesterdayStr = () => {
     const t = new Date(); t.setDate(t.getDate() - 1);
     return t.toISOString().split('T')[0];
@@ -168,7 +164,6 @@ export default function Home() {
     }
   };
 
-  // CARICAMENTO AUTOMATICO QUANDO SI APRE IL TAB DOCUMENTI O CAMBIA PERCORSO
   useEffect(() => {
     if (activeTab === 'documenti' && !searchQueryNC) {
       caricaContenutoNC(pathNC, '');
@@ -433,8 +428,6 @@ export default function Home() {
   const totMeseFerie = consuntiviMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
   const totMesePermesso = consuntiviMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
   const totMeseMalattia = consuntiviMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-
-  const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta + totMeseFerie + totMesePermesso + totMeseMalattia;
 
   const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMese);
   const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
@@ -824,20 +817,20 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: ESPLORATORE FILE E CARTELLES ISTANTANEO (ARUBA NEXTCLOUD) */}
+        {/* TAB 3: ESPLORATORE FILE E CARTELLE CON CONSULTAZIONE INLINE */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">📂 Esploratore Documenti (Nextcloud Aruba)</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Sfoglia istantaneamente file e cartelle aziendali o effettua ricerche veloci.</p>
+                <p className="text-xs text-slate-300 mt-0.5">Consulta file e cartelle aziendali in streaming diretto sul cloud senza scaricare copie locali.</p>
               </div>
               <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">☁️</span>
             </div>
 
             <div className="p-6 space-y-6">
               
-              {/* BARRA DI NAVIGAZIONE PERCORSO E RICERCA */}
+              {/* BARRA DI NAVIGAZIONE E RICERCA */}
               <div className="space-y-3">
                 <form onSubmit={handleCercaNextcloud} className="flex gap-2">
                   <input 
@@ -857,7 +850,7 @@ export default function Home() {
                   )}
                 </form>
 
-                {/* BREADCRUMB NAVIGAZIONE PERCORSO */}
+                {/* BREADCRUMB PERCORSO */}
                 {!isSearchMode && (
                   <div className="flex items-center justify-between bg-slate-100 px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold">
                     <div className="flex items-center space-x-1.5 overflow-x-auto">
@@ -888,7 +881,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* LISTA FILE E CARTELLE ISTANTANEA */}
+              {/* LISTA FILE E CARTELLE */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs font-bold uppercase text-slate-400 border-b pb-2">
                   <span>{isSearchMode ? `Risultati Ricerca (${risultatiNC.length})` : `Contenuto Cartella (${risultatiNC.length})`}</span>
@@ -909,35 +902,56 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-                    {risultatiNC.map((item, idx) => (
-                      <div key={idx} className="p-3.5 hover:bg-slate-50/80 flex items-center justify-between gap-4 transition-all">
-                        <div className="flex items-center space-x-3 overflow-hidden flex-1 cursor-pointer" onClick={() => item.isFolder && handleApriCartella(item.percorso)}>
-                          <span className="text-2xl">{item.isFolder ? '📁' : '📄'}</span>
-                          <div className="truncate">
-                            <span className={`font-bold text-sm block truncate ${item.isFolder ? 'text-sky-900 hover:underline' : 'text-slate-800'}`}>
-                              {item.nome}
-                            </span>
-                            <span className="text-[11px] text-slate-400 block truncate">{item.percorso || '/'}</span>
+                    {risultatiNC.map((item, idx) => {
+                      const ext = (item.nome.split('.').pop() || '').toLowerCase();
+                      const isInlineViewable = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt'].includes(ext);
+
+                      return (
+                        <div key={idx} className="p-3.5 hover:bg-slate-50/80 flex items-center justify-between gap-4 transition-all">
+                          <div className="flex items-center space-x-3 overflow-hidden flex-1 cursor-pointer" onClick={() => item.isFolder && handleApriCartella(item.percorso)}>
+                            <span className="text-2xl">{item.isFolder ? '📁' : '📄'}</span>
+                            <div className="truncate">
+                              <span className={`font-bold text-sm block truncate ${item.isFolder ? 'text-sky-900 hover:underline' : 'text-slate-800'}`}>
+                                {item.nome}
+                              </span>
+                              <span className="text-[11px] text-slate-400 block truncate">{item.percorso || '/'}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-2">
+                            {item.isFolder ? (
+                              <button onClick={() => handleApriCartella(item.percorso)} className="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">
+                                Apri Cartella ➔
+                              </button>
+                            ) : (
+                              <>
+                                {/* PER PDF E IMMAGINI: APERTURA IN STREAMING RAM (ZERO DOWNLOAD SU DISCO) */}
+                                {isInlineViewable ? (
+                                  <a 
+                                    href={`/api/download?path=${encodeURIComponent(item.percorso)}`} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
+                                  >
+                                    <span>👁️ Visualizza Documento</span>
+                                  </a>
+                                ) : (
+                                  /* PER WORD / EXCEL / PPTX: APERTURA NEL VISUALIZZATORE WEB DI NEXTCLOUD */
+                                  <a 
+                                    href={item.linkWeb} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="bg-sky-600 hover:bg-sky-700 text-white border border-sky-600 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-1"
+                                  >
+                                    <span>🌐 Consulta sul Cloud</span>
+                                  </a>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
-
-                        <div className="flex items-center space-x-2">
-                          {item.isFolder && (
-                            <button onClick={() => handleApriCartella(item.percorso)} className="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">
-                              Apri ➔
-                            </button>
-                          )}
-                          <a 
-                            href={item.linkWeb} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 whitespace-nowrap transition-all flex items-center space-x-1"
-                          >
-                            <span>☁️ Su Aruba</span>
-                          </a>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -945,7 +959,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 4: CRUSCOTTO MENSILE & CAPACITÀ */}
+        {/* TAB 4: CRUSCOTTO MENSILE */}
         {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
           <div className="space-y-6">
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
