@@ -15,10 +15,17 @@ export default async function handler(req, res) {
     });
   }
 
-  // Pulizia automatica da virgolette, spazi e caratteri invisibili
+  // Pulizia URL Base
   const baseUrl = rawUrl.replace(/["']/g, '').replace(/\/$/, '').trim();
-  const cleanUser = rawUser.replace(/["']/g, '').trim();
-  const cleanPass = rawPass.replace(/["'\s]/g, '').trim(); // Rimuove spazi copiati per errore
+
+  // ESTRAZIONE AUTOMATICA: Se l'utente incollato è un link completo, estrae solo 'lpera'
+  let cleanUser = rawUser.replace(/["']/g, '').trim();
+  if (cleanUser.includes('/')) {
+    const parts = cleanUser.split('/').filter(Boolean);
+    cleanUser = parts[parts.length - 1]; // Isolamento nome utente ('lpera')
+  }
+
+  const cleanPass = rawPass.replace(/["'\s]/g, '').trim();
 
   const authHeader = 'Basic ' + Buffer.from(`${cleanUser}:${cleanPass}`).toString('base64');
   
