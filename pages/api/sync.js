@@ -28,9 +28,9 @@ export default async function handler(req, res) {
 
     const calendar = google.calendar({ version: 'v3', auth });
 
-    // Finestra temporale: 60 giorni nel passato e 180 nel futuro
+    // Finestra temporale: 90 giorni nel passato e 180 nel futuro
     const ora = new Date();
-    const timeMin = new Date(ora.getTime() - (60 * 24 * 60 * 60 * 1000)).toISOString();
+    const timeMin = new Date(ora.getTime() - (90 * 24 * 60 * 60 * 1000)).toISOString();
     const timeMax = new Date(ora.getTime() + (180 * 24 * 60 * 60 * 1000)).toISOString();
 
     const response = await calendar.events.list({
@@ -47,21 +47,24 @@ export default async function handler(req, res) {
     for (const event of events) {
       if (!event.summary) continue;
 
-      // Estrai eventuale nome dipendente [Nome] dal titolo
       const matchDip = event.summary.match(/^\[(.*?)\]/);
       let dipendente = matchDip ? matchDip[1].trim() : 'Da Assegnare';
 
-      // Pulisci il titolo del cliente/progetto
       let titoloPulito = event.summary.replace(/^\[.*?\]\s*/, '').replace(/^(✅ |❌ |❓ )/g, '').trim();
       let [cliente, ...restoProgetto] = titoloPulito.split('-');
       let progetto = restoProgetto.join('-').trim() || 'Attività da Calendar';
       cliente = cliente.trim();
 
-      const dataEvento = event.start.date || (event.start.dateTime ? event.start.date: event.start.dateTime.split('T')[0]);
+      // Correzione lettura data!
+      let dataEvento = null;
+      if (event.start.date) {
+        dataEvento = event.start.date;
+      } else if (event.start.dateTime) {
+        dataEvento = event.start.dateTime.split('T')[0];
+      }
 
       if (!dataEvento) continue;
 
-      // Verifica se l'evento esiste già su Supabase tramite calendar_event_id
       const { data: esistente } = await supabase
         .from('eventi_ore')
         .select('id')
@@ -69,7 +72,6 @@ export default async function handler(req, res) {
         .maybeSingle();
 
       if (!esistente) {
-        // Inserisci nuovo evento pianificato
         await supabase.from('eventi_ore').insert([{
           calendar_event_id: event.id,
           dipendente,
@@ -87,11 +89,11 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({ 
-      message: `Sincronizzazione completata! Trovati ${events.length} eventi su Calendar, ${inseriti} nuovi importati.` 
+      message: `Sincronizzazione completata! Analizzati ${events.length} eventi, ${inseriti} nuovi importati.` 
     });
 
   } catch (error) {
     console.error("Errore Sync:", error);
-    return res.status(500).json({ message: "Errore durante la sincronizzazione", error: error.message });
+    return res.status(500).json({ message: "Errore di connessione a Calendar.", error: error.message });
   }
 }
