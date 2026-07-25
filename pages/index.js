@@ -33,7 +33,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState('home'); // HOME DIVENTA IL TAB DEFAULT
+  const [activeTab, setActiveTab] = useState('home');
 
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
@@ -47,19 +47,6 @@ export default function Home() {
     return String(d).split('T')[0].split(' ')[0];
   };
 
-  const getGiorniLavorativiMese = (annoMeseStr) => {
-    if (!annoMeseStr) return 22;
-    const [year, month] = annoMeseStr.split('-').map(Number);
-    let count = 0;
-    const date = new Date(year, month - 1, 1);
-    while (date.getMonth() === month - 1) {
-      const day = date.getDay();
-      if (day !== 0 && day !== 6) count++;
-      date.setDate(date.getDate() + 1);
-    }
-    return count;
-  };
-
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
     dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
@@ -71,7 +58,7 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
-  // --- STATI PER ESPLORATORE DOCUMENTI NEXTCLOUD ---
+  // --- STATI PER ESPLORATORE DOCUMENTI NEXTCLOUD ARUBA ---
   const [pathNC, setPathNC] = useState('');
   const [searchQueryNC, setSearchQueryNC] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
@@ -81,10 +68,6 @@ export default function Home() {
 
   const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti');
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
-
-  const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
-  const [filtroCruscottoDip, setFiltroCruscottoDip] = useState('Tutti');
-  const [filtroCruscottoCliente, setFiltroCruscottoCliente] = useState('Tutti');
 
   const [modalItem, setModalItem] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
@@ -224,36 +207,6 @@ export default function Home() {
     setShowPassword(false);
   };
 
-  const handleSyncCalendar = async () => {
-    if (currentUser?.ruolo !== 'admin') return alert("Solo l'amministratore può sincronizzare.");
-    setLoadingProgrammati(true);
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      const data = await res.json();
-      alert(data.message || "Sincronizzazione completata.");
-      fetchProgrammati();
-    } catch (e) {
-      alert("Errore di rete.");
-    } finally {
-      setLoadingProgrammati(false);
-    }
-  };
-
-  const handleQuickReassign = async (item, nuovoDipendente) => {
-    if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
-    try {
-      const res = await fetch('/api/gestisci', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: item.id, calendar_event_id: item.calendar_event_id,
-          dipendente: nuovoDipendente, chiudi_consuntivo: false
-        })
-      });
-      if (res.ok) fetchProgrammati();
-    } catch (e) {}
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
@@ -274,44 +227,6 @@ export default function Home() {
     finally { setLoading(false); }
   };
 
-  const handleConfermaChiudi = async () => {
-    if (!modalItem) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/gestisci', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
-          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive, ore_trasferta: oreTrasfertaEffettive,
-          dipendente: dipendenteEffettivo || modalItem.dipendente, chiudi_consuntivo: true
-        })
-      });
-      if (res.ok) { setModalItem(null); fetchProgrammati(); }
-    } catch (e) { alert("Errore"); } 
-    finally { setLoading(false); }
-  };
-
-  const handleElimina = async (item) => {
-    if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/gestisci', {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id })
-      });
-      if (res.ok) fetchProgrammati();
-    } catch (e) {} 
-    finally { setLoading(false); }
-  };
-
-  const openEditModal = (item) => {
-    setModalItem(item);
-    setOreEffettive(item.ore || 0);
-    setOreBackofficeEffettive(item.ore_backoffice || 0);
-    setOreTrasfertaEffettive(item.ore_trasferta || 0);
-    setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser?.nome : item.dipendente);
-  };
-
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
@@ -325,7 +240,7 @@ export default function Home() {
                   <span className="text-[11px] text-emerald-600 font-bold tracking-wide uppercase block">Zo&amp;annA S.R.L.</span>
                 </div>
               </div>
-              <p className="text-xs text-slate-500 font-medium">Portale Gestionale Ingegneria &amp; Servici</p>
+              <p className="text-xs text-slate-500 font-medium">Portale Gestionale Ingegneria &amp; Servizi</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4">
@@ -355,7 +270,6 @@ export default function Home() {
   const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
   const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
   const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
-  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
 
   const matchAssegnazione = (dipDb, filtroAss) => {
     if (!filtroAss || filtroAss === 'Tutti') return true;
@@ -377,7 +291,6 @@ export default function Home() {
     return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
   };
 
-  const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
   const attivitaPianificateAttive = storicoCompleto.filter(p => {
@@ -392,56 +305,7 @@ export default function Home() {
 
   const todayStr = getTodayStr();
   const daConfermare = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) <= todayStr);
-  const ieriStr = getYesterdayStr();
-  const attivitaInScadenzaRitardo = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) < ieriStr);
-
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
-
-  const renderRigaAttivita = (item, colorTheme) => {
-    const normDate = getNormalizedDate(item.data);
-    const badgeAssenza = isFerie(item) ? '🏖️ Ferie' : isPermesso(item) ? '⏱️ Permesso' : isMalattia(item) ? '🏥 Malattia' : null;
-
-    return (
-      <div key={item.id} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm`}>
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 shadow-2xs">
-              {normDate === todayStr ? 'Oggi' : normDate}
-            </span>
-            {badgeAssenza ? (
-              <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-lg border border-purple-200">
-                {badgeAssenza}
-              </span>
-            ) : (
-              <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
-            )}
-          </div>
-          <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
-          
-          {currentUser.ruolo === 'admin' && (
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
-              <select 
-                value={item.dipendente || 'Da Assegnare'} 
-                onChange={e => handleQuickReassign(item, e.target.value)}
-                className={`text-xs font-bold px-2 py-0.5 rounded-lg border outline-none cursor-pointer ${
-                  (!item.dipendente || item.dipendente === 'Da Assegnare') ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <option value="Da Assegnare">❓ Da Assegnare</option>
-                {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
-          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">✅ Conferma</button>
-          <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 whitespace-nowrap transition-all">🗑️ Annulla</button>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-slate-100/80 text-slate-800 font-sans pb-12">
@@ -455,7 +319,7 @@ export default function Home() {
         ))}
       </datalist>
 
-      {/* HEADER DI NAVIGAZIONE PRINCIPALE */}
+      {/* HEADER PRINCIPALE CON LINK UGREEN NAS */}
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('home')}>
@@ -467,15 +331,13 @@ export default function Home() {
           </div>
           
           <nav className="flex space-x-1.5 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold overflow-x-auto">
-            {/* PULSANTE HOME */}
             <button 
               onClick={() => setActiveTab('home')} 
               className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
                 activeTab === 'home' ? 'bg-sky-500 text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'
               }`}
             >
-              <span>🏠</span>
-              <span>Home</span>
+              <span>🏠 Home</span>
             </button>
 
             <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📝 Inserimento Ore</button>
@@ -485,8 +347,18 @@ export default function Home() {
               {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">{daConfermare.length}</span>}
             </button>
             
-            <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Documenti Cloud</button>
+            <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
             
+            {/* TASTO DIRETTO PER NAS UGREEN (SOLUZIONE A) */}
+            <a 
+              href="https://ug.link/naszoeanna" 
+              target="_blank" 
+              rel="noreferrer" 
+              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold whitespace-nowrap shadow-sm transition-all flex items-center space-x-1"
+            >
+              <span>🖥️ NAS UGREEN</span>
+            </a>
+
             {currentUser.ruolo === 'admin' && (
               <>
                 <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📊 Cruscotto</button>
@@ -519,8 +391,7 @@ export default function Home() {
                   Bentornato, <span className="text-sky-400">{currentUser.nome}</span>! 👋
                 </h1>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Benvenuto nel portale gestionale di **bw solutions | Zo&amp;annA S.R.L.**.
-                  Seleziona un'operazione per iniziare a consuntivare ore, consultare commesse o esplorare il Cloud.
+                  Accedi a tutte le risorse aziendali: registra le ore, consulta il Cloud Aruba o accedi direttamente al nuovo Server NAS UGREEN.
                 </p>
               </div>
               <div className="absolute right-6 bottom-4 text-8xl opacity-10 pointer-events-none select-none">
@@ -528,31 +399,15 @@ export default function Home() {
               </div>
             </div>
 
-            {/* AVVISI / NOTIFICHE RAPIDE */}
-            {daConfermare.length > 0 && (
-              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
-                <div className="flex items-center space-x-3">
-                  <span className="text-2xl">⏳</span>
-                  <div>
-                    <h3 className="font-bold text-amber-900 text-sm">Hai {daConfermare.length} attività in attesa di conferma</h3>
-                    <p className="text-xs text-amber-700">Consuntiva le schede ore completate per aggiornare il registro aziendale.</p>
-                  </div>
-                </div>
-                <button onClick={() => setActiveTab('programmati')} className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm whitespace-nowrap">
-                  Vedi Attività ➔
-                </button>
-              </div>
-            )}
-
             {/* SCORCIATOIE SCHEDE DI ACCESSO RAPIDO */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               
               <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   📝
                 </div>
                 <h3 className="font-bold text-slate-900 text-base mb-1">Inserimento Ore</h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">Registra ore di cantiere, backoffice, trasferte o richiedi ferie e permessi.</p>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Registra ore di cantiere, backoffice, trasferte o assenze.</p>
                 <span className="text-xs font-bold text-sky-600 flex items-center gap-1">Registra Ora ➔</span>
               </div>
 
@@ -561,57 +416,35 @@ export default function Home() {
                   ⏳
                 </div>
                 <h3 className="font-bold text-slate-900 text-base mb-1">Gestione Attività</h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">Visualizza gli interventi pianificati, conferma i consuntivi e controlla lo storico.</p>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Conferma i consuntivi e controlla gli interventi programmati.</p>
                 <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Vedi Calendario ➔</span>
               </div>
 
               <div onClick={() => setActiveTab('documenti')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   📂
                 </div>
-                <h3 className="font-bold text-slate-900 text-base mb-1">Documenti Cloud</h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">Sfoglia, visualizza e scarica documenti, tavole PDF ed Excel su Nextcloud Aruba.</p>
-                <span className="text-xs font-bold text-indigo-600 flex items-center gap-1">Esplora Cloud ➔</span>
+                <h3 className="font-bold text-slate-900 text-base mb-1">Cloud Aruba</h3>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Consulta tavole PDF, documenti ed Excel da Nextcloud Aruba.</p>
+                <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">Esplora Aruba ➔</span>
               </div>
+
+              {/* SCHEDA DEDICATA AL NAS UGREEN */}
+              <a href="https://ug.link/naszoeanna" target="_blank" rel="noreferrer" className="bg-gradient-to-br from-blue-900 to-indigo-950 text-white p-6 rounded-3xl shadow-md hover:shadow-xl transition-all cursor-pointer group border border-blue-800 block">
+                <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
+                  🖥️
+                </div>
+                <h3 className="font-bold text-white text-base mb-1">Server NAS UGREEN</h3>
+                <p className="text-xs text-blue-200 leading-relaxed mb-4">Accedi al portale remoto del NAS UGREEN per scaricare e caricare file.</p>
+                <span className="text-xs font-bold text-sky-300 flex items-center gap-1">Apri Portale UGREEN ➔</span>
+              </a>
 
             </div>
-
-            {/* SEZIONE PER AMMINISTRATORI */}
-            {currentUser.ruolo === 'admin' && (
-              <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-lg border border-slate-800 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <h3 className="font-bold text-base flex items-center gap-2">
-                    <span>👑</span> Strumenti Amministratore
-                  </h3>
-                  <span className="text-xs text-slate-400 font-semibold">Accesso Riservato</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <button onClick={() => setActiveTab('cruscotto')} className="p-4 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 rounded-2xl text-left transition-all">
-                    <span className="text-xl block mb-1">📊</span>
-                    <span className="font-bold text-xs text-white block">Cruscotto Mensile</span>
-                    <span className="text-[11px] text-slate-400 block mt-0.5">Disponibilità e capienza ore</span>
-                  </button>
-
-                  <button onClick={() => setActiveTab('report')} className="p-4 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 rounded-2xl text-left transition-all">
-                    <span className="text-xl block mb-1">⚡</span>
-                    <span className="font-bold text-xs text-white block">Performance Team</span>
-                    <span className="text-[11px] text-slate-400 block mt-0.5">Indici di reattività e ritardi</span>
-                  </button>
-
-                  <a href="/preventivi" className="p-4 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-800/50 rounded-2xl text-left transition-all block">
-                    <span className="text-xl block mb-1">💰</span>
-                    <span className="font-bold text-xs text-sky-300 block">Preventivi Aziendali</span>
-                    <span className="text-[11px] text-sky-400 block mt-0.5">Generazione e invio preventivi</span>
-                  </a>
-                </div>
-              </div>
-            )}
 
           </div>
         )}
 
-        {/* TAB 1: NUOVO INSERIMENTO */}
+        {/* TAB 1: NUOVO INSERIMENTO ORE */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -668,23 +501,9 @@ export default function Home() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore {categoriaForm !== 'lavoro' ? 'Giustificate' : 'Lavorate'}</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore Lavorate</label>
                   <input type="number" step="0.5" min="0" required value={formData.ore} onChange={e => setFormData({ ...formData, ore: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-bold text-sm" />
                 </div>
-                {categoriaForm === 'lavoro' && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-sky-600 mb-1.5">Ore Backoffice</label>
-                      <input type="number" step="0.5" min="0" value={formData.ore_backoffice} onChange={e => setFormData({ ...formData, ore_backoffice: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50/50 font-bold text-sm text-sky-800" />
-                    </div>
-                    {isAlessandro && (
-                      <div>
-                        <label className="block text-xs font-bold uppercase text-purple-600 mb-1.5">🚗 Ore Trasferta</label>
-                        <input type="number" step="0.5" min="0" value={formData.ore_trasferta} onChange={e => setFormData({ ...formData, ore_trasferta: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 bg-purple-50/50 font-bold text-sm text-purple-800" />
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
 
               <div>
@@ -701,91 +520,46 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ */}
-        {activeTab === 'programmati' && (
-          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
-            <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Sincronizzazione Automatica Attiva 🔄</p>
-              </div>
-            </div>
-
-            <div className="p-6">
-              {loadingProgrammati ? (
-                <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso...</p>
-              ) : attivitaPianificateAttive.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">
-                  <span className="text-4xl block mb-2">🎉</span>
-                  <p className="text-sm font-medium">Nessuna attività in sospeso per i filtri selezionati!</p>
-                </div>
-              ) : (
-                <div className="space-y-8">
-                  {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente || 'Da Assegnare'))).map(dipNome => {
-                    const attivitaDip = attivitaPianificateAttive.filter(e => (e.dipendente || 'Da Assegnare') === dipNome);
-                    const inRitardo = attivitaDip.filter(e => getNormalizedDate(e.data) < todayStr);
-                    const oggi = attivitaDip.filter(e => getNormalizedDate(e.data) === todayStr);
-                    const future = attivitaDip.filter(e => getNormalizedDate(e.data) > todayStr);
-
-                    return (
-                      <div key={dipNome} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                        <div className="bg-slate-100 px-4 py-3 flex items-center justify-between border-b border-slate-200">
-                          <h3 className={`font-bold text-base flex items-center gap-2 ${dipNome === 'Da Assegnare' ? 'text-indigo-600' : 'text-slate-800'}`}>
-                            <span>{dipNome === 'Da Assegnare' ? '❓' : '👤'}</span> {dipNome}
-                          </h3>
-                          <span className="text-xs font-bold text-slate-500 bg-white px-2.5 py-0.5 rounded-lg border">{attivitaDip.length} attive</span>
-                        </div>
-
-                        <div className="p-4 space-y-4 bg-white">
-                          {inRitardo.length > 0 && (
-                            <div>
-                              <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
-                              <div className="space-y-2">{inRitardo.map(item => renderRigaAttivita(item, 'rose'))}</div>
-                            </div>
-                          )}
-                          {oggi.length > 0 && (
-                            <div>
-                              <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
-                              <div className="space-y-2">{oggi.map(item => renderRigaAttivita(item, 'amber'))}</div>
-                            </div>
-                          )}
-                          {future.length > 0 && (
-                            <div>
-                              <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
-                              <div className="space-y-2">{future.map(item => renderRigaAttivita(item, 'sky'))}</div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: ESPLORATORE FILE E CARTELLE */}
+        {/* TAB 3: ESPLORATORE ARUBA NEXTCLOUD + PROMEMORIA UGREEN */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-bold tracking-tight">📂 Esploratore Documenti Cloud</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Consulta e scarica file Word, Excel e PDF in tempo reale senza dover inserire credenziali.</p>
+                <h2 className="text-xl font-bold tracking-tight">📂 Esploratore Documenti Cloud (Aruba)</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Consulta e scarica file Word, Excel e PDF da Nextcloud Aruba.</p>
               </div>
               <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">☁️</span>
             </div>
 
             <div className="p-6 space-y-6">
               
-              {/* BARRA DI NAVIGAZIONE E RICERCA */}
+              {/* BANNER ACCESS RAPIDO UGREEN NAS */}
+              <div className="bg-gradient-to-r from-blue-900 to-slate-900 text-white p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm border border-blue-800">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">🖥️</span>
+                  <div>
+                    <h4 className="font-bold text-sm">Devi gestire file sul Server NAS UGREEN?</h4>
+                    <p className="text-xs text-blue-200">Accedi direttamente all'interfaccia di UGREEN per sfogliare e caricare nuovi file.</p>
+                  </div>
+                </div>
+                <a 
+                  href="https://ug.link/naszoeanna" 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all whitespace-nowrap shadow-sm"
+                >
+                  Apri NAS UGREEN ➔
+                </a>
+              </div>
+
+              {/* BARRA DI NAVIGAZIONE E RICERCA ARUBA */}
               <div className="space-y-3">
                 <form onSubmit={handleCercaNextcloud} className="flex gap-2">
                   <input 
                     type="text" 
                     value={searchQueryNC} 
                     onChange={e => setSearchQueryNC(e.target.value)} 
-                    placeholder="Filtra / Cerca un file o una commessa (es. ALSTOM)..." 
+                    placeholder="Filtra / Cerca un file o una commessa su Aruba (es. ALSTOM)..." 
                     className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200"
                   />
                   <button type="submit" disabled={loadingNC} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all shadow-sm">
@@ -798,7 +572,7 @@ export default function Home() {
                   )}
                 </form>
 
-                {/* BREADCRUMB PERCORSO */}
+                {/* BREADCRUMB PERCORSO ARUBA */}
                 {!isSearchMode && (
                   <div className="flex items-center justify-between bg-slate-100 px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold">
                     <div className="flex items-center space-x-1.5 overflow-x-auto">
@@ -823,16 +597,10 @@ export default function Home() {
                 )}
               </div>
 
-              {errorNC && (
-                <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold">
-                  ⚠️ {errorNC}
-                </div>
-              )}
-
-              {/* LISTA FILE E CARTELLE */}
+              {/* LISTA FILE ARUBA */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs font-bold uppercase text-slate-400 border-b pb-2">
-                  <span>{isSearchMode ? `Risultati Ricerca (${risultatiNC.length})` : `Contenuto Cartella (${risultatiNC.length})`}</span>
+                  <span>Contenuto Cartella Aruba ({risultatiNC.length})</span>
                   <button onClick={() => caricaContenutoNC(pathNC, searchQueryNC)} disabled={loadingNC} className="text-sky-600 hover:underline text-[11px] uppercase">
                     {loadingNC ? '⏳ Aggiornamento...' : '🔄 Ricarica'}
                   </button>
@@ -911,48 +679,6 @@ export default function Home() {
         )}
 
       </main>
-
-      {/* MODALE EDITING */}
-      {modalItem && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">
-              {modalItem.stato === 'consuntivo' ? 'Modifica Dati Intervento' : 'Conferma Consuntivo'}
-            </h3>
-            <p className="text-xs text-slate-500">
-              Stai modificando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong>.
-            </p>
-
-            <div className="grid grid-cols-2 gap-4">
-              {(modalItem.dipendente === 'Da Assegnare' || currentUser.ruolo === 'admin') && (
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
-                  <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3 py-2 border rounded-xl bg-indigo-50 border-indigo-200 text-sm font-bold text-indigo-800">
-                    <option value="Da Assegnare" disabled>❓ Da Assegnare</option>
-                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-              )}
-              
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Lavorate / Assenza</label>
-                <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
-                <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800" />
-              </div>
-            </div>
-
-            <div className="flex space-x-2 pt-2">
-              <button onClick={() => setModalItem(null)} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">Annulla</button>
-              <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all">
-                {loading ? '...' : (modalItem.stato === 'consuntivo' ? 'Salva Modifiche ✅' : 'Conferma e Salva ✅')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
