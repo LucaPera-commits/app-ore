@@ -47,6 +47,19 @@ export default function Home() {
     return String(d).split('T')[0].split(' ')[0];
   };
 
+  const getGiorniLavorativiMese = (annoMeseStr) => {
+    if (!annoMeseStr) return 22;
+    const [year, month] = annoMeseStr.split('-').map(Number);
+    let count = 0;
+    const date = new Date(year, month - 1, 1);
+    while (date.getMonth() === month - 1) {
+      const day = date.getDay();
+      if (day !== 0 && day !== 6) count++;
+      date.setDate(date.getDate() + 1);
+    }
+    return count;
+  };
+
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
     dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
@@ -68,6 +81,10 @@ export default function Home() {
 
   const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti');
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
+
+  const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
+  const [filtroCruscottoDip, setFiltroCruscottoDip] = useState('Tutti');
+  const [filtroCruscottoCliente, setFiltroCruscottoCliente] = useState('Tutti');
 
   const [modalItem, setModalItem] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
@@ -99,6 +116,7 @@ export default function Home() {
   }, [categoriaForm]);
 
   const fetchProgrammati = async () => {
+    setLoadingProgrammati(true);
     try {
       const res = await fetch('/api/gestisci?mode=all');
       if (res.ok) {
@@ -106,6 +124,7 @@ export default function Home() {
         setStoricoCompleto(dati);
       }
     } catch (e) { console.error("Errore fetch:", e); } 
+    finally { setLoadingProgrammati(false); }
   };
 
   const handleSilentSync = async () => {
@@ -207,6 +226,36 @@ export default function Home() {
     setShowPassword(false);
   };
 
+  const handleSyncCalendar = async () => {
+    if (currentUser?.ruolo !== 'admin') return alert("Solo l'amministratore può sincronizzare.");
+    setLoadingProgrammati(true);
+    try {
+      const res = await fetch('/api/sync', { method: 'POST' });
+      const data = await res.json();
+      alert(data.message || "Sincronizzazione completata.");
+      fetchProgrammati();
+    } catch (e) {
+      alert("Errore di rete.");
+    } finally {
+      setLoadingProgrammati(false);
+    }
+  };
+
+  const handleQuickReassign = async (item, nuovoDipendente) => {
+    if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
+    try {
+      const res = await fetch('/api/gestisci', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.id, calendar_event_id: item.calendar_event_id,
+          dipendente: nuovoDipendente, chiudi_consuntivo: false
+        })
+      });
+      if (res.ok) fetchProgrammati();
+    } catch (e) {}
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
@@ -225,6 +274,62 @@ export default function Home() {
       } else { setStatusMessage({ type: 'error', text: data.message }); }
     } catch (err) { setStatusMessage({ type: 'error', text: 'Errore server.' }); } 
     finally { setLoading(false); }
+  };
+
+  const handleConfermaChiudi = async () => {
+    if (!modalItem) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/gestisci', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
+          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive, ore_trasferta: oreTrasfertaEffettive,
+          dipendente: dipendenteEffettivo || modalItem.dipendente, chiudi_consuntivo: true
+        })
+      });
+      if (res.ok) { setModalItem(null); fetchProgrammati(); }
+    } catch (e) { alert("Errore"); } 
+    finally { setLoading(false); }
+  };
+
+  const handleElimina = async (item) => {
+    if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/gestisci', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id })
+      });
+      if (res.ok) fetchProgrammati();
+    } catch (e) {} 
+    finally { setLoading(false); }
+  };
+
+  const openEditModal = (item) => {
+    setModalItem(item);
+    setOreEffettive(item.ore || 0);
+    setOreBackofficeEffettive(item.ore_backoffice || 0);
+    setOreTrasfertaEffettive(item.ore_trasferta || 0);
+    setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser?.nome : item.dipendente);
+  };
+
+  const exportCSV = (datiDaEsportare) => {
+    let csv = "Data;Dipendente;Categoria;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
+    datiDaEsportare.forEach(row => {
+      const tot = Number(row.ore || 0) + Number(row.ore_backoffice || 0) + Number(row.ore_trasferta || 0);
+      const cat = isFerie(row) ? "Ferie" : isPermesso(row) ? "Permesso" : isMalattia(row) ? "Malattia" : "Lavoro";
+      csv += `"${getNormalizedDate(row.data)}";"${row.dipendente}";"${cat}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+    });
+    
+    const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Report_Ore_${filtroMese}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (!currentUser) {
@@ -270,6 +375,7 @@ export default function Home() {
   const isFerie = (item) => (item.progetto || '').toLowerCase().includes('ferie');
   const isPermesso = (item) => (item.progetto || '').toLowerCase().includes('permesso') || (item.progetto || '').toLowerCase().includes('rol');
   const isMalattia = (item) => (item.progetto || '').toLowerCase().includes('malattia');
+  const isAssenza = (item) => isFerie(item) || isPermesso(item) || isMalattia(item) || (item.cliente || '').toLowerCase().includes('assenze');
 
   const matchAssegnazione = (dipDb, filtroAss) => {
     if (!filtroAss || filtroAss === 'Tutti') return true;
@@ -291,6 +397,7 @@ export default function Home() {
     return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
   };
 
+  const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
   const attivitaPianificateAttive = storicoCompleto.filter(p => {
@@ -303,9 +410,116 @@ export default function Home() {
     return passAssegnazione && passDipendente;
   });
 
+  const attivitaArchiviate = storicoCompleto.filter(p => {
+    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
+    if (!isChiuso) return false;
+
+    const passAssegnazione = matchAssegnazione(p.dipendente, filtroAssegnazione);
+    const passDipendente = matchNomeDipendente(p.dipendente, targetDipendente);
+
+    return passAssegnazione && passDipendente;
+  });
+
   const todayStr = getTodayStr();
   const daConfermare = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) <= todayStr);
+  const ieriStr = getYesterdayStr();
+  const attivitaInScadenzaRitardo = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) < ieriStr);
+
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
+
+  const tuttiEventiMese = storicoCompleto.filter(item => {
+    const dNorm = getNormalizedDate(item.data);
+    const isInMese = dNorm && dNorm.startsWith(filtroMese);
+    const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
+    const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
+    return isInMese && matchDip && matchCliente && item.stato !== 'annullato';
+  });
+
+  const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
+
+  const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+  const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+
+  const totMeseFerie = consuntiviMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMesePermesso = consuntiviMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseMalattia = consuntiviMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+
+  const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMese);
+  const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
+
+  const riepilogoCapienzaDipendenti = listaDipendenti.map(nomeDip => {
+    const eventiDipMese = storicoCompleto.filter(item => {
+      const dNorm = getNormalizedDate(item.data);
+      return dNorm && dNorm.startsWith(filtroMese) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
+    });
+
+    const oreLavoro = eventiDipMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0) + Number(b.ore_backoffice || 0) + Number(b.ore_trasferta || 0), 0);
+    const oreFerie = eventiDipMese.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+    const orePermesso = eventiDipMese.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+    const oreMalattia = eventiDipMese.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+
+    const oreImpegnateTotali = oreLavoro + oreFerie + orePermesso + oreMalattia;
+    const oreDisponibiliResidue = oreLavorativeTotaliMese - oreImpegnateTotali;
+    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
+
+    return {
+      nome: nomeDip,
+      oreLavoro,
+      oreFerie,
+      orePermesso,
+      oreMalattia,
+      oreImpegnateTotali,
+      oreDisponibiliResidue,
+      giorniDisponibiliResidui
+    };
+  });
+
+  const renderRigaAttivita = (item, colorTheme) => {
+    const normDate = getNormalizedDate(item.data);
+    const badgeAssenza = isFerie(item) ? '🏖️ Ferie' : isPermesso(item) ? '⏱️ Permesso' : isMalattia(item) ? '🏥 Malattia' : null;
+
+    return (
+      <div key={item.id} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm`}>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200">
+              {normDate === todayStr ? 'Oggi' : normDate}
+            </span>
+            {badgeAssenza ? (
+              <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-lg border border-purple-200">
+                {badgeAssenza}
+              </span>
+            ) : (
+              <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
+            )}
+          </div>
+          <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
+          
+          {currentUser.ruolo === 'admin' && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
+              <select 
+                value={item.dipendente || 'Da Assegnare'} 
+                onChange={e => handleQuickReassign(item, e.target.value)}
+                className={`text-xs font-bold px-2 py-0.5 rounded-lg border outline-none cursor-pointer ${
+                  (!item.dipendente || item.dipendente === 'Da Assegnare') ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <option value="Da Assegnare">❓ Da Assegnare</option>
+                {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
+          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">✅ Conferma</button>
+          <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 whitespace-nowrap transition-all">🗑️ Annulla</button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-100/80 text-slate-800 font-sans pb-12">
@@ -349,7 +563,6 @@ export default function Home() {
             
             <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Cloud Aruba</button>
             
-            {/* TASTO DIRETTO PER NAS UGREEN (SOLUZIONE A) */}
             <a 
               href="https://ug.link/naszoeanna" 
               target="_blank" 
@@ -380,8 +593,6 @@ export default function Home() {
         {/* TAB 0: SCHERMATA PRINCIPALE GENERAL (HOME) */}
         {activeTab === 'home' && (
           <div className="space-y-8">
-            
-            {/* HERO BANNER BENVENUTO */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 rounded-3xl p-8 text-white shadow-xl border border-slate-800 relative overflow-hidden">
               <div className="relative z-10 space-y-3 max-w-2xl">
                 <span className="bg-sky-500/20 text-sky-300 text-xs font-extrabold uppercase px-3 py-1 rounded-full border border-sky-500/30">
@@ -399,9 +610,22 @@ export default function Home() {
               </div>
             </div>
 
-            {/* SCORCIATOIE SCHEDE DI ACCESSO RAPIDO */}
+            {daConfermare.length > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">⏳</span>
+                  <div>
+                    <h3 className="font-bold text-amber-900 text-sm">Hai {daConfermare.length} attività in attesa di conferma</h3>
+                    <p className="text-xs text-amber-700">Consuntiva le schede ore completate per aggiornare il registro aziendale.</p>
+                  </div>
+                </div>
+                <button onClick={() => setActiveTab('programmati')} className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm whitespace-nowrap">
+                  Vedi Attività ➔
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              
               <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   📝
@@ -429,7 +653,6 @@ export default function Home() {
                 <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">Esplora Aruba ➔</span>
               </div>
 
-              {/* SCHEDA DEDICATA AL NAS UGREEN */}
               <a href="https://ug.link/naszoeanna" target="_blank" rel="noreferrer" className="bg-gradient-to-br from-blue-900 to-indigo-950 text-white p-6 rounded-3xl shadow-md hover:shadow-xl transition-all cursor-pointer group border border-blue-800 block">
                 <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
                   🖥️
@@ -438,9 +661,7 @@ export default function Home() {
                 <p className="text-xs text-blue-200 leading-relaxed mb-4">Accedi al portale remoto del NAS UGREEN per scaricare e caricare file.</p>
                 <span className="text-xs font-bold text-sky-300 flex items-center gap-1">Apri Portale UGREEN ➔</span>
               </a>
-
             </div>
-
           </div>
         )}
 
@@ -501,9 +722,23 @@ export default function Home() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore Lavorate</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore {categoriaForm !== 'lavoro' ? 'Giustificate' : 'Lavorate'}</label>
                   <input type="number" step="0.5" min="0" required value={formData.ore} onChange={e => setFormData({ ...formData, ore: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-bold text-sm" />
                 </div>
+                {categoriaForm === 'lavoro' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-sky-600 mb-1.5">Ore Backoffice</label>
+                      <input type="number" step="0.5" min="0" value={formData.ore_backoffice} onChange={e => setFormData({ ...formData, ore_backoffice: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50/50 font-bold text-sm text-sky-800" />
+                    </div>
+                    {isAlessandro && (
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-purple-600 mb-1.5">🚗 Ore Trasferta</label>
+                        <input type="number" step="0.5" min="0" value={formData.ore_trasferta} onChange={e => setFormData({ ...formData, ore_trasferta: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 bg-purple-50/50 font-bold text-sm text-purple-800" />
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               <div>
@@ -520,6 +755,169 @@ export default function Home() {
           </div>
         )}
 
+        {/* TAB 2: GESTIONE ATTIVITÀ (CON BARRA PULSANTI RIPRISTINATA) */}
+        {activeTab === 'programmati' && (
+          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+            <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Sincronizzazione Automatica Attiva 🔄</p>
+              </div>
+            </div>
+
+            {/* BARRA STRUMENTI CON FILTRI E PULSANTI SINCRONIZZA / AGGIORNA */}
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+              {currentUser.ruolo === 'admin' ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Stato:</span>
+                    <select 
+                      value={filtroAssegnazione} 
+                      onChange={e => setFiltroAssegnazione(e.target.value)} 
+                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none shadow-2xs"
+                    >
+                      <option value="Tutti">Tutti gli stati</option>
+                      <option value="Assegnate">📌 Assegnate</option>
+                      <option value="Da Assegnare">❓ Da Assegnare</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Dipendente:</span>
+                    <select 
+                      value={filtroDipendente} 
+                      onChange={e => setFiltroDipendente(e.target.value)} 
+                      className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none shadow-2xs"
+                    >
+                      {['Tutti', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
+              ) : <div></div>}
+
+              <div className="flex items-center space-x-2">
+                {currentUser.ruolo === 'admin' && (
+                  <button 
+                    onClick={handleSyncCalendar} 
+                    disabled={loadingProgrammati} 
+                    className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold transition-all shadow-sm disabled:opacity-50"
+                  >
+                    {loadingProgrammati ? '⏳ In corso...' : '⬇️ Sincronizza Ora'}
+                  </button>
+                )}
+                <button 
+                  onClick={fetchProgrammati} 
+                  disabled={loadingProgrammati} 
+                  className="text-xs bg-white text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 font-bold transition-all shadow-sm disabled:opacity-50"
+                >
+                  {loadingProgrammati ? '⏳' : '🔄 Aggiorna'}
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {loadingProgrammati ? (
+                <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso...</p>
+              ) : attivitaPianificateAttive.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <span className="text-4xl block mb-2">🎉</span>
+                  <p className="text-sm font-medium">Nessuna attività in sospeso per i filtri selezionati!</p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente || 'Da Assegnare'))).map(dipNome => {
+                    const attivitaDip = attivitaPianificateAttive.filter(e => (e.dipendente || 'Da Assegnare') === dipNome);
+                    const inRitardo = attivitaDip.filter(e => getNormalizedDate(e.data) < todayStr);
+                    const oggi = attivitaDip.filter(e => getNormalizedDate(e.data) === todayStr);
+                    const future = attivitaDip.filter(e => getNormalizedDate(e.data) > todayStr);
+
+                    return (
+                      <div key={dipNome} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                        <div className="bg-slate-100 px-4 py-3 flex items-center justify-between border-b border-slate-200">
+                          <h3 className={`font-bold text-base flex items-center gap-2 ${dipNome === 'Da Assegnare' ? 'text-indigo-600' : 'text-slate-800'}`}>
+                            <span>{dipNome === 'Da Assegnare' ? '❓' : '👤'}</span> {dipNome}
+                          </h3>
+                          <span className="text-xs font-bold text-slate-500 bg-white px-2.5 py-0.5 rounded-lg border">{attivitaDip.length} attive</span>
+                        </div>
+
+                        <div className="p-4 space-y-4 bg-white">
+                          {inRitardo.length > 0 && (
+                            <div>
+                              <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
+                              <div className="space-y-2">{inRitardo.map(item => renderRigaAttivita(item, 'rose'))}</div>
+                            </div>
+                          )}
+                          {oggi.length > 0 && (
+                            <div>
+                              <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
+                              <div className="space-y-2">{oggi.map(item => renderRigaAttivita(item, 'amber'))}</div>
+                            </div>
+                          )}
+                          {future.length > 0 && (
+                            <div>
+                              <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
+                              <div className="space-y-2">{future.map(item => renderRigaAttivita(item, 'sky'))}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ARCHIVIO STORICO */}
+            <div className="bg-slate-50 border-t border-slate-200 p-6">
+              <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
+                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci)
+              </h3>
+              
+              <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-xl bg-white shadow-inner">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 bg-slate-100 z-10 shadow-sm">
+                    <tr className="text-slate-500 font-bold uppercase border-b">
+                      <th className="py-2.5 px-3">Stato</th>
+                      <th className="py-2.5 px-3">Data</th>
+                      <th className="py-2.5 px-3">Dipendente</th>
+                      <th className="py-2.5 px-3">Cliente / Tipo</th>
+                      <th className="py-2.5 px-3">Dettagli / Ore</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {attivitaArchiviate.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività trovata nell'archivio.</td>
+                      </tr>
+                    ) : (
+                      attivitaArchiviate
+                        .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
+                        .map(item => (
+                        <tr key={item.id} className={`hover:bg-slate-50 ${item.stato === 'annullato' ? 'opacity-60' : ''}`}>
+                          <td className="py-2 px-3">
+                            {item.stato === 'consuntivo' ? (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">✅ Conclusa</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">❌ Annullata</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 font-medium text-slate-600">{getNormalizedDate(item.data)}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-800">{item.dipendente}</td>
+                          <td className="py-2 px-3 font-bold text-slate-900">{item.cliente}</td>
+                          <td className="py-2 px-3">
+                            <span className="text-slate-500">{item.progetto}</span>
+                            {item.stato === 'consuntivo' && <span className="ml-2 font-bold text-sky-700">({item.ore}h)</span>}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* TAB 3: ESPLORATORE ARUBA NEXTCLOUD + PROMEMORIA UGREEN */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
@@ -533,7 +931,6 @@ export default function Home() {
 
             <div className="p-6 space-y-6">
               
-              {/* BANNER ACCESS RAPIDO UGREEN NAS */}
               <div className="bg-gradient-to-r from-blue-900 to-slate-900 text-white p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm border border-blue-800">
                 <div className="flex items-center space-x-3">
                   <span className="text-2xl">🖥️</span>
@@ -552,7 +949,6 @@ export default function Home() {
                 </a>
               </div>
 
-              {/* BARRA DI NAVIGAZIONE E RICERCA ARUBA */}
               <div className="space-y-3">
                 <form onSubmit={handleCercaNextcloud} className="flex gap-2">
                   <input 
@@ -572,7 +968,6 @@ export default function Home() {
                   )}
                 </form>
 
-                {/* BREADCRUMB PERCORSO ARUBA */}
                 {!isSearchMode && (
                   <div className="flex items-center justify-between bg-slate-100 px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold">
                     <div className="flex items-center space-x-1.5 overflow-x-auto">
@@ -597,7 +992,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* LISTA FILE ARUBA */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs font-bold uppercase text-slate-400 border-b pb-2">
                   <span>Contenuto Cartella Aruba ({risultatiNC.length})</span>
@@ -678,7 +1072,239 @@ export default function Home() {
           </div>
         )}
 
+        {/* TAB 4: CRUSCOTTO MENSILE */}
+        {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
+          <div className="space-y-6">
+            <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile &amp; Presenze</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Riepilogo consuntivi e suddivisione ore di lavoro e assenze.</p>
+                </div>
+                <button onClick={() => exportCSV(consuntiviMese)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
+                  <span>📥 Esporta per Excel (CSV)</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Mese &amp; Anno</label>
+                  <input type="month" value={filtroMese} onChange={e => setFiltroMese(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Dipendente</label>
+                  <select value={filtroCruscottoDip} onChange={e => setFiltroCruscottoDip(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
+                    <option value="Tutti">Tutti i Dipendenti</option>
+                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Cliente</label>
+                  <select value={filtroCruscottoCliente} onChange={e => setFiltroCruscottoCliente(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
+                    <option value="Tutti">Tutti i Clienti</option>
+                    {LISTA_CLIENTI.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2">
+                <div className="bg-slate-800/80 border border-slate-700 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-slate-400 block">Cantiere</span>
+                  <span className="text-base font-bold text-white">{totMeseCantiere} h</span>
+                </div>
+                <div className="bg-slate-800/80 border border-sky-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-sky-400 block">Backoffice</span>
+                  <span className="text-base font-bold text-sky-300">{totMeseBackoffice} h</span>
+                </div>
+                <div className="bg-slate-800/80 border border-purple-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-purple-400 block">Trasferta</span>
+                  <span className="text-base font-bold text-purple-300">{totMeseTrasferta} h</span>
+                </div>
+                <div className="bg-amber-950/40 border border-amber-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-amber-400 block">🏖️ Ferie</span>
+                  <span className="text-base font-bold text-amber-300">{totMeseFerie} h</span>
+                </div>
+                <div className="bg-indigo-950/40 border border-indigo-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-indigo-400 block">⏱️ Permessi</span>
+                  <span className="text-base font-bold text-indigo-300">{totMesePermesso} h</span>
+                </div>
+                <div className="bg-rose-950/40 border border-rose-500/30 p-2.5 rounded-2xl text-center">
+                  <span className="text-[9px] font-bold uppercase text-rose-400 block">🏥 Malattia</span>
+                  <span className="text-base font-bold text-rose-300">{totMeseMalattia} h</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                    <span>📅</span> Disponibilità &amp; Giornate Lavorative Residue Mese
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Giorni lavorativi teorici nel mese: <strong className="text-slate-800">{giorniLavorativiTotaliMese} giorni ({oreLavorativeTotaliMese} ore)</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {riepilogoCapienzaDipendenti.map(dip => {
+                  const haDisponibilita = Number(dip.giorniDisponibiliResidui) > 0;
+                  return (
+                    <div key={dip.nome} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                        <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          <span>👤</span> {dip.nome}
+                        </span>
+                        <span className={`px-3 py-1 rounded-xl text-xs font-black shadow-sm ${
+                          haDisponibilita 
+                            ? 'bg-emerald-500 text-white' 
+                            : Number(dip.giorniDisponibiliResidui) === 0 
+                            ? 'bg-amber-500 text-white' 
+                            : 'bg-rose-600 text-white'
+                        }`}>
+                          {dip.giorniDisponibiliResidui} giorni liberi ({dip.oreDisponibiliResidue}h)
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="bg-white p-2 rounded-xl border border-slate-200">
+                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Lavoro</span>
+                          <span className="font-bold text-slate-800">{dip.oreLavoro}h</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-amber-200">
+                          <span className="text-[9px] uppercase font-bold text-amber-600 block">Ferie / Perm.</span>
+                          <span className="font-bold text-amber-800">{dip.oreFerie + dip.orePermesso}h</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-rose-200">
+                          <span className="text-[9px] uppercase font-bold text-rose-600 block">Malattia</span>
+                          <span className="font-bold text-rose-800">{dip.oreMalattia}h</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: REPORT PERFORMANCE */}
+        {activeTab === 'report' && currentUser.ruolo === 'admin' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+              <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">Performance &amp; Reattività Team</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Valuta la tempestività di consuntivazione delle schede ore.</p>
+                </div>
+                <button onClick={fetchProgrammati} className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/20 font-medium">🔄 Aggiorna</button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {listaDipendenti.map(nomeDip => {
+                  const attivitaDip = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, nomeDip));
+                  const consuntivate = attivitaDip.filter(s => s.stato === 'consuntivo');
+                  const inRitardoScadute = attivitaDip.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) < ieriStr);
+
+                  const totaleRilevante = consuntivate.length + inRitardoScadute.length;
+                  const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
+
+                  const totOreLavorate = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore || 0), 0);
+                  const totOreBackoffice = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_backoffice || 0), 0);
+                  const totOreTrasferta = consuntivate.filter(i => !isAssenza(i)).reduce((acc, curr) => acc + Number(curr.ore_trasferta || 0), 0);
+
+                  return (
+                    <div key={nomeDip} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-lg">👤</span>
+                          <h3 className="font-bold text-slate-900 text-base">{nomeDip}</h3>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-slate-500 uppercase">Indice Reattività:</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                            indiceReattivita >= 90 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            indiceReattivita >= 70 ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                            'bg-rose-100 text-rose-800 border-rose-300'
+                          }`}>
+                            {indiceReattivita}% {indiceReattivita >= 90 ? '💯' : indiceReattivita >= 70 ? '⚠️' : '🚨'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Ore Svolte Totali</p>
+                          <p className="text-lg font-bold text-slate-800">{totOreLavorate} h</p>
+                        </div>
+                        <div className="bg-white p-3 rounded-2xl border border-sky-200 shadow-sm">
+                          <p className="text-[10px] font-bold uppercase text-sky-600">Backoffice</p>
+                          <p className="text-lg font-bold text-sky-700">{totOreBackoffice} h</p>
+                        </div>
+                        {nomeDip === 'Alessandro Ciule' && (
+                          <div className="bg-white p-3 rounded-2xl border border-purple-200 shadow-sm">
+                            <p className="text-[10px] font-bold uppercase text-purple-600">Trasferta</p>
+                            <p className="text-lg font-bold text-purple-700">{totOreTrasferta} h</p>
+                          </div>
+                        )}
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Ritardi (&gt;24h)</p>
+                          <p className={`text-lg font-bold ${inRitardoScadute.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{inRitardoScadute.length}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
+
+      {/* MODALE EDITING */}
+      {modalItem && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">
+              {modalItem.stato === 'consuntivo' ? 'Modifica Dati Intervento' : 'Conferma Consuntivo'}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Stai modificando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong>.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              {(modalItem.dipendente === 'Da Assegnare' || currentUser.ruolo === 'admin') && (
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
+                  <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3 py-2 border rounded-xl bg-indigo-50 border-indigo-200 text-sm font-bold text-indigo-800">
+                    <option value="Da Assegnare" disabled>❓ Da Assegnare</option>
+                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Lavorate / Assenza</label>
+                <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
+                <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800" />
+              </div>
+            </div>
+
+            <div className="flex space-x-2 pt-2">
+              <button onClick={() => setModalItem(null)} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">Annulla</button>
+              <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all">
+                {loading ? '...' : (modalItem.stato === 'consuntivo' ? 'Salva Modifiche ✅' : 'Conferma e Salva ✅')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
