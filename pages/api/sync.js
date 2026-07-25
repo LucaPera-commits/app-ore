@@ -7,7 +7,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const calendarId = process.env.GOOGLE_CALENDAR_ID;
 
-// Tabella mappatura per riconoscimento automatico dai titoli
 const DIPENDENTI_MAPPING = [
   { nomeCompleto: 'Luca Pera', chiavi: ['luca pera', 'luca'] },
   { nomeCompleto: 'Giampaolo Lauro', chiavi: ['giampaolo lauro', 'giampaolo'] },
@@ -20,7 +19,7 @@ function rilevaDipendenteDaTitolo(summary) {
   if (!summary) return 'Da Assegnare';
   const summaryLower = summary.toLowerCase();
 
-  // 1. Controlla se c'è un tag tra quadre es. [Giampaolo]
+  // 1. Tag tra quadre [Giampaolo]
   const matchDip = summary.match(/^\[(.*?)\]/);
   if (matchDip) {
     const dentroQuadre = matchDip[1].trim().toLowerCase();
@@ -32,7 +31,7 @@ function rilevaDipendenteDaTitolo(summary) {
     return matchDip[1].trim(); 
   }
 
-  // 2. Cerca presenza del nome/cognome in qualsiasi punto del titolo
+  // 2. Parola chiave nel titolo
   for (const dip of DIPENDENTI_MAPPING) {
     for (const chiave of dip.chiavi) {
       const regex = new RegExp(`\\b${chiave}\\b`, 'i');
@@ -45,26 +44,31 @@ function rilevaDipendenteDaTitolo(summary) {
   return 'Da Assegnare';
 }
 
+async function getGoogleCalendar() {
+  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY
+    ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+    : undefined;
+
+  if (!clientEmail || !privateKey || !calendarId) return null;
+
+  const auth = new google.auth.JWT({
+    email: clientEmail,
+    key: privateKey,
+    scopes: ['https://www.googleapis.com/auth/calendar'],
+  });
+
+  return google.calendar({ version: 'v3', auth });
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Metodo non consentito' });
 
   try {
-    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY
-      ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
-      : undefined;
-
-    if (!clientEmail || !privateKey || !calendarId) {
+    const calendar = await getGoogleCalendar();
+    if (!calendar) {
       return res.status(500).json({ message: 'Configurazione Google Calendar mancante su Vercel.' });
     }
-
-    const auth = new google.auth.JWT({
-      email: clientEmail,
-      key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
-    });
-
-    const calendar = google.calendar({ version: 'v3', auth });
 
     const ora = new Date();
     const timeMin = new Date(ora.getTime() - (90 * 24 * 60 * 60 * 1000)).toISOString();
@@ -80,15 +84,18 @@ export default async function handler(req, res) {
 
     const events = response.data.items || [];
     let inseriti = 0;
-    let giaPresenti = 0;
+    let aggiornati = 0;
 
     for (const event of events) {
       if (!event.summary) continue;
 
-      // Riconoscimento automatico dipendente dal titolo
-      const dipendente = rilevaDipendenteDaTitolo(event.summary);
+      const dipendenteRilevato = rilevaDipendenteDaTitolo(event.summary);
 
-      let titoloPulito = event.summary.replace(/^\[.*?\]\s*/, '').replace(/^(✅ |❌ |❓ )/g, '').trim();
+      let titoloPulito = event.summary
+        .replace(/^\[.*?\]\s*/, '')
+        .replace(/^(✅ |❌ |❓ )/g, '')
+        .trim();
+
       let [cliente, ...restoProgetto] = titoloPulito.split('-');
       let progetto = restoProgetto.join('-').trim() || 'Attività da Calendar';
       cliente = cliente.trim();
@@ -102,21 +109,52 @@ export default async function handler(req, res) {
 
       if (!dataEvento) continue;
 
+      // Cerca se esiste già nel DB
       const { data: esistente } = await supabase
         .from('eventi_ore')
-        .select('id')
+        .select('id, dipendente, stato')
         .eq('calendar_event_id', event.id)
         .maybeSingle();
 
       if (esistente) {
-        giaPresenti++;
+        // Se nel DB era "Da Assegnare" ma su Calendar hai aggiunto il nome dopo:
+        if ((!esistente.dipendente || esistente.dipendente === 'Da Assegnare') && dipendenteRilevato !== 'Da Assegnare') {
+          await supabase
+            .from('eventi_ore')
+            .update({ dipendente: dipendenteRilevato })
+            .eq('id', esistente.id);
+          
+          aggiornati++;
+
+          // Formatta il titolo su Calendar con il tag standard [Nome]
+          try {
+            let summaryStandard = `[${dipendenteRilevato}] ${titoloPulito}`;
+            if (esistente.stato === 'consuntivo') summaryStandard = `✅ ${summaryStandard}`;
+            await calendar.events.patch({
+              calendarId,
+              eventId: event.id,
+              requestBody: { summary: summaryStandard }
+            });
+          } catch (e) { console.error("Errore update calendar title:", e); }
+        }
         continue;
       }
 
-      // Inserimento con stato 'pianificato' (da consuntivare)
-      const { error: insertError } = await supabase.from('eventi_ore').insert([{
+      // Se è un NUOVO evento ed è stato assegnato, formatta pulito il titolo su Calendar
+      if (dipendenteRilevato !== 'Da Assegnare' && !event.summary.startsWith(`[${dipendenteRilevato}]`)) {
+        try {
+          await calendar.events.patch({
+            calendarId,
+            eventId: event.id,
+            requestBody: { summary: `[${dipendenteRilevato}] ${titoloPulito}` }
+          });
+        } catch (e) {}
+      }
+
+      // Inserisci nel DB come 'pianificato' (da consuntivare)
+      await supabase.from('eventi_ore').insert([{
         calendar_event_id: event.id,
-        dipendente,
+        dipendente: dipendenteRilevato,
         cliente,
         progetto,
         data: dataEvento,
@@ -127,11 +165,11 @@ export default async function handler(req, res) {
         note: event.description || 'Importato da Google Calendar'
       }]);
 
-      if (!insertError) inseriti++;
+      inseriti++;
     }
 
     return res.status(200).json({ 
-      message: `Sincronizzazione completata! ${events.length} analizzati, ${inseriti} nuovi importati, ${giaPresenti} già presenti.` 
+      message: `Sincronizzazione completata! ${events.length} analizzati, ${inseriti} nuovi importati, ${aggiornati} assegnati da Calendar.` 
     });
 
   } catch (error) {
