@@ -24,7 +24,7 @@ const LISTA_CLIENTI = [
   'MICHELE SALE', 'MONDINO', 'MOVINTER S.R.L', 'MSA DAMPER', 'NKB s.r.l', 'NORD ENGINEERING', 
   'OM3', 'ONN WATER', 'OPERVAL', 'PERANO BRUNO S.R.L', 'PERANO SPA', 'PRINCIPI s.r.l', 
   'PROMETES SISTEMI', 'RECIF', 'RG TECH', 'RI.ME.BO', 'ROLFO', 'S.C.A.M.I.C', 
-  'SARACINO COSTRUZIONI', 'SAVINO', 'SICMA', 'SIMIC S.P.A', 'SPEICH s.r.l', 'STAT', 
+  'SARACINO COSTRUZIONI', 'SARACINO', 'SAVINO', 'SICMA', 'SIMIC S.P.A', 'SPEICH s.r.l', 'STAT', 
   'STAT_BENACCHIO GROUP', 'STUDIO POLIGEO', 'T.M.C', 'TPL_Borgo S.Dalmazzo', 'TSM', 
   'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
 ];
@@ -86,7 +86,6 @@ export default function Home() {
   }, [currentUser]);
 
   const fetchProgrammati = async () => {
-    setLoadingProgrammati(true);
     try {
       const res = await fetch('/api/gestisci?mode=all');
       if (res.ok) {
@@ -94,12 +93,36 @@ export default function Home() {
         setStoricoCompleto(dati);
       }
     } catch (e) { console.error("Errore fetch:", e); } 
-    finally { setLoadingProgrammati(false); }
   };
 
+  // --- SINCRONIZZAZIONE SILENZIOSA DI BACKGROUND ---
+  const handleSilentSync = async () => {
+    if (currentUser?.ruolo !== 'admin') return;
+    try {
+      const res = await fetch('/api/sync', { method: 'POST' });
+      if (res.ok) {
+        fetchProgrammati();
+      }
+    } catch (e) {
+      console.error("Errore Auto-Sync background:", e);
+    }
+  };
+
+  // TIMER AUTO-REFRESH OGNI 3 MINUTI (180.000 ms)
   useEffect(() => {
-    if (currentUser) fetchProgrammati();
-  }, [activeTab, currentUser]);
+    if (currentUser) {
+      fetchProgrammati();
+
+      if (currentUser.ruolo === 'admin') {
+        handleSilentSync(); // Esegui subito al caricamento
+        const interval = setInterval(() => {
+          handleSilentSync();
+        }, 180000); // Ripeti ogni 3 minuti
+
+        return () => clearInterval(interval);
+      }
+    }
+  }, [currentUser, activeTab]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -129,7 +152,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/sync', { method: 'POST' });
       const data = await res.json();
-      alert(data.message || "Risposta dal server.");
+      alert(data.message || "Sincronizzazione completata.");
       fetchProgrammati();
     } catch (e) {
       alert("Errore di rete durante la connessione a Google Calendar.");
@@ -140,7 +163,6 @@ export default function Home() {
 
   const handleQuickReassign = async (item, nuovoDipendente) => {
     if (!nuovoDipendente || nuovoDipendente === item.dipendente) return;
-    setLoadingProgrammati(true);
     try {
       const res = await fetch('/api/gestisci', {
         method: 'PUT',
@@ -156,11 +178,9 @@ export default function Home() {
         fetchProgrammati(); 
       } else {
         alert("Errore durante la riassegnazione.");
-        setLoadingProgrammati(false);
       }
     } catch (e) {
       alert("Errore di rete durante la riassegnazione.");
-      setLoadingProgrammati(false);
     } 
   };
 
@@ -283,7 +303,7 @@ export default function Home() {
     );
   }
 
-  // --- COMPARAZIONE FILTRI ---
+  // --- FILTRI ---
   const matchAssegnazione = (dipDb, filtroAss) => {
     if (!filtroAss || filtroAss === 'Tutti') return true;
     const isDaAssegnare = !dipDb || dipDb === 'Da Assegnare' || dipDb === '';
@@ -519,17 +539,17 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON DOPPIO FILTRO */}
+        {/* TAB 2: GESTIONE ATTIVITÀ CON AUTO-SYNC SILENZIOSO */}
         {activeTab === 'programmati' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Visualizza e gestisci le attività raggruppate per dipendente.</p>
+                <p className="text-xs text-slate-300 mt-0.5">Visualizza e gestisci le attività (Sincronizzazione Automatica Attiva 🔄)</p>
               </div>
             </div>
 
-            {/* BARRA DOPPI FILTRI */}
+            {/* BARRA FILTRI E CONTROLLI */}
             <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
               {currentUser.ruolo === 'admin' ? (
                 <div className="flex flex-wrap items-center gap-3">
@@ -562,7 +582,7 @@ export default function Home() {
               <div className="flex items-center space-x-2">
                 {currentUser.ruolo === 'admin' && (
                   <button onClick={handleSyncCalendar} disabled={loadingProgrammati} className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold transition-all shadow-sm disabled:opacity-50">
-                    {loadingProgrammati ? '⏳ In corso...' : '⬇️ Sincronizza Calendar'}
+                    {loadingProgrammati ? '⏳ In corso...' : '⬇️ Sincronizza Ora'}
                   </button>
                 )}
                 <button onClick={fetchProgrammati} disabled={loadingProgrammati} className="text-xs bg-white text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 font-bold transition-all shadow-sm disabled:opacity-50">
