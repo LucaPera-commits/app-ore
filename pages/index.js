@@ -33,7 +33,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState('programmati');
+  const [activeTab, setActiveTab] = useState('home'); // HOME DIVENTA IL TAB DEFAULT
 
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
@@ -144,7 +144,6 @@ export default function Home() {
     }
   }, [currentUser, activeTab]);
 
-  // CARICAMENTO ISTANTANEO CONTENUTO NEXTCLOUD
   const caricaContenutoNC = async (folderPath = '', search = '') => {
     setLoadingNC(true);
     setErrorNC(null);
@@ -191,7 +190,6 @@ export default function Home() {
     setPathNC(parti.join('/'));
   };
 
-  // APERTURA CONSULTAZIONE ONLINE SENZA LOGIN (VIA SHARE API)
   const handleApriOnlineSenzaLogin = async (percorso) => {
     try {
       const res = await fetch(`/api/share?path=${encodeURIComponent(percorso)}`);
@@ -213,6 +211,7 @@ export default function Home() {
       setCurrentUser(user);
       localStorage.setItem('bw_user', JSON.stringify(user));
       setFormData(prev => ({ ...prev, dipendente: user.nome }));
+      setActiveTab('home');
     } else {
       alert("Credenziali non valide.");
     }
@@ -313,50 +312,32 @@ export default function Home() {
     setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser?.nome : item.dipendente);
   };
 
-  const exportCSV = (datiDaEsportare) => {
-    let csv = "Data;Dipendente;Categoria;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
-    datiDaEsportare.forEach(row => {
-      const tot = Number(row.ore || 0) + Number(row.ore_backoffice || 0) + Number(row.ore_trasferta || 0);
-      const cat = isFerie(row) ? "Ferie" : isPermesso(row) ? "Permesso" : isMalattia(row) ? "Malattia" : "Lavoro";
-      csv += `"${getNormalizedDate(row.data)}";"${row.dipendente}";"${cat}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
-    });
-    
-    const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Report_Ore_${filtroMese}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
         <div className="w-full max-w-md">
-          <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-200/80 space-y-6">
+          <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-700/50 space-y-6">
             <div className="flex flex-col items-center text-center space-y-3 pb-5 border-b border-slate-100">
               <div className="flex items-center justify-center space-x-3">
-                <div className="bg-sky-600 text-white font-extrabold text-xl px-3.5 py-1.5 rounded-xl shadow-md tracking-wider">bw</div>
+                <div className="bg-sky-600 text-white font-extrabold text-xl px-3.5 py-1.5 rounded-2xl shadow-lg tracking-wider">bw</div>
                 <div className="text-left">
                   <span className="text-xl font-bold text-slate-900 tracking-tight block leading-tight">bw solutions</span>
                   <span className="text-[11px] text-emerald-600 font-bold tracking-wide uppercase block">Zo&amp;annA S.R.L.</span>
                 </div>
               </div>
-              <p className="text-xs text-slate-500 font-medium">Gestione Ore &amp; Attività Lavorative</p>
+              <p className="text-xs text-slate-500 font-medium">Portale Gestionale Ingegneria &amp; Servici</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
-                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm" placeholder="Inserisci nome utente" />
+                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Inserisci nome utente" />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
                 <div className="relative">
-                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm pr-12" placeholder="Inserisci password" />
+                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm pr-12 outline-none focus:ring-2 focus:ring-sky-500/20" placeholder="Inserisci password" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-base p-1">
                     {showPassword ? '👁️' : '🙈'}
                   </button>
@@ -409,16 +390,6 @@ export default function Home() {
     return passAssegnazione && passDipendente;
   });
 
-  const attivitaArchiviate = storicoCompleto.filter(p => {
-    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
-    if (!isChiuso) return false;
-
-    const passAssegnazione = matchAssegnazione(p.dipendente, filtroAssegnazione);
-    const passDipendente = matchNomeDipendente(p.dipendente, targetDipendente);
-
-    return passAssegnazione && passDipendente;
-  });
-
   const todayStr = getTodayStr();
   const daConfermare = attivitaPianificateAttive.filter(p => getNormalizedDate(p.data) <= todayStr);
   const ieriStr = getYesterdayStr();
@@ -426,36 +397,19 @@ export default function Home() {
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
-  const tuttiEventiMese = storicoCompleto.filter(item => {
-    const dNorm = getNormalizedDate(item.data);
-    const isInMese = dNorm && dNorm.startsWith(filtroMese);
-    const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
-    const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
-    return isInMese && matchDip && matchCliente && item.stato !== 'annullato';
-  });
-
-  const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
-
-  const totMeseCantiere = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
-  const totMeseBackoffice = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
-  const totMeseTrasferta = consuntiviMese.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
-
-  const giorniLavorativiTotaliMese = getGiorniLavorativiMese(filtroMese);
-  const oreLavorativeTotaliMese = giorniLavorativiTotaliMese * 8;
-
   const renderRigaAttivita = (item, colorTheme) => {
     const normDate = getNormalizedDate(item.data);
     const badgeAssenza = isFerie(item) ? '🏖️ Ferie' : isPermesso(item) ? '⏱️ Permesso' : isMalattia(item) ? '🏥 Malattia' : null;
 
     return (
-      <div key={item.id} className={`p-3 bg-${colorTheme}-50/30 border border-${colorTheme}-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+      <div key={item.id} className={`p-3.5 bg-${colorTheme}-50/40 border border-${colorTheme}-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm`}>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+            <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 shadow-2xs">
               {normDate === todayStr ? 'Oggi' : normDate}
             </span>
             {badgeAssenza ? (
-              <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded border border-purple-200">
+              <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-lg border border-purple-200">
                 {badgeAssenza}
               </span>
             ) : (
@@ -470,7 +424,7 @@ export default function Home() {
               <select 
                 value={item.dipendente || 'Da Assegnare'} 
                 onChange={e => handleQuickReassign(item, e.target.value)}
-                className={`text-xs font-bold px-2 py-0.5 rounded border outline-none cursor-pointer ${
+                className={`text-xs font-bold px-2 py-0.5 rounded-lg border outline-none cursor-pointer ${
                   (!item.dipendente || item.dipendente === 'Da Assegnare') ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
                 }`}
               >
@@ -482,15 +436,15 @@ export default function Home() {
         </div>
 
         <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
-          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 whitespace-nowrap">✅ Conferma</button>
-          <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50 whitespace-nowrap">🗑️ Annulla</button>
+          <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 whitespace-nowrap transition-all">✅ Conferma</button>
+          <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 whitespace-nowrap transition-all">🗑️ Annulla</button>
         </div>
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-12">
+    <div className="min-h-screen bg-slate-100/80 text-slate-800 font-sans pb-12">
       <Head>
         <title>Gestionale Ore &amp; Documenti | bw solutions</title>
       </Head>
@@ -501,40 +455,161 @@ export default function Home() {
         ))}
       </datalist>
 
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+      {/* HEADER DI NAVIGAZIONE PRINCIPALE */}
+      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center space-x-3">
-            <div className="bg-sky-600 text-white font-bold text-base px-2.5 py-1 rounded-lg">bw</div>
+          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('home')}>
+            <div className="bg-sky-500 text-slate-950 font-black text-base px-2.5 py-1 rounded-xl shadow-sm">bw</div>
             <div>
-              <span className="font-bold text-base text-slate-900 leading-none block">bw solutions</span>
-              <span className="text-[10px] text-emerald-600 font-bold uppercase block mt-0.5">Zo&amp;annA S.R.L.</span>
+              <span className="font-bold text-base text-white leading-none block">bw solutions</span>
+              <span className="text-[10px] text-emerald-400 font-bold uppercase block mt-0.5 tracking-wider">Zo&amp;annA S.R.L.</span>
             </div>
           </div>
           
-          <nav className="flex space-x-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-semibold overflow-x-auto">
-            <button onClick={() => setActiveTab('nuovo')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>📝 Nuovo Inserimento</button>
-            <button onClick={() => setActiveTab('programmati')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>
-              <span>⏳ Gestione Attività</span>
-              {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-bold px-1.5 rounded-full text-[10px]">{daConfermare.length}</span>}
+          <nav className="flex space-x-1.5 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold overflow-x-auto">
+            {/* PULSANTE HOME */}
+            <button 
+              onClick={() => setActiveTab('home')} 
+              className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                activeTab === 'home' ? 'bg-sky-500 text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <span>🏠</span>
+              <span>Home</span>
             </button>
-            <button onClick={() => setActiveTab('documenti')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📂 Documenti Cloud</button>
+
+            <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📝 Inserimento Ore</button>
+            
+            <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1 ${activeTab === 'programmati' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>
+              <span>⏳ Attività</span>
+              {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-black px-1.5 rounded-full text-[10px]">{daConfermare.length}</span>}
+            </button>
+            
+            <button onClick={() => setActiveTab('documenti')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📂 Documenti Cloud</button>
+            
             {currentUser.ruolo === 'admin' && (
               <>
-                <button onClick={() => setActiveTab('cruscotto')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>📊 Cruscotto</button>
-                <button onClick={() => setActiveTab('report')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>⚡ Performance</button>
-                <a href="/preventivi" className="px-3 py-2 rounded-xl bg-sky-100 text-sky-800 font-bold whitespace-nowrap">💰 Preventivi</a>
+                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>📊 Cruscotto</button>
+                <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'report' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:text-white'}`}>⚡ Performance</button>
+                <a href="/preventivi" className="px-3.5 py-2 rounded-xl bg-sky-900/60 hover:bg-sky-800 text-sky-200 font-bold whitespace-nowrap border border-sky-700/50">💰 Preventivi</a>
               </>
             )}
           </nav>
 
-          <div className="flex items-center space-x-3 text-xs bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-            <span className="text-slate-700 font-semibold">👤 {currentUser.nome}</span>
-            <button onClick={handleLogout} className="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-lg font-bold">Esci</button>
+          <div className="flex items-center space-x-3 text-xs bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+            <span className="text-slate-200 font-semibold">👤 {currentUser.nome}</span>
+            <button onClick={handleLogout} className="bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white px-2 py-0.5 rounded-lg font-bold transition-all">Esci</button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 py-8">
+
+        {/* TAB 0: SCHERMATA PRINCIPALE GENERAL (HOME) */}
+        {activeTab === 'home' && (
+          <div className="space-y-8">
+            
+            {/* HERO BANNER BENVENUTO */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 rounded-3xl p-8 text-white shadow-xl border border-slate-800 relative overflow-hidden">
+              <div className="relative z-10 space-y-3 max-w-2xl">
+                <span className="bg-sky-500/20 text-sky-300 text-xs font-extrabold uppercase px-3 py-1 rounded-full border border-sky-500/30">
+                  Pannello Operativo Aziendale
+                </span>
+                <h1 className="text-3xl font-extrabold tracking-tight">
+                  Bentornato, <span className="text-sky-400">{currentUser.nome}</span>! 👋
+                </h1>
+                <p className="text-slate-300 text-sm leading-relaxed">
+                  Benvenuto nel portale gestionale di **bw solutions | Zo&amp;annA S.R.L.**.
+                  Seleziona un'operazione per iniziare a consuntivare ore, consultare commesse o esplorare il Cloud.
+                </p>
+              </div>
+              <div className="absolute right-6 bottom-4 text-8xl opacity-10 pointer-events-none select-none">
+                🏢
+              </div>
+            </div>
+
+            {/* AVVISI / NOTIFICHE RAPIDE */}
+            {daConfermare.length > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">⏳</span>
+                  <div>
+                    <h3 className="font-bold text-amber-900 text-sm">Hai {daConfermare.length} attività in attesa di conferma</h3>
+                    <p className="text-xs text-amber-700">Consuntiva le schede ore completate per aggiornare il registro aziendale.</p>
+                  </div>
+                </div>
+                <button onClick={() => setActiveTab('programmati')} className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm whitespace-nowrap">
+                  Vedi Attività ➔
+                </button>
+              </div>
+            )}
+
+            {/* SCORCIATOIE SCHEDE DI ACCESSO RAPIDO */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              
+              <div onClick={() => setActiveTab('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
+                  📝
+                </div>
+                <h3 className="font-bold text-slate-900 text-base mb-1">Inserimento Ore</h3>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Registra ore di cantiere, backoffice, trasferte o richiedi ferie e permessi.</p>
+                <span className="text-xs font-bold text-sky-600 flex items-center gap-1">Registra Ora ➔</span>
+              </div>
+
+              <div onClick={() => setActiveTab('programmati')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
+                  ⏳
+                </div>
+                <h3 className="font-bold text-slate-900 text-base mb-1">Gestione Attività</h3>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Visualizza gli interventi pianificati, conferma i consuntivi e controlla lo storico.</p>
+                <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Vedi Calendario ➔</span>
+              </div>
+
+              <div onClick={() => setActiveTab('documenti')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4 group-hover:scale-110 transition-transform">
+                  📂
+                </div>
+                <h3 className="font-bold text-slate-900 text-base mb-1">Documenti Cloud</h3>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">Sfoglia, visualizza e scarica documenti, tavole PDF ed Excel su Nextcloud Aruba.</p>
+                <span className="text-xs font-bold text-indigo-600 flex items-center gap-1">Esplora Cloud ➔</span>
+              </div>
+
+            </div>
+
+            {/* SEZIONE PER AMMINISTRATORI */}
+            {currentUser.ruolo === 'admin' && (
+              <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-lg border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h3 className="font-bold text-base flex items-center gap-2">
+                    <span>👑</span> Strumenti Amministratore
+                  </h3>
+                  <span className="text-xs text-slate-400 font-semibold">Accesso Riservato</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button onClick={() => setActiveTab('cruscotto')} className="p-4 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 rounded-2xl text-left transition-all">
+                    <span className="text-xl block mb-1">📊</span>
+                    <span className="font-bold text-xs text-white block">Cruscotto Mensile</span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">Disponibilità e capienza ore</span>
+                  </button>
+
+                  <button onClick={() => setActiveTab('report')} className="p-4 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 rounded-2xl text-left transition-all">
+                    <span className="text-xl block mb-1">⚡</span>
+                    <span className="font-bold text-xs text-white block">Performance Team</span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">Indici di reattività e ritardi</span>
+                  </button>
+
+                  <a href="/preventivi" className="p-4 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-800/50 rounded-2xl text-left transition-all block">
+                    <span className="text-xl block mb-1">💰</span>
+                    <span className="font-bold text-xs text-sky-300 block">Preventivi Aziendali</span>
+                    <span className="text-[11px] text-sky-400 block mt-0.5">Generazione e invio preventivi</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
 
         {/* TAB 1: NUOVO INSERIMENTO */}
         {activeTab === 'nuovo' && (
@@ -690,7 +765,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: ESPLORATORE FILE E CARTELLE CON ACCESSO OSPITE SENZA CREDENZIALI */}
+        {/* TAB 3: ESPLORATORE FILE E CARTELLE */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -754,7 +829,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* LISTA FILE E CARTELLE CON DOPPIO PULSANTE SENZA LOGIN */}
+              {/* LISTA FILE E CARTELLE */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs font-bold uppercase text-slate-400 border-b pb-2">
                   <span>{isSearchMode ? `Risultati Ricerca (${risultatiNC.length})` : `Contenuto Cartella (${risultatiNC.length})`}</span>
@@ -798,7 +873,6 @@ export default function Home() {
                               </button>
                             ) : (
                               <>
-                                {/* PULSANTE 1: VISUALIZZA IN ANTEPRIMA WEB SENZA CREDENZIALI */}
                                 {isInline ? (
                                   <a 
                                     href={`/api/download?path=${encodeURIComponent(item.percorso)}`} 
@@ -817,7 +891,6 @@ export default function Home() {
                                   </button>
                                 )}
 
-                                {/* PULSANTE 2: DOWNLOAD DIRETTO SUL PROPRIO DISPOSITIVO */}
                                 <a 
                                   href={`/api/download?path=${encodeURIComponent(item.percorso)}&forceDownload=true`} 
                                   className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center space-x-1"
