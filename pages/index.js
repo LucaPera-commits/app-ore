@@ -71,12 +71,16 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
-  // --- STATO APERTURA/CHIUSURA CARTELE (CHIUSE DI DEFAULT) ---
+  // --- STATI APERTURA/CHIUSURA CARTELE E SOTTO-CARTELE ---
   const [cartelleAperte, setCartelleAperte] = useState({});
-  const [dipendenteSubTabs, setDipendenteSubTabs] = useState({});
+  const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
 
   const toggleCartella = (nome) => {
     setCartelleAperte(prev => ({ ...prev, [nome]: !prev[nome] }));
+  };
+
+  const toggleSottoCartella = (key) => {
+    setSottoCartelleAperte(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   // --- STATI PER ESPLORATORE DOCUMENTI NEXTCLOUD ARUBA ---
@@ -737,15 +741,15 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON CARTELE RICHIUDIBILI */}
+        {/* TAB 2: GESTIONE ATTIVITÀ CON CRUSCOTTO E SOTTO-CARTELE TEMATICHE */}
         {activeTab === 'programmati' && (
           <div className="space-y-6">
             
-            {/* INTESTAZIONE E STRUMENTI */}
+            {/* BARRA INTESTAZIONE CON SYNC */}
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-wrap items-center justify-between gap-4 border border-slate-800">
               <div>
-                <h2 className="text-xl font-bold tracking-tight">📁 Gestione Attività per Dipendente</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Clicca su una cartella per aprirla e consultare le sotto-schede.</p>
+                <h2 className="text-xl font-bold tracking-tight">📁 Gestione Attività Team</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Quadro generale presenze e sotto-cartelle tematiche per dipendente.</p>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -768,7 +772,75 @@ export default function Home() {
               </div>
             </div>
 
-            {/* SEZIONE 1: CARTELLA "DA ASSEGNARE" (RICHIUDIBILE) */}
+            {/* CRUSCOTTO PANORAMICA DIPENDENTI A COLPO D'OCCHIO */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <span>📊</span> Quadro Generale Dipendenti (A Colpo d'Occhio)
+                </h3>
+                <span className="text-xs font-semibold text-slate-400">Riepilogo in tempo reale</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                      <th className="py-2.5 px-3">Dipendente</th>
+                      <th className="py-2.5 px-3 text-center">🚨 Da Consuntivare</th>
+                      <th className="py-2.5 px-3 text-center">⏳ In Programma</th>
+                      <th className="py-2.5 px-3 text-center">✅ Concluse</th>
+                      <th className="py-2.5 px-3 text-center">🏖️ Assenze</th>
+                      <th className="py-2.5 px-3 text-center">Stato</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {dipendentiVisibili.map(dipNome => {
+                      const eventiDip = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, dipNome));
+                      const daConsuntivare = eventiDip.filter(e => e.stato !== 'consuntivo' && e.stato !== 'annullato' && getNormalizedDate(e.data) <= todayStr);
+                      const inProgramma = eventiDip.filter(e => e.stato !== 'consuntivo' && e.stato !== 'annullato' && getNormalizedDate(e.data) > todayStr);
+                      const concluse = eventiDip.filter(e => e.stato === 'consuntivo');
+                      const assenze = eventiDip.filter(e => isAssenza(e));
+
+                      return (
+                        <tr key={dipNome} className="hover:bg-slate-50 transition-all cursor-pointer" onClick={() => toggleCartella(dipNome)}>
+                          <td className="py-3 px-3 font-bold text-slate-900 flex items-center space-x-2">
+                            <span>👤</span>
+                            <span>{dipNome}</span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {daConsuntivare.length > 0 ? (
+                              <span className="bg-rose-100 text-rose-800 font-black px-2.5 py-0.5 rounded-full border border-rose-200">
+                                {daConsuntivare.length} da chiudere
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-bold">0</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-sky-700">
+                            {inProgramma.length}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-emerald-700">
+                            {concluse.length}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-purple-700">
+                            {assenze.length}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {daConsuntivare.length > 0 ? (
+                              <span className="text-[10px] font-bold bg-rose-500 text-white px-2 py-0.5 rounded-lg">Attenzione</span>
+                            ) : (
+                              <span className="text-[10px] font-bold bg-emerald-500 text-white px-2 py-0.5 rounded-lg">Aggiornato</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* CARTELLA "DA ASSEGNARE" */}
             {(currentUser.ruolo === 'admin' || daAssegnareItems.length > 0) && (
               <div className="bg-amber-50/80 border-2 border-amber-300 rounded-3xl overflow-hidden shadow-sm transition-all">
                 <div 
@@ -779,7 +851,7 @@ export default function Home() {
                     <span className="text-2xl">{cartelleAperte['Da Assegnare'] ? '📂' : '📁'}</span>
                     <div>
                       <h3 className="font-bold text-amber-950 text-base">Attività Da Assegnare</h3>
-                      <p className="text-xs text-amber-800">Eventi e commesse non ancora associate ad un tecnico</p>
+                      <p className="text-xs text-amber-800">Eventi non ancora associati ad un tecnico</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -795,9 +867,7 @@ export default function Home() {
                 {cartelleAperte['Da Assegnare'] && (
                   <div className="p-5 border-t border-amber-200 bg-white space-y-3">
                     {daAssegnareItems.length === 0 ? (
-                      <p className="text-xs text-amber-700 font-semibold py-2">
-                        ✅ Tutte le attività sono state assegnate ai dipendenti!
-                      </p>
+                      <p className="text-xs text-amber-700 font-semibold py-2">✅ Tutte le attività sono state assegnate ai dipendenti!</p>
                     ) : (
                       daAssegnareItems.map(item => renderRigaAttivita(item, 'amber'))
                     )}
@@ -806,22 +876,23 @@ export default function Home() {
               </div>
             )}
 
-            {/* SEZIONE 2: CARTELE DIPENDENTI (RICHIUDIBILI) */}
+            {/* SEZIONE CARTELE DIPENDENTI CON SOTTO-CARTELE PER TIPOLOGIA */}
             <div className="space-y-4">
               {dipendentiVisibili.map(dipNome => {
                 const eventiDip = storicoCompleto.filter(e => matchNomeDipendente(e.dipendente, dipNome));
                 
-                const assegnateInCorso = eventiDip.filter(e => e.stato === 'pianificato' || (e.stato !== 'consuntivo' && e.stato !== 'annullato'));
-                const concluse = eventiDip.filter(e => e.stato === 'consuntivo');
-                const annullateModificate = eventiDip.filter(e => e.stato === 'annullato' || (e.note && e.note.length > 0));
+                // SUDDIVISIONE PER TIPOLOGIA
+                const interventiLavoro = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) === 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
+                const backofficeProgetti = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) > 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
+                const assenzeGiustificativi = eventiDip.filter(e => isAssenza(e) && e.stato !== 'consuntivo' && e.stato !== 'annullato');
+                const concluseConsuntivate = eventiDip.filter(e => e.stato === 'consuntivo');
 
                 const isAperta = !!cartelleAperte[dipNome];
-                const subTabCorrente = dipendenteSubTabs[dipNome] || 'assegnate';
 
                 return (
                   <div key={dipNome} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all">
                     
-                    {/* INTESTAZIONE CARTELLA CLICCABILE */}
+                    {/* INTESTAZIONE CARTELLA DIPENDENTE */}
                     <div 
                       onClick={() => toggleCartella(dipNome)}
                       className="bg-slate-900 hover:bg-slate-800 text-white p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none transition-all"
@@ -832,17 +903,17 @@ export default function Home() {
                         </div>
                         <div>
                           <h3 className="font-bold text-lg leading-tight">{dipNome}</h3>
-                          <span className="text-xs text-slate-400 font-medium">Cartella Attività</span>
+                          <span className="text-xs text-slate-400 font-medium">Cartella Personale Attività</span>
                         </div>
                       </div>
 
                       <div className="flex items-center space-x-3">
                         <div className="flex items-center space-x-2 text-xs font-bold">
-                          <span className="bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-xl border border-amber-500/30">
-                            📌 {assegnateInCorso.length} Assegnate
+                          <span className="bg-sky-500/20 text-sky-300 px-2.5 py-1 rounded-xl border border-sky-500/30">
+                            💼 {interventiLavoro.length + backofficeProgetti.length} Attivi
                           </span>
                           <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-xl border border-emerald-500/30">
-                            ✅ {concluse.length} Concluse
+                            ✅ {concluseConsuntivate.length} Conclusi
                           </span>
                         </div>
                         <span className="text-sky-400 font-bold text-xs bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
@@ -851,76 +922,128 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* CONTENUTO CARTELLA - VISIBILE SOLO SE LA CARTELLA È APERTA */}
+                    {/* CONTENUTO DIPENDENTE: SOTTO-CARTELE PER TIPOLOGIA */}
                     {isAperta && (
-                      <div>
-                        {/* SOTTO-TAB INTERNI */}
-                        <div className="bg-slate-100 border-b border-slate-200 p-2 flex space-x-1 text-xs font-bold overflow-x-auto">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setDipendenteSubTabs({ ...dipendenteSubTabs, [dipNome]: 'assegnate' }); }}
-                            className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
-                              subTabCorrente === 'assegnate' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                            }`}
+                      <div className="p-5 space-y-4 bg-slate-50/50">
+                        
+                        {/* SOTTO-CARTELLA 1: INTERVENTI LAVORO / CANTIERE */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div 
+                            onClick={() => toggleSottoCartella(`${dipNome}_lavoro`)}
+                            className="p-3.5 bg-sky-50/80 hover:bg-sky-100/80 flex items-center justify-between cursor-pointer border-b border-sky-100 transition-all select-none"
                           >
-                            <span>📌 Attività Assegnate</span>
-                            <span className="bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded-full text-[10px]">{assegnateInCorso.length}</span>
-                          </button>
+                            <div className="flex items-center space-x-2.5">
+                              <span className="text-xl">💼</span>
+                              <span className="font-bold text-slate-900 text-sm">Interventi Lavoro &amp; Cantiere</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="bg-sky-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
+                                {interventiLavoro.length}
+                              </span>
+                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_lavoro`] ? '▲' : '▼'}</span>
+                            </div>
+                          </div>
 
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setDipendenteSubTabs({ ...dipendenteSubTabs, [dipNome]: 'concluse' }); }}
-                            className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
-                              subTabCorrente === 'concluse' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                          >
-                            <span>✅ Attività Concluse</span>
-                            <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full text-[10px]">{concluse.length}</span>
-                          </button>
-
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setDipendenteSubTabs({ ...dipendenteSubTabs, [dipNome]: 'modificate' }); }}
-                            className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
-                              subTabCorrente === 'modificate' ? 'bg-white text-indigo-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                          >
-                            <span>✏️ Note &amp; Storico Modifiche</span>
-                            <span className="bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded-full text-[10px]">{annullateModificate.length}</span>
-                          </button>
-                        </div>
-
-                        {/* ELENCO DEGLI INTERVENTI */}
-                        <div className="p-5 space-y-3">
-                          {subTabCorrente === 'assegnate' && (
-                            assegnateInCorso.length === 0 ? (
-                              <div className="text-center py-8 text-slate-400 text-xs font-semibold">
-                                🎉 Nessuna attività assegnata in sospeso per {dipNome}.
-                              </div>
-                            ) : (
-                              assegnateInCorso.map(item => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky'))
-                            )
-                          )}
-
-                          {subTabCorrente === 'concluse' && (
-                            concluse.length === 0 ? (
-                              <div className="text-center py-8 text-slate-400 text-xs font-semibold">
-                                📂 Nessuna attività conclusa registrata per {dipNome}.
-                              </div>
-                            ) : (
-                              concluse
-                                .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
-                                .map(item => renderRigaAttivita(item, 'emerald'))
-                            )
-                          )}
-
-                          {subTabCorrente === 'modificate' && (
-                            annullateModificate.length === 0 ? (
-                              <div className="text-center py-8 text-slate-400 text-xs font-semibold">
-                                📝 Nessun intervento con modifiche o annullamenti per {dipNome}.
-                              </div>
-                            ) : (
-                              annullateModificate.map(item => renderRigaAttivita(item, 'indigo'))
-                            )
+                          {sottoCartelleAperte[`${dipNome}_lavoro`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {interventiLavoro.length === 0 ? (
+                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessun intervento cantiere in programma.</p>
+                              ) : (
+                                interventiLavoro.map(item => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky'))
+                              )}
+                            </div>
                           )}
                         </div>
+
+                        {/* SOTTO-CARTELLA 2: BACKOFFICE & PROGETTI */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div 
+                            onClick={() => toggleSottoCartella(`${dipNome}_backoffice`)}
+                            className="p-3.5 bg-indigo-50/80 hover:bg-indigo-100/80 flex items-center justify-between cursor-pointer border-b border-indigo-100 transition-all select-none"
+                          >
+                            <div className="flex items-center space-x-2.5">
+                              <span className="text-xl">🖥️</span>
+                              <span className="font-bold text-slate-900 text-sm">Backoffice &amp; Progetti Interni</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="bg-indigo-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
+                                {backofficeProgetti.length}
+                              </span>
+                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_backoffice`] ? '▲' : '▼'}</span>
+                            </div>
+                          </div>
+
+                          {sottoCartelleAperte[`${dipNome}_backoffice`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {backofficeProgetti.length === 0 ? (
+                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessuna attività di backoffice programmata.</p>
+                              ) : (
+                                backofficeProgetti.map(item => renderRigaAttivita(item, 'indigo'))
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* SOTTO-CARTELLA 3: ASSENZE & GIUSTIFICATIVI */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div 
+                            onClick={() => toggleSottoCartella(`${dipNome}_assenze`)}
+                            className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 flex items-center justify-between cursor-pointer border-b border-purple-100 transition-all select-none"
+                          >
+                            <div className="flex items-center space-x-2.5">
+                              <span className="text-xl">🏖️</span>
+                              <span className="font-bold text-slate-900 text-sm">Ferie, Permessi &amp; Malattie</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="bg-purple-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
+                                {assenzeGiustificativi.length}
+                              </span>
+                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_assenze`] ? '▲' : '▼'}</span>
+                            </div>
+                          </div>
+
+                          {sottoCartelleAperte[`${dipNome}_assenze`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {assenzeGiustificativi.length === 0 ? (
+                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessuna assenza registrata in programma.</p>
+                              ) : (
+                                assenzeGiustificativi.map(item => renderRigaAttivita(item, 'purple'))
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* SOTTO-CARTELLA 4: STORICO CONCLUSE */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div 
+                            onClick={() => toggleSottoCartella(`${dipNome}_concluse`)}
+                            className="p-3.5 bg-emerald-50/80 hover:bg-emerald-100/80 flex items-center justify-between cursor-pointer border-b border-emerald-100 transition-all select-none"
+                          >
+                            <div className="flex items-center space-x-2.5">
+                              <span className="text-xl">✅</span>
+                              <span className="font-bold text-slate-900 text-sm">Storico Attività Concluse</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">
+                                {concluseConsuntivate.length}
+                              </span>
+                              <span className="text-slate-400 text-xs">{sottoCartelleAperte[`${dipNome}_concluse`] ? '▲' : '▼'}</span>
+                            </div>
+                          </div>
+
+                          {sottoCartelleAperte[`${dipNome}_concluse`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {concluseConsuntivate.length === 0 ? (
+                                <p className="text-xs text-slate-400 py-2 text-center font-medium">Nessuna attività conclusa registrata.</p>
+                              ) : (
+                                concluseConsuntivate
+                                  .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
+                                  .map(item => renderRigaAttivita(item, 'emerald'))
+                              )}
+                            </div>
+                          )}
+                        </div>
+
                       </div>
                     )}
 
