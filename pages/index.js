@@ -75,13 +75,13 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
-  // --- STATI RICERCA DOCUMENTI NEXTCLOUD ---
+  // --- STATI PER ESPLORATORE DOCUMENTI NEXTCLOUD ---
+  const [pathNC, setPathNC] = useState('');
   const [searchQueryNC, setSearchQueryNC] = useState('');
-  const [cartellaSelezionataNC, setCartellaSelezionataNC] = useState('Tutto');
-  const [cartellaPersonalizzata, setCartellaPersonalizzata] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
   const [loadingNC, setLoadingNC] = useState(false);
   const [errorNC, setErrorNC] = useState(null);
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
   const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti');
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
@@ -148,31 +148,52 @@ export default function Home() {
     }
   }, [currentUser, activeTab]);
 
-  // ESECUZIONE RICERCA DOCUMENTI
-  const handleCercaNextcloud = async (e) => {
-    if (e) e.preventDefault();
-    if (!searchQueryNC.trim()) return;
-
+  // CARICAMENTO ISTANTANEO CONTENUTO NEXTCLOUD
+  const caricaContenutoNC = async (folderPath = '', search = '') => {
     setLoadingNC(true);
     setErrorNC(null);
-
-    const targetFolder = cartellaSelezionataNC === 'Personalizzata' 
-      ? cartellaPersonalizzata 
-      : cartellaSelezionataNC;
-
     try {
-      const res = await fetch(`/api/documenti?query=${encodeURIComponent(searchQueryNC)}&folder=${encodeURIComponent(targetFolder)}`);
+      const res = await fetch(`/api/documenti?folder=${encodeURIComponent(folderPath)}&query=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (res.ok) {
         setRisultatiNC(data.risultati || []);
+        setIsSearchMode(data.isSearch || false);
       } else {
-        setErrorNC(data.message || 'Errore durante la ricerca');
+        setErrorNC(data.message || 'Errore nel caricamento documenti');
       }
     } catch (err) {
-      setErrorNC('Impossibile contattare il server.');
+      setErrorNC('Impossibile contattare il server Nextcloud');
     } finally {
       setLoadingNC(false);
     }
+  };
+
+  // CARICAMENTO AUTOMATICO QUANDO SI APRE IL TAB DOCUMENTI O CAMBIA PERCORSO
+  useEffect(() => {
+    if (activeTab === 'documenti' && !searchQueryNC) {
+      caricaContenutoNC(pathNC, '');
+    }
+  }, [activeTab, pathNC]);
+
+  const handleCercaNextcloud = (e) => {
+    e.preventDefault();
+    if (!searchQueryNC.trim()) {
+      caricaContenutoNC(pathNC, '');
+    } else {
+      caricaContenutoNC('', searchQueryNC);
+    }
+  };
+
+  const handleApriCartella = (nuovoPercorso) => {
+    setSearchQueryNC('');
+    setPathNC(nuovoPercorso);
+  };
+
+  const handleTornaSu = () => {
+    setSearchQueryNC('');
+    const parti = pathNC.split('/').filter(Boolean);
+    parti.pop();
+    setPathNC(parti.join('/'));
   };
 
   const handleLogin = (e) => {
@@ -503,7 +524,6 @@ export default function Home() {
         ))}
       </datalist>
 
-      {/* HEADER COMPLETO CON TUTTI I TAB */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
@@ -520,7 +540,7 @@ export default function Home() {
               <span>⏳ Gestione Attività</span>
               {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-bold px-1.5 rounded-full text-[10px]">{daConfermare.length}</span>}
             </button>
-            <button onClick={() => setActiveTab('documenti')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📂 Ricerca Documenti</button>
+            <button onClick={() => setActiveTab('documenti')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'documenti' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📂 Documenti Cloud</button>
             {currentUser.ruolo === 'admin' && (
               <>
                 <button onClick={() => setActiveTab('cruscotto')} className={`px-3 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>📊 Cruscotto</button>
@@ -804,64 +824,63 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: RICERCA DOCUMENTI NEXTCLOUD CON SELETTORE CARTELLA */}
+        {/* TAB 3: ESPLORATORE FILE E CARTELLES ISTANTANEO (ARUBA NEXTCLOUD) */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-bold tracking-tight">📁 Ricerca Documenti (Nextcloud Aruba)</h2>
-                <p className="text-xs text-slate-300 mt-0.5">Cerca cartelle, disegni e schede tecniche direttamente sul tuo cloud.</p>
+                <h2 className="text-xl font-bold tracking-tight">📂 Esploratore Documenti (Nextcloud Aruba)</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Sfoglia istantaneamente file e cartelle aziendali o effettua ricerche veloci.</p>
               </div>
               <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">☁️</span>
             </div>
 
             <div className="p-6 space-y-6">
-              <form onSubmit={handleCercaNextcloud} className="space-y-4">
-                
-                {/* SELETTORE CARTELLA DI DESTINAZIONE */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Cartella di Ricerca</label>
-                    <select 
-                      value={cartellaSelezionataNC} 
-                      onChange={e => setCartellaSelezionataNC(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-sky-200"
-                    >
-                      <option value="Tutto">📁 Tutto il Cloud (Radice)</option>
-                      <option value="Commesse">📁 Cartella Commesse</option>
-                      <option value="Clienti">📁 Cartella Clienti</option>
-                      <option value="Certificati">📁 Certificati &amp; Qualifiche</option>
-                      <option value="Personalizzata">⚙️ Specifica nome cartella...</option>
-                    </select>
-                  </div>
-
-                  {cartellaSelezionataNC === 'Personalizzata' && (
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Nome Cartella / Percorso</label>
-                      <input 
-                        type="text" 
-                        value={cartellaPersonalizzata} 
-                        onChange={e => setCartellaPersonalizzata(e.target.value)} 
-                        placeholder="Es. /COMMESSE/2026" 
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
+              
+              {/* BARRA DI NAVIGAZIONE PERCORSO E RICERCA */}
+              <div className="space-y-3">
+                <form onSubmit={handleCercaNextcloud} className="flex gap-2">
                   <input 
                     type="text" 
                     value={searchQueryNC} 
                     onChange={e => setSearchQueryNC(e.target.value)} 
-                    placeholder="Digita cliente, commessa o nome file (es. ALSTOM, disegno)..." 
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200"
+                    placeholder="Filtra / Cerca un file o una commessa (es. ALSTOM)..." 
+                    className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200"
                   />
-                  <button type="submit" disabled={loadingNC} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-6 py-3 rounded-xl text-sm transition-all shadow-md">
-                    {loadingNC ? 'Ricerca in corso...' : 'Cerca 🔍'}
+                  <button type="submit" disabled={loadingNC} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all shadow-sm">
+                    {loadingNC ? '...' : 'Cerca 🔍'}
                   </button>
-                </div>
-              </form>
+                  {(searchQueryNC || isSearchMode) && (
+                    <button type="button" onClick={() => { setSearchQueryNC(''); setIsSearchMode(false); caricaContenutoNC(pathNC, ''); }} className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2.5 rounded-xl text-xs">
+                      ✖ Reset
+                    </button>
+                  )}
+                </form>
+
+                {/* BREADCRUMB NAVIGAZIONE PERCORSO */}
+                {!isSearchMode && (
+                  <div className="flex items-center justify-between bg-slate-100 px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold">
+                    <div className="flex items-center space-x-1.5 overflow-x-auto">
+                      <button onClick={() => setPathNC('')} className="text-sky-700 font-bold hover:underline">🏠 Cloud Aruba</button>
+                      {pathNC.split('/').filter(Boolean).map((part, idx, arr) => {
+                        const targetPath = arr.slice(0, idx + 1).join('/');
+                        return (
+                          <span key={targetPath} className="flex items-center space-x-1.5">
+                            <span className="text-slate-400">/</span>
+                            <button onClick={() => setPathNC(targetPath)} className="text-slate-800 hover:underline font-bold">{part}</button>
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    {pathNC && (
+                      <button onClick={handleTornaSu} className="bg-white hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all shadow-sm whitespace-nowrap">
+                        ⬆️ Cartella Superiore
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {errorNC && (
                 <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold">
@@ -869,32 +888,54 @@ export default function Home() {
                 </div>
               )}
 
-              {/* RISULTATI RICERCA */}
+              {/* LISTA FILE E CARTELLE ISTANTANEA */}
               <div className="space-y-3">
-                <h3 className="text-xs font-bold uppercase text-slate-400">Risultati Trovati ({risultatiNC.length})</h3>
-                {risultatiNC.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400 text-xs">
-                    Nessun documento visualizzato. Digita una parola chiave e clicca su Cerca.
+                <div className="flex justify-between items-center text-xs font-bold uppercase text-slate-400 border-b pb-2">
+                  <span>{isSearchMode ? `Risultati Ricerca (${risultatiNC.length})` : `Contenuto Cartella (${risultatiNC.length})`}</span>
+                  <button onClick={() => caricaContenutoNC(pathNC, searchQueryNC)} disabled={loadingNC} className="text-sky-600 hover:underline text-[11px] uppercase">
+                    {loadingNC ? '⏳ Aggiornamento...' : '🔄 Ricarica'}
+                  </button>
+                </div>
+
+                {loadingNC ? (
+                  <div className="text-center py-12 text-slate-400 text-xs font-medium">
+                    <span className="animate-spin inline-block text-xl mb-1">⏳</span>
+                    <p>Lettura file da Nextcloud in corso...</p>
+                  </div>
+                ) : risultatiNC.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-xs bg-slate-50 border border-dashed rounded-2xl">
+                    <span className="text-3xl block mb-1">📂</span>
+                    <p className="font-bold">Cartella vuota o nessun elemento trovato.</p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                     {risultatiNC.map((item, idx) => (
-                      <div key={idx} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-4 transition-all">
-                        <div className="flex items-center space-x-3 overflow-hidden">
+                      <div key={idx} className="p-3.5 hover:bg-slate-50/80 flex items-center justify-between gap-4 transition-all">
+                        <div className="flex items-center space-x-3 overflow-hidden flex-1 cursor-pointer" onClick={() => item.isFolder && handleApriCartella(item.percorso)}>
                           <span className="text-2xl">{item.isFolder ? '📁' : '📄'}</span>
                           <div className="truncate">
-                            <span className="font-bold text-slate-900 text-sm block truncate">{item.nome}</span>
+                            <span className={`font-bold text-sm block truncate ${item.isFolder ? 'text-sky-900 hover:underline' : 'text-slate-800'}`}>
+                              {item.nome}
+                            </span>
                             <span className="text-[11px] text-slate-400 block truncate">{item.percorso || '/'}</span>
                           </div>
                         </div>
-                        <a 
-                          href={item.linkWeb} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="bg-slate-100 hover:bg-sky-100 hover:text-sky-800 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 whitespace-nowrap transition-all"
-                        >
-                          Apri su Nextcloud ➔
-                        </a>
+
+                        <div className="flex items-center space-x-2">
+                          {item.isFolder && (
+                            <button onClick={() => handleApriCartella(item.percorso)} className="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">
+                              Apri ➔
+                            </button>
+                          )}
+                          <a 
+                            href={item.linkWeb} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 whitespace-nowrap transition-all flex items-center space-x-1"
+                          >
+                            <span>☁️ Su Aruba</span>
+                          </a>
+                        </div>
                       </div>
                     ))}
                   </div>
