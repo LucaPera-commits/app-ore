@@ -168,6 +168,23 @@ function getParentPath(path) {
   return parts.join('/');
 }
 
+// VISUALIZZATORE UNIFICATO PER DOCUMENTI (PDF, IMMAGINI, WORD, EXCEL, PPT)
+function handlePreviewFile(item) {
+  if (!item || !item.percorso) return;
+  const path = String(item.percorso);
+  const ext = path.split('.').pop().toLowerCase();
+  const fileUrl = `${window.location.origin}/api/download?path=${encodeURIComponent(path)}`;
+
+  // Se è un file Microsoft Word, Excel o PowerPoint, usa il visore Microsoft Web
+  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+    const msViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
+    window.open(msViewerUrl, '_blank');
+  } else {
+    // Altrimenti (PDF, JPG, PNG, TXT...) apri direttamente la scheda
+    window.open(fileUrl, '_blank');
+  }
+}
+
 function getGiorniLavorativiMese(annoMeseStr) {
   if (!annoMeseStr) return 22;
   try {
@@ -2061,7 +2078,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON PULSANTI VISUALIZZA / SCARICA VISIBILI E FISSI */}
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON PULSANTI VISUALIZZA / SCARICA SUPPORTO EXCEL E WORD */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -2107,7 +2124,7 @@ function HomeContent() {
                 </form>
               </div>
 
-              {/* ELENCO FILE CON GARANZIA DI VISIBILITÀ PULSANTI */}
+              {/* ELENCO FILE CON PULSANTI VISUALIZZA (SUPPORTO OFFICE) E SCARICA */}
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                 {safeRisultatiNC.map((item, idx) => {
                   const isDir = item?.isFolder === true || item?.isFolder === 'true' || item?.type === 'dir' || item?.type === 'folder';
@@ -2119,7 +2136,7 @@ function HomeContent() {
                         if (isDir) {
                           handleApriCartella(item.percorso);
                         } else {
-                          window.open(`/api/download?path=${encodeURIComponent(item?.percorso || '')}`, '_blank');
+                          handlePreviewFile(item);
                         }
                       }}
                       className="p-3.5 hover:bg-sky-50/80 flex items-center justify-between gap-3 cursor-pointer transition-all group"
@@ -2131,14 +2148,13 @@ function HomeContent() {
 
                       {!isDir && (
                         <div className="flex items-center space-x-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                          <a 
-                            href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}`} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="bg-sky-100 text-sky-800 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs"
+                          <button 
+                            type="button"
+                            onClick={() => handlePreviewFile(item)}
+                            className="bg-sky-100 text-sky-800 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
                           >
                             👁️ Visualizza
-                          </a>
+                          </button>
                           <a 
                             href={`/api/download?path=${encodeURIComponent(item?.percorso || '')}&forceDownload=true`} 
                             className="bg-slate-100 text-slate-700 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs"
