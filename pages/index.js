@@ -240,9 +240,8 @@ function HomeContent() {
   const [errorNC, setErrorNC] = useState(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
 
-  // --- STATO ANTEPRIMA DOCUMENTI & MOTORE RENDERING ---
+  // --- STATO ANTEPRIMA DOCUMENTI ---
   const [modalDocumento, setModalDocumento] = useState(null);
-  const [viewerEngine, setViewerEngine] = useState('google');
 
   // --- STATI REPORTISTICA E FERIE ---
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
@@ -338,6 +337,16 @@ function HomeContent() {
       setFormData(prev => ({ ...prev, dipendente: currentUser.nome }));
     }
   }, [currentUser]);
+
+  // GESTIONE AUTOMATICA DELLO STATO (CONSUNTIVO VS PIANIFICATO) IN BASE ALLA DATA SELEZIONATA
+  useEffect(() => {
+    const today = getTodayStr();
+    if (formData.data > today) {
+      setFormData(prev => ({ ...prev, stato: 'pianificato', ore_straordinario: 0 }));
+    } else {
+      setFormData(prev => ({ ...prev, stato: 'consuntivo' }));
+    }
+  }, [formData.data]);
 
   useEffect(() => {
     if (categoriaForm === 'ferie') {
@@ -1400,7 +1409,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 1: INSERIMENTO ORE */}
+        {/* TAB 1: INSERIMENTO ORE CON STATO AUTOMATICO IN BASE ALLA DATA */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -1421,9 +1430,25 @@ function HomeContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200">
-                <button type="button" onClick={() => setFormData({ ...formData, stato: 'consuntivo' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'consuntivo' ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>✅ Consuntivo (Svolto)</button>
-                <button type="button" onClick={() => setFormData({ ...formData, stato: 'pianificato', ore_straordinario: 0 })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>⏳ Pianificato (Futuro)</button>
+              {/* INDICATORE DI STATO AUTOMATICO IN BASE ALLA DATA */}
+              <div className="p-3.5 rounded-2xl border flex items-center justify-between transition-all font-bold text-xs shadow-2xs">
+                {formData.data > todayStr ? (
+                  <div className="flex items-center space-x-2 text-amber-800 bg-amber-50 p-2.5 rounded-xl w-full border border-amber-200">
+                    <span className="text-lg">⏳</span>
+                    <div>
+                      <span className="block font-extrabold uppercase text-[10px] text-amber-900">Stato Impostato: Pianificato per il Futuro</span>
+                      <span className="text-[11px] font-normal text-amber-800 leading-tight block">L'attività verrà salvata nei compiti in programma e andrà consuntivata quando sarà stata svolta.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2 text-emerald-800 bg-emerald-50 p-2.5 rounded-xl w-full border border-emerald-200">
+                    <span className="text-lg">✅</span>
+                    <div>
+                      <span className="block font-extrabold uppercase text-[10px] text-emerald-900">Stato Impostato: Consuntivo Diretto</span>
+                      <span className="text-[11px] font-normal text-emerald-800 leading-tight block">Stai registrando direttamente un intervento o un'assenza già svolta oggi o in data passata.</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2487,7 +2512,7 @@ function HomeContent() {
 
         let iframeSrc = rawFileUrl;
         if (isOffice) {
-          iframeSrc = viewerEngine === 'ms' ? msViewerUrl : googleViewerUrl;
+          iframeSrc = googleViewerUrl;
         }
 
         return (
@@ -2518,31 +2543,6 @@ function HomeContent() {
                   </button>
                 </div>
               </div>
-
-              {/* Sotto-Header con controlli per documenti Office */}
-              {isOffice && (
-                <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-slate-600 font-bold text-[11px]">Motore di rendering:</span>
-                    <button 
-                      onClick={() => setViewerEngine('google')} 
-                      className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${viewerEngine !== 'ms' ? 'bg-sky-600 text-white shadow-xs' : 'bg-white text-slate-700 border border-slate-200'}`}
-                    >
-                      🌐 Google Docs
-                    </button>
-                    <button 
-                      onClick={() => setViewerEngine('ms')} 
-                      className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${viewerEngine === 'ms' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 border border-slate-200'}`}
-                    >
-                      🖥️ MS Office Web
-                    </button>
-                  </div>
-
-                  <div className="text-[11px] text-slate-500 italic">
-                    💡 Leggi i file Word ed Excel direttamente online senza scaricarli sul PC
-                  </div>
-                </div>
-              )}
 
               {/* Corpo Modale / Viewer */}
               <div className="flex-1 bg-slate-200/50 p-2 overflow-hidden flex items-center justify-center relative">
@@ -2629,4 +2629,3 @@ export default function App() {
       <HomeContent />
     </ErrorBoundary>
   );
-}
