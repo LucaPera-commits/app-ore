@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
-// --- CONFIGURAZIONE UTENTI E PASSWORD ---
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
   'giampaolo': { nome: 'Giampaolo Lauro', pass: '!giampaolo123?', ruolo: 'user' },
@@ -10,7 +9,6 @@ const UTENTI = {
   'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
 };
 
-// --- DATABASE CLIENTE ---
 const LISTA_CLIENTI = [
   '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 
   'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
@@ -63,8 +61,7 @@ export default function Home() {
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
   
-  // DOPPIO FILTRO
-  const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti'); // Tutti, Assegnate, Da Assegnare
+  const [filtroAssegnazione, setFiltroAssegnazione] = useState('Tutti');
   const [filtroDipendente, setFiltroDipendente] = useState('Tutti');
 
   const [filtroMese, setFiltroMese] = useState(getCurrentMonthStr());
@@ -286,7 +283,7 @@ export default function Home() {
     );
   }
 
-  // --- LOGICA FILTRI ---
+  // --- COMPARAZIONE FILTRI ---
   const matchAssegnazione = (dipDb, filtroAss) => {
     if (!filtroAss || filtroAss === 'Tutti') return true;
     const isDaAssegnare = !dipDb || dipDb === 'Da Assegnare' || dipDb === '';
@@ -312,7 +309,6 @@ export default function Home() {
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
-  // Applicazione combinata dei due filtri
   const attivitaPianificateAttive = storicoCompleto.filter(p => {
     const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
     if (isChiuso) return false;
@@ -537,7 +533,6 @@ export default function Home() {
             <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
               {currentUser.ruolo === 'admin' ? (
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* Filtro Stato Assegnazione */}
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-bold text-slate-500 uppercase">Stato:</span>
                     <select 
@@ -551,7 +546,6 @@ export default function Home() {
                     </select>
                   </div>
 
-                  {/* Filtro Dipendente */}
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-bold text-slate-500 uppercase">Dipendente:</span>
                     <select 
