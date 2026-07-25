@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
+// --- CONFIGURAZIONE UTENTI E PASSWORD ---
 const UTENTI = {
   'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
   'giampaolo': { nome: 'Giampaolo Lauro', pass: '!giampaolo123?', ruolo: 'user' },
@@ -9,6 +10,7 @@ const UTENTI = {
   'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
 };
 
+// --- DATABASE CLIENTE ---
 const LISTA_CLIENTI = [
   '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 
   'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
@@ -33,7 +35,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState('nuovo');
+  const [activeTab, setActiveTab] = useState('programmati');
 
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getCurrentMonthStr = () => new Date().toISOString().slice(0, 7);
@@ -47,8 +49,10 @@ export default function Home() {
   };
 
   const [formData, setFormData] = useState({
-    dipendente: '', cliente: '', progetto: '', data: getTodayStr(),
-    ore: 8, ore_backoffice: 0, ore_trasferta: 0, note: '', stato: 'consuntivo'
+    dipendente: '',
+    cliente: '', progetto: '', data: getTodayStr(),
+    ore: 8, ore_backoffice: 0, ore_trasferta: 0,
+    note: '', stato: 'consuntivo'
   });
 
   const [loading, setLoading] = useState(false);
@@ -78,6 +82,13 @@ export default function Home() {
     }
   }, [currentUser]);
 
+  useEffect(() => {
+    const today = getTodayStr();
+    if (formData.stato === 'pianificato' && formData.data <= today) {
+      setFormData(prev => ({ ...prev, data: getTomorrowStr() }));
+    }
+  }, [formData.stato, formData.data]);
+
   const fetchProgrammati = async () => {
     setLoadingProgrammati(true);
     try {
@@ -86,7 +97,7 @@ export default function Home() {
         const dati = await res.json();
         setStoricoCompleto(dati);
       }
-    } catch (e) { console.error(e); } 
+    } catch (e) { console.error("Errore fetch:", e); } 
     finally { setLoadingProgrammati(false); }
   };
 
@@ -110,18 +121,22 @@ export default function Home() {
     setCurrentUser(null);
     localStorage.removeItem('bw_user');
     setLoginForm({ username: '', password: '' });
+    setShowPassword(false);
   };
 
   const handleSyncCalendar = async () => {
-    if (currentUser?.ruolo !== 'admin') return alert("Solo admin");
+    if (currentUser?.ruolo !== 'admin') {
+      alert("Solo l'amministratore può avviare la sincronizzazione.");
+      return;
+    }
     setLoadingProgrammati(true);
     try {
       const res = await fetch('/api/sync', { method: 'POST' });
       const data = await res.json();
-      alert(data.message || JSON.stringify(data));
+      alert(data.message || "Errore sconosciuto dal server.");
       fetchProgrammati();
     } catch (e) {
-      alert("Errore sincronizzazione.");
+      alert("Errore di rete durante la connessione a Google Calendar.");
     } finally {
       setLoadingProgrammati(false);
     }
@@ -135,17 +150,31 @@ export default function Home() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: item.id, calendar_event_id: item.calendar_event_id, dipendente: nuovoDipendente, chiudi_consuntivo: false
+          id: item.id,
+          calendar_event_id: item.calendar_event_id,
+          dipendente: nuovoDipendente,
+          chiudi_consuntivo: false
         })
       });
-      if (res.ok) fetchProgrammati();
-    } catch (e) { alert("Errore"); } 
-    finally { setLoadingProgrammati(false); }
+      if (res.ok) {
+        fetchProgrammati(); 
+      } else {
+        alert("Errore durante la riassegnazione.");
+        setLoadingProgrammati(false);
+      }
+    } catch (e) {
+      alert("Errore di rete durante la riassegnazione.");
+      setLoadingProgrammati(false);
+    } 
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
+    if (formData.stato === 'pianificato' && formData.data <= getTodayStr()) {
+      setStatusMessage({ type: 'error', text: 'Gli eventi pianificati devono essere registrati per date future.' });
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch('/api/salva', {
@@ -155,7 +184,7 @@ export default function Home() {
       const data = await res.json();
       if (res.ok) {
         setStatusMessage({ type: 'success', text: data.message });
-        setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0 }));
+        setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, data: formData.stato === 'pianificato' ? getTomorrowStr() : getTodayStr() }));
         fetchProgrammati();
       } else { setStatusMessage({ type: 'error', text: data.message }); }
     } catch (err) { setStatusMessage({ type: 'error', text: 'Errore server.' }); } 
@@ -169,9 +198,13 @@ export default function Home() {
       const res = await fetch('/api/gestisci', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
-          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive, ore_trasferta: oreTrasfertaEffettive,
-          dipendente: dipendenteEffettivo || modalItem.dipendente, chiudi_consuntivo: true
+          id: modalItem.id, 
+          calendar_event_id: modalItem.calendar_event_id,
+          ore_effettive: oreEffettive, 
+          ore_backoffice: oreBackofficeEffettive, 
+          ore_trasferta: oreTrasfertaEffettive,
+          dipendente: dipendenteEffettivo || modalItem.dipendente,
+          chiudi_consuntivo: true
         })
       });
       if (res.ok) { setModalItem(null); fetchProgrammati(); }
@@ -180,7 +213,7 @@ export default function Home() {
   };
 
   const handleElimina = async (item) => {
-    if (!confirm(`Annullare attività per "${item.cliente}"?`)) return;
+    if (!confirm(`Vuoi annullare l'attività per "${item.cliente}"?`)) return;
     setLoading(true);
     try {
       const res = await fetch('/api/gestisci', {
@@ -200,177 +233,650 @@ export default function Home() {
     setDipendenteEffettivo(item.dipendente === 'Da Assegnare' ? currentUser?.nome : item.dipendente);
   };
 
+  const exportCSV = (datiDaEsportare) => {
+    let csv = "Data;Dipendente;Cliente;Commessa / Progetto;Ore Cantiere;Ore Backoffice;Ore Trasferta;Totale Ore;Note\n";
+    datiDaEsportare.forEach(row => {
+      const tot = Number(row.ore || 0) + Number(row.ore_backoffice || 0) + Number(row.ore_trasferta || 0);
+      csv += `"${row.data}";"${row.dipendente}";"${row.cliente}";"${row.progetto}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${tot}";"${(row.note || '').replace(/"/g, '""')}"\n`;
+    });
+    
+    const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Report_Ore_${filtroMese}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full space-y-4">
-          <h2 className="text-xl font-bold text-center">bw solutions - Login</h2>
-          <form onSubmit={handleLogin} className="space-y-3">
-            <input type="text" required placeholder="Utente" value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-3 border rounded-xl" />
-            <input type={showPassword ? "text" : "password"} required placeholder="Password" value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-3 border rounded-xl" />
-            <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">Accedi</button>
-          </form>
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-sky-50 flex flex-col items-center justify-center p-4 font-sans text-slate-800">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-200/80 space-y-6">
+            <div className="flex flex-col items-center text-center space-y-3 pb-5 border-b border-slate-100">
+              <div className="flex items-center justify-center space-x-3">
+                <div className="bg-sky-600 text-white font-extrabold text-xl px-3.5 py-1.5 rounded-xl shadow-md tracking-wider">bw</div>
+                <div className="text-left">
+                  <span className="text-xl font-bold text-slate-900 tracking-tight block leading-tight">bw solutions</span>
+                  <span className="text-[11px] text-emerald-600 font-bold tracking-wide uppercase block">Zo&amp;annA S.R.L.</span>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">Gestione Ore &amp; Attività Lavorative</p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Utente</label>
+                <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium" placeholder="Inserisci nome utente" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Password</label>
+                <div className="relative">
+                  <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all font-medium pr-12" placeholder="Inserisci password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-base focus:outline-none p-1 transition-all">
+                    {showPassword ? '👁️' : '🙈'}
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all text-sm mt-2">Accedi al Portale ➔</button>
+            </form>
+          </div>
+          <p className="text-center text-[11px] text-slate-400 mt-6 font-medium">© {new Date().getFullYear()} bw solutions • Powered by Zo&amp;annA S.R.L.</p>
         </div>
       </div>
     );
   }
 
-  // --- LOGICA DI CONFRONTO TOLLERANTE ---
-  const matchFiltro = (dipDb, filtroSelezionato) => {
-    if (!filtroSelezionato || filtroSelezionato === 'Tutti') return true;
-    if (!dipDb) return filtroSelezionato === 'Da Assegnare';
-    const db = dipDb.toLowerCase().trim();
-    const flt = filtroSelezionato.toLowerCase().trim();
-    if (flt === 'da assegnare') return db === 'da assegnare' || db === '';
-    return db.includes(flt.split(' ')[0]) || flt.includes(db.split(' ')[0]);
+  // --- LOGICA DI CONFRONTO NOMI INFALLIBILE ---
+  const matchNomeDipendente = (nomeDb, filtro) => {
+    if (!filtro || filtro === 'Tutti') return true; 
+    const db = nomeDb ? nomeDb.toLowerCase().trim() : 'da assegnare';
+    const flt = filtro.toLowerCase().trim();
+
+    if (db === flt) return true;
+    if (flt === 'da assegnare' && (db === '' || db === 'da assegnare' || db === 'null')) return true;
+
+    const partiFiltro = flt.split(' ').filter(Boolean);
+    const partiDb = db.split(' ').filter(Boolean);
+
+    return partiFiltro[0] === partiDb[0];
   };
 
-  const targetDip = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
+  const isAlessandro = formData.dipendente === 'Alessandro Ciule';
+  const targetDipendente = currentUser.ruolo === 'admin' ? filtroDipendente : currentUser.nome;
 
-  // SEPARAZIONE ATTIVITÀ
-  const aperte = storicoCompleto.filter(item => item.stato !== 'consuntivo' && item.stato !== 'annullato' && matchFiltro(item.dipendente, targetDip));
-  const archiviate = storicoCompleto.filter(item => (item.stato === 'consuntivo' || item.stato === 'annullato') && matchFiltro(item.dipendente, targetDip));
+  // Filtriamo gli eventi APERTI (tutto tranne i consuntivati e annullati)
+  const attivitaPianificateAttive = storicoCompleto.filter(p => {
+    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
+    if (isChiuso) return false;
+    return matchNomeDipendente(p.dipendente, targetDipendente);
+  });
+
+  // Filtriamo gli eventi CHIUSI
+  const attivitaArchiviate = storicoCompleto.filter(p => {
+    const isChiuso = p.stato === 'consuntivo' || p.stato === 'annullato';
+    if (!isChiuso) return false;
+    return matchNomeDipendente(p.dipendente, targetDipendente);
+  });
+
+  const daConfermare = attivitaPianificateAttive.filter(p => p.data <= getTodayStr());
+  const ieriStr = getYesterdayStr();
+  const attivitaInScadenzaRitardo = attivitaPianificateAttive.filter(p => p.data < ieriStr);
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
 
-  return (
-    <div className="min-h-screen bg-slate-100 font-sans pb-12">
-      <Head><title>Gestionale Ore | bw solutions</title></Head>
+  const tuttiEventiMese = storicoCompleto.filter(item => {
+    const isInMese = item.data && item.data.startsWith(filtroMese);
+    const matchDip = matchNomeDipendente(item.dipendente, filtroCruscottoDip);
+    const matchCliente = filtroCruscottoCliente === 'Tutti' || item.cliente === filtroCruscottoCliente;
+    return isInMese && matchDip && matchCliente;
+  });
 
-      <header className="bg-white border-b sticky top-0 z-40 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="font-bold text-lg text-slate-900">bw solutions</div>
-          <nav className="flex space-x-2 text-xs font-bold">
-            <button onClick={() => setActiveTab('nuovo')} className={`px-3 py-2 rounded-xl ${activeTab === 'nuovo' ? 'bg-slate-900 text-white' : 'bg-slate-100'}`}>📝 Inserisci</button>
-            <button onClick={() => setActiveTab('programmati')} className={`px-3 py-2 rounded-xl ${activeTab === 'programmati' ? 'bg-slate-900 text-white' : 'bg-slate-100'}`}>⏳ Gestione Attività</button>
-            {currentUser.ruolo === 'admin' && <a href="/preventivi" className="px-3 py-2 rounded-xl bg-sky-100 text-sky-800">💰 Preventivi</a>}
+  const consuntiviMese = tuttiEventiMese.filter(item => item.stato === 'consuntivo');
+
+  const totMeseCantiere = consuntiviMese.reduce((a, b) => a + Number(b.ore || 0), 0);
+  const totMeseBackoffice = consuntiviMese.reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+  const totMeseTrasferta = consuntiviMese.reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+  const totMeseComplessivo = totMeseCantiere + totMeseBackoffice + totMeseTrasferta;
+
+  // --- COMPONENTE PER RENDERIZZARE LA SINGOLA ATTIVITÀ ---
+  const renderRigaAttivita = (item, colorTheme) => (
+    <div key={item.id} className={`p-3 bg-${colorTheme}-50/30 border border-${colorTheme}-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className={`text-[10px] font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200`}>
+            {item.data === getTodayStr() ? 'Oggi' : item.data}
+          </span>
+          <span className="font-bold text-slate-900 text-sm truncate">{item.cliente || "Senza Cliente"}</span>
+        </div>
+        <div className="text-xs text-slate-600 truncate max-w-xs">{item.progetto || "Nessun dettaglio"}</div>
+        
+        {currentUser.ruolo === 'admin' && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Assegnato a:</span>
+            <select 
+              value={item.dipendente || 'Da Assegnare'} 
+              onChange={e => handleQuickReassign(item, e.target.value)}
+              className={`text-xs font-bold px-2 py-0.5 rounded border outline-none cursor-pointer ${
+                (!item.dipendente || item.dipendente === 'Da Assegnare') ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <option value="Da Assegnare">❓ Da Assegnare</option>
+              {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="flex space-x-2 w-full md:w-auto mt-2 md:mt-0">
+        <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 whitespace-nowrap">✅ Conferma</button>
+        <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-lg hover:bg-rose-50 whitespace-nowrap">🗑️ Annulla</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-12">
+      <Head>
+        <title>Gestionale Ore | bw solutions</title>
+      </Head>
+
+      <datalist id="lista-aziende">
+        {LISTA_CLIENTI.map((azienda, index) => (
+          <option key={index} value={azienda} />
+        ))}
+      </datalist>
+
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center space-x-3">
+            <div className="bg-sky-600 text-white font-bold text-base px-2.5 py-1 rounded-lg tracking-wider shadow-sm">bw</div>
+            <div>
+              <span className="font-bold text-base text-slate-900 tracking-tight block leading-none">bw solutions</span>
+              <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block mt-0.5">Zo&amp;annA S.R.L.</span>
+            </div>
+          </div>
+          
+          <nav className="flex space-x-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-semibold overflow-x-auto">
+            <button onClick={() => setActiveTab('nuovo')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📝 Nuovo Inserimento</button>
+            <button onClick={() => setActiveTab('programmati')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${activeTab === 'programmati' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+              <span>⏳ Gestione Attività</span>
+              {daConfermare.length > 0 && <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full text-[10px]">{daConfermare.length}</span>}
+            </button>
+            {currentUser.ruolo === 'admin' && (
+              <>
+                <button onClick={() => setActiveTab('cruscotto')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'cruscotto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>📊 Cruscotto Mensile</button>
+                <button onClick={() => setActiveTab('report')} className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap ${activeTab === 'report' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>⚡ Performance</button>
+                <a href="/preventivi" className="px-3.5 py-2 ml-1 rounded-xl transition-all bg-sky-100 text-sky-800 hover:bg-sky-200 border border-sky-200 font-bold flex items-center space-x-1 shadow-sm whitespace-nowrap">
+                  <span>💰 Preventivi</span>
+                </a>
+              </>
+            )}
           </nav>
-          <div className="text-xs flex items-center gap-2">
-            <span className="font-bold">{currentUser.nome}</span>
-            <button onClick={handleLogout} className="text-rose-600 bg-rose-50 px-2 py-1 rounded">Esci</button>
+
+          <div className="flex items-center space-x-3 text-xs bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+            <span className="text-slate-700 font-semibold">👤 {currentUser.nome}</span>
+            <button onClick={handleLogout} className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-0.5 rounded-lg transition-all font-bold border border-rose-200">Esci</button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      {attivitaInScadenzaRitardo.length > 0 && (
+        <div className="bg-rose-600 text-white text-xs font-semibold px-4 py-2.5 shadow-sm">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="text-base">🚨</span>
+              <span><strong>SOLLECITO CONSUNTIVAZIONE:</strong> Ci sono <strong>{attivitaInScadenzaRitardo.length}</strong> attività concluse da oltre 24 ore in attesa di conferma!</span>
+            </div>
+            <button onClick={() => setActiveTab('programmati')} className="bg-white text-rose-700 px-3 py-1 rounded-xl text-xs font-bold shadow hover:bg-rose-50 transition-all">Vedi Attività ➔</button>
+          </div>
+        </div>
+      )}
 
+      <main className="max-w-4xl mx-auto px-4 py-8">
+
+        {/* TAB 1: NUOVO INSERIMENTO */}
         {activeTab === 'nuovo' && (
-          <div className="bg-white rounded-3xl p-6 shadow-md space-y-4">
-            <h2 className="text-lg font-bold border-b pb-2">Nuova Registrazione</h2>
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => setFormData({ ...formData, stato: 'consuntivo' })} className={`p-2 rounded-xl font-bold border ${formData.stato === 'consuntivo' ? 'bg-emerald-600 text-white' : 'bg-slate-50'}`}>✅ Consuntivo</button>
-                <button type="button" onClick={() => setFormData({ ...formData, stato: 'pianificato' })} className={`p-2 rounded-xl font-bold border ${formData.stato === 'pianificato' ? 'bg-amber-500 text-white' : 'bg-slate-50'}`}>⏳ Pianificato</button>
+          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+            <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Nuova Registrazione</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Inserisci le ore lavorate o pianifica un evento futuro.</p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <span className="text-2xl bg-white/10 p-2.5 rounded-2xl">📅</span>
+            </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200">
+                <button type="button" onClick={() => setFormData({ ...formData, stato: 'consuntivo' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'consuntivo' ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>✅ Consuntivo (Ore Svolte)</button>
+                <button type="button" onClick={() => setFormData({ ...formData, stato: 'pianificato' })} className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 border-amber-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600'}`}>⏳ Pianificato (Evento Futuro)</button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold mb-1">Tecnico</label>
-                  <select value={formData.dipendente} onChange={e => setFormData({...formData, dipendente: e.target.value})} className="w-full p-2 border rounded-xl font-bold">
-                    <option value="Da Assegnare">❓ Da Assegnare</option>
-                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Dipendente / Tecnico</label>
+                  {currentUser.ruolo === 'admin' ? (
+                    <select value={formData.dipendente} onChange={e => setFormData({...formData, dipendente: e.target.value})} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-sm">
+                      <option value="Da Assegnare">❓ Da Assegnare</option>
+                      {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" readOnly value={formData.dipendente} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-medium text-sm cursor-not-allowed" />
+                  )}
                 </div>
                 <div>
-                  <label className="block font-bold mb-1">Data</label>
-                  <input type="date" value={formData.data} onChange={e => setFormData({...formData, data: e.target.value})} className="w-full p-2 border rounded-xl font-bold" />
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Data Attività</label>
+                  <input type="date" required value={formData.data} min={formData.stato === 'pianificato' ? getTomorrowStr() : undefined} max={formData.stato === 'consuntivo' ? getTodayStr() : undefined} onChange={(e) => setFormData({ ...formData, data: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-sm" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block font-bold mb-1">Cliente</label><input type="text" required value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} className="w-full p-2 border rounded-xl" /></div>
-                <div><label className="block font-bold mb-1">Progetto</label><input type="text" required value={formData.progetto} onChange={e => setFormData({...formData, progetto: e.target.value})} className="w-full p-2 border rounded-xl" /></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Cliente (Digita per cercare)</label>
+                  <input type="text" list="lista-aziende" placeholder="Es. ERREPI s.r.l" required value={formData.cliente} onChange={e => setFormData({ ...formData, cliente: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:ring-2 focus:ring-sky-200 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Progetto / Commessa</label>
+                  <input type="text" placeholder="Es. Qualifiche Saldatori" required value={formData.progetto} onChange={e => setFormData({ ...formData, progetto: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none" />
+                </div>
               </div>
-              <div><label className="block font-bold mb-1">Ore Lavorate</label><input type="number" step="0.5" value={formData.ore} onChange={e => setFormData({...formData, ore: Number(e.target.value)})} className="w-full p-2 border rounded-xl font-bold" /></div>
-              <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white p-3 rounded-xl font-bold text-sm">Salva Attività 🚀</button>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Ore {formData.stato === 'pianificato' ? 'Stimate' : 'Lavorate'}</label>
+                  <input type="number" step="0.5" min="0" required value={formData.ore} onChange={e => setFormData({ ...formData, ore: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-bold text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-sky-600 mb-1.5">Ore Backoffice</label>
+                  <input type="number" step="0.5" min="0" value={formData.ore_backoffice} onChange={e => setFormData({ ...formData, ore_backoffice: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50/50 font-bold text-sm text-sky-800" />
+                </div>
+                {isAlessandro && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-purple-600 mb-1.5">🚗 Ore Trasferta</label>
+                    <input type="number" step="0.5" min="0" value={formData.ore_trasferta} onChange={e => setFormData({ ...formData, ore_trasferta: parseFloat(e.target.value) })} className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 bg-purple-50/50 font-bold text-sm text-purple-800" />
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Note &amp; Dettagli</label>
+                <textarea rows={2} placeholder="Note o descrizioni aggiuntive..." value={formData.note} onChange={e => setFormData({ ...formData, note: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none"></textarea>
+              </div>
+              {statusMessage && <div className={`p-4 rounded-xl text-sm font-semibold ${statusMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>{statusMessage.text}</div>}
+              <button type="submit" disabled={loading} className={`w-full text-white font-bold py-3.5 rounded-xl shadow-md transition-all ${formData.stato === 'pianificato' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-slate-900 hover:bg-slate-800'}`}>
+                {loading ? 'Salvataggio in corso...' : (formData.stato === 'pianificato' ? 'Pianifica Evento ⏳' : 'Salva Consuntivo 🚀')}
+              </button>
             </form>
           </div>
         )}
 
+        {/* TAB 2: GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
-          <div className="bg-white rounded-3xl p-6 shadow-md space-y-6">
-            <div className="flex flex-wrap items-center justify-between border-b pb-4 gap-2">
-              <h2 className="text-lg font-bold">Gestione Attività</h2>
-              <div className="flex items-center gap-2 text-xs">
-                {currentUser.ruolo === 'admin' && (
-                  <select value={filtroDipendente} onChange={e => setFiltroDipendente(e.target.value)} className="p-2 border rounded-xl font-bold">
-                    {['Tutti', 'Da Assegnare', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                )}
-                <button onClick={handleSyncCalendar} className="bg-indigo-600 text-white px-3 py-2 rounded-xl font-bold">⬇️ Sincronizza Calendar</button>
-                <button onClick={fetchProgrammati} className="bg-slate-100 px-3 py-2 rounded-xl font-bold">🔄 Aggiorna</button>
+          <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+            <div className="bg-slate-900 p-6 flex items-center justify-between text-white">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Gestione Attività</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Visualizza e gestisci le attività raggruppate per dipendente.</p>
               </div>
             </div>
 
-            {/* 🛠️ BARRA DIAGNOSTICA DEBUG (DA RIMUOVERE APPENA VERIFICATO) */}
-            <div className="bg-slate-900 text-white p-3 rounded-2xl text-[11px] font-mono flex flex-wrap justify-between gap-2">
-              <span>📊 TOTALE RIGHE NEL DB: <strong>{storicoCompleto.length}</strong></span>
-              <span>⏳ APERTE MOSTRATE: <strong>{aperte.length}</strong></span>
-              <span>🗂️ ARCHIVIATE MOSTRATE: <strong>{archiviate.length}</strong></span>
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+              {currentUser.ruolo === 'admin' ? (
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase">Filtra:</span>
+                  <select value={filtroDipendente} onChange={e => setFiltroDipendente(e.target.value)} className="bg-white text-slate-800 text-xs px-3 py-1.5 rounded-xl border border-slate-200 font-bold outline-none focus:ring-2 focus:ring-sky-200">
+                    {['Tutti', 'Da Assegnare', ...listaDipendenti].map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              ) : <div></div>}
+
+              <div className="flex items-center space-x-2">
+                {currentUser.ruolo === 'admin' && (
+                  <button onClick={handleSyncCalendar} disabled={loadingProgrammati} className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold transition-all shadow-sm disabled:opacity-50">
+                    {loadingProgrammati ? '⏳ Sincronizzazione...' : '⬇️ Sincronizza Calendar'}
+                  </button>
+                )}
+                <button onClick={fetchProgrammati} disabled={loadingProgrammati} className="text-xs bg-white text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 font-bold transition-all shadow-sm disabled:opacity-50">
+                  {loadingProgrammati ? '⏳' : '🔄 Aggiorna'}
+                </button>
+              </div>
             </div>
 
-            {/* VISTA ATTIVITÀ APERTE */}
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase text-slate-400">Attività In Corso / In Attesa ({aperte.length})</h3>
-              {aperte.length === 0 ? (
-                <p className="text-center py-6 text-slate-400 text-xs">Nessuna attività in corso trovata per questo filtro.</p>
+            <div className="p-6">
+              {loadingProgrammati ? (
+                <p className="text-center text-slate-500 py-8 text-sm">Caricamento in corso, attendere...</p>
+              ) : attivitaPianificateAttive.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <span className="text-4xl block mb-2">🎉</span>
+                  <p className="text-sm font-medium">Nessuna attività in sospeso o da assegnare per questo filtro!</p>
+                  <p className="text-xs text-slate-400 mt-1">Le attività completate si trovano nell'Archivio Storico in basso.</p>
+                </div>
               ) : (
-                aperte.map(item => (
-                  <div key={item.id} className="p-3 bg-slate-50 border rounded-2xl flex flex-wrap justify-between items-center gap-2 text-xs">
-                    <div>
-                      <span className="font-bold text-sky-700 mr-2">{item.data}</span>
-                      <strong className="text-slate-900">{item.cliente}</strong> - {item.progetto}
-                      {currentUser.ruolo === 'admin' && (
-                        <div className="mt-1 flex items-center gap-1">
-                          <span className="text-[10px] text-slate-400">Assegnato:</span>
-                          <select value={item.dipendente || 'Da Assegnare'} onChange={e => handleQuickReassign(item, e.target.value)} className="p-1 border rounded font-bold text-[11px]">
-                            <option value="Da Assegnare">❓ Da Assegnare</option>
-                            {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
-                          </select>
+                <div className="space-y-8">
+                  {/* RAGGRUPPAMENTO DINAMICO */}
+                  {Array.from(new Set(attivitaPianificateAttive.map(e => e.dipendente || 'Da Assegnare'))).map(dipNome => {
+                    const attivitaDip = attivitaPianificateAttive.filter(e => (e.dipendente || 'Da Assegnare') === dipNome);
+                    const inRitardo = attivitaDip.filter(e => e.data < getTodayStr());
+                    const oggi = attivitaDip.filter(e => e.data === getTodayStr());
+                    const future = attivitaDip.filter(e => e.data > getTodayStr());
+
+                    return (
+                      <div key={dipNome} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                        <div className="bg-slate-100 px-4 py-3 flex items-center justify-between border-b border-slate-200">
+                          <h3 className={`font-bold text-base flex items-center gap-2 ${dipNome === 'Da Assegnare' ? 'text-indigo-600' : 'text-slate-800'}`}>
+                            <span>{dipNome === 'Da Assegnare' ? '❓' : '👤'}</span> {dipNome}
+                          </h3>
+                          <span className="text-xs font-bold text-slate-500 bg-white px-2.5 py-0.5 rounded-lg border">{attivitaDip.length} attive</span>
                         </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => openEditModal(item)} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold">✅ Conferma</button>
-                      <button onClick={() => handleElimina(item)} className="bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg font-bold">🗑️ Annulla</button>
-                    </div>
-                  </div>
-                ))
+
+                        <div className="p-4 space-y-4 bg-white">
+                          {inRitardo.length > 0 && (
+                            <div>
+                              <h4 className="text-[10px] font-bold text-rose-600 uppercase mb-2 border-b border-rose-100 pb-1">🚨 Da Consuntivare (Scadute)</h4>
+                              <div className="space-y-2">
+                                {inRitardo.map(item => renderRigaAttivita(item, 'rose'))}
+                              </div>
+                            </div>
+                          )}
+
+                          {oggi.length > 0 && (
+                            <div>
+                              <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2 border-b border-amber-100 pb-1">⏳ In programma Oggi</h4>
+                              <div className="space-y-2">
+                                {oggi.map(item => renderRigaAttivita(item, 'amber'))}
+                              </div>
+                            </div>
+                          )}
+
+                          {future.length > 0 && (
+                            <div>
+                              <h4 className="text-[10px] font-bold text-sky-600 uppercase mb-2 border-b border-sky-100 pb-1">📅 Pianificate Future</h4>
+                              <div className="space-y-2">
+                                {future.map(item => renderRigaAttivita(item, 'sky'))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
-            {/* VISTA ARCHIVIO */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-xs font-bold uppercase text-slate-400">🗂️ Archivio Completate / Annullate ({archiviate.length})</h3>
-              <div className="max-h-60 overflow-y-auto border rounded-2xl p-2 space-y-2">
-                {archiviate.map(item => (
-                  <div key={item.id} className="p-2 border-b flex justify-between items-center text-xs">
-                    <div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold mr-2 ${item.stato === 'consuntivo' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{item.stato}</span>
-                      <span className="text-slate-500 font-bold mr-2">{item.data}</span>
-                      <strong>{item.cliente}</strong> ({item.dipendente})
-                    </div>
-                    <span className="font-bold text-slate-700">{item.ore}h</span>
-                  </div>
-                ))}
+            {/* ARCHIVIO STORICO */}
+            <div className="bg-slate-50 border-t border-slate-200 p-6">
+              <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
+                <span>🗂️</span> Archivio Storico ({attivitaArchiviate.length} voci trovate)
+              </h3>
+              
+              <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-xl bg-white shadow-inner">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 bg-slate-100 z-10 shadow-sm">
+                    <tr className="text-slate-500 font-bold uppercase border-b">
+                      <th className="py-2.5 px-3">Stato</th>
+                      <th className="py-2.5 px-3">Data</th>
+                      <th className="py-2.5 px-3">Dipendente</th>
+                      <th className="py-2.5 px-3">Cliente</th>
+                      <th className="py-2.5 px-3">Dettagli / Ore</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {attivitaArchiviate.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">Nessuna attività trovata per questo filtro nell'archivio.</td>
+                      </tr>
+                    ) : (
+                      attivitaArchiviate
+                        .sort((a, b) => new Date(b.data) - new Date(a.data))
+                        .map(item => (
+                        <tr key={item.id} className={`hover:bg-slate-50 ${item.stato === 'annullato' ? 'opacity-60' : ''}`}>
+                          <td className="py-2 px-3">
+                            {item.stato === 'consuntivo' ? (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">✅ Conclusa</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">❌ Annullata</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 font-medium text-slate-600">{item.data}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-800">{item.dipendente}</td>
+                          <td className="py-2 px-3 font-bold text-slate-900">{item.cliente}</td>
+                          <td className="py-2 px-3">
+                            <span className="text-slate-500">{item.progetto}</span>
+                            {item.stato === 'consuntivo' && <span className="ml-2 font-bold text-sky-700">({item.ore}h)</span>}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: CRUSCOTTO MENSILE */}
+        {activeTab === 'cruscotto' && currentUser.ruolo === 'admin' && (
+          <div className="space-y-6">
+            <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">📊 Cruscotto Mensile</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Riepilogo ore per fatturazione clienti e calcolo buste paga dipendenti.</p>
+                </div>
+                <button onClick={() => exportCSV(consuntiviMese)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
+                  <span>📥 Esporta per Excel (CSV)</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Mese &amp; Anno</label>
+                  <input type="month" value={filtroMese} onChange={e => setFiltroMese(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Dipendente</label>
+                  <select value={filtroCruscottoDip} onChange={e => setFiltroCruscottoDip(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
+                    <option value="Tutti">Tutti i Dipendenti</option>
+                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Filtra Cliente</label>
+                  <select value={filtroCruscottoCliente} onChange={e => setFiltroCruscottoCliente(e.target.value)} className="w-full bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none">
+                    <option value="Tutti">Tutti i Clienti</option>
+                    {LISTA_CLIENTI.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                <div className="bg-slate-800/80 border border-slate-700/80 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Cantiere</span>
+                  <span className="text-lg font-bold text-white">{totMeseCantiere} h</span>
+                </div>
+                <div className="bg-slate-800/80 border border-sky-500/30 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-sky-400 block">Backoffice</span>
+                  <span className="text-lg font-bold text-sky-300">{totMeseBackoffice} h</span>
+                </div>
+                <div className="bg-slate-800/80 border border-purple-500/30 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-purple-400 block">Trasferta</span>
+                  <span className="text-lg font-bold text-purple-300">{totMeseTrasferta} h</span>
+                </div>
+                <div className="bg-emerald-950/60 border border-emerald-500/40 p-3 rounded-2xl text-center">
+                  <span className="text-[10px] font-bold uppercase text-emerald-400 block">Totale Ore</span>
+                  <span className="text-lg font-extrabold text-emerald-300">{totMeseComplessivo} h</span>
+                </div>
               </div>
             </div>
 
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 p-6 space-y-4">
+              <h3 className="font-bold text-slate-900 text-base flex justify-between items-center">
+                <span>Registro Dettagliato Interventi ({tuttiEventiMese.length})</span>
+              </h3>
+              <div className="overflow-x-auto max-h-[500px] border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 bg-slate-100 z-10">
+                    <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase">
+                      <th className="py-3 px-3">Stato</th>
+                      <th className="py-3 px-2">Data</th>
+                      <th className="py-3 px-2">Tecnico</th>
+                      <th className="py-3 px-2">Cliente / Progetto</th>
+                      <th className="py-3 px-2 text-center">Ore Cant.</th>
+                      <th className="py-3 px-2 text-center">Backoff.</th>
+                      <th className="py-3 px-2 text-center">Trasf.</th>
+                      <th className="py-3 px-2 text-center">Azione</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {tuttiEventiMese.map(item => (
+                      <tr key={item.id} className="hover:bg-slate-50 group">
+                        <td className="py-2.5 px-3">
+                          {item.stato === 'consuntivo' ? (
+                            <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">Chiuso</span>
+                          ) : (
+                            <span className="text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100 animate-pulse">In Sospeso</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-2 font-semibold text-slate-700 whitespace-nowrap">{item.data}</td>
+                        <td className="py-2.5 px-2 whitespace-nowrap font-semibold">{item.dipendente}</td>
+                        <td className="py-2.5 px-2">
+                          <div className="font-bold text-slate-900">{item.cliente}</div>
+                          <div className="text-slate-500 text-[10px] truncate max-w-[150px]">{item.progetto}</div>
+                        </td>
+                        <td className="py-2.5 px-2 text-center font-bold text-slate-800">{item.ore || 0}h</td>
+                        <td className="py-2.5 px-2 text-center font-bold text-sky-700">{item.ore_backoffice || 0}h</td>
+                        <td className="py-2.5 px-2 text-center font-bold text-purple-700">{item.ore_trasferta || 0}h</td>
+                        <td className="py-2.5 px-2 text-center">
+                          <button onClick={() => openEditModal(item)} className="bg-white border border-slate-300 text-slate-600 hover:text-sky-700 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-sm">✏️ Modifica</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: REPORT PERFORMANCE */}
+        {activeTab === 'report' && currentUser.ruolo === 'admin' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
+              <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">Performance &amp; Reattività Team</h2>
+                  <p className="text-xs text-slate-300 mt-0.5">Valuta la tempestività di consuntivazione delle schede ore.</p>
+                </div>
+                <button onClick={fetchProgrammati} className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/20 font-medium">🔄 Aggiorna</button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {listaDipendenti.map(nomeDip => {
+                  const attivitaDip = storicoCompleto.filter(s => matchNomeDipendente(s.dipendente, nomeDip));
+                  const consuntivate = attivitaDip.filter(s => s.stato === 'consuntivo');
+                  const inRitardoScadute = attivitaDip.filter(s => s.stato !== 'consuntivo' && s.stato !== 'annullato' && s.data < ieriStr);
+
+                  const totaleRilevante = consuntivate.length + inRitardoScadute.length;
+                  const indiceReattivita = totaleRilevante > 0 ? Math.round((consuntivate.length / totaleRilevante) * 100) : 100;
+
+                  const totOreLavorate = consuntivate.reduce((acc, curr) => acc + Number(curr.ore || 0), 0);
+                  const totOreBackoffice = consuntivate.reduce((acc, curr) => acc + Number(curr.ore_backoffice || 0), 0);
+                  const totOreTrasferta = consuntivate.reduce((acc, curr) => acc + Number(curr.ore_trasferta || 0), 0);
+
+                  return (
+                    <div key={nomeDip} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-lg">👤</span>
+                          <h3 className="font-bold text-slate-900 text-base">{nomeDip}</h3>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-slate-500 uppercase">Indice Reattività:</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                            indiceReattivita >= 90 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            indiceReattivita >= 70 ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                            'bg-rose-100 text-rose-800 border-rose-300'
+                          }`}>
+                            {indiceReattivita}% {indiceReattivita >= 90 ? '💯' : indiceReattivita >= 70 ? '⚠️' : '🚨'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Ore Svolte Totali</p>
+                          <p className="text-lg font-bold text-slate-800">{totOreLavorate} h</p>
+                        </div>
+                        <div className="bg-white p-3 rounded-2xl border border-sky-200 shadow-sm">
+                          <p className="text-[10px] font-bold uppercase text-sky-600">Backoffice</p>
+                          <p className="text-lg font-bold text-sky-700">{totOreBackoffice} h</p>
+                        </div>
+                        {nomeDip === 'Alessandro Ciule' && (
+                          <div className="bg-white p-3 rounded-2xl border border-purple-200 shadow-sm">
+                            <p className="text-[10px] font-bold uppercase text-purple-600">Trasferta</p>
+                            <p className="text-lg font-bold text-purple-700">{totOreTrasferta} h</p>
+                          </div>
+                        )}
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Ritardi (&gt;24h)</p>
+                          <p className={`text-lg font-bold ${inRitardoScadute.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{inRitardoScadute.length}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
       </main>
 
-      {/* MODALE CONFERMA CHIUSURA */}
+      {/* MODALE CHIUSURA / MODIFICA */}
       {modalItem && (
-        <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 text-xs">
-            <h3 className="font-bold text-sm">Conferma Consuntivo per {modalItem.cliente}</h3>
-            <div>
-              <label className="block font-bold mb-1">Ore Lavorate Effettive</label>
-              <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(Number(e.target.value))} className="w-full p-2 border rounded-xl font-bold" />
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">
+              {modalItem.stato === 'consuntivo' ? 'Modifica Dati Intervento' : 'Conferma Consuntivo'}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Stai modificando l'attività per <strong className="text-slate-800">{modalItem.cliente}</strong>.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              {(modalItem.dipendente === 'Da Assegnare' || currentUser.ruolo === 'admin') && (
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
+                  <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3 py-2 border rounded-xl bg-indigo-50 border-indigo-200 text-sm font-bold text-indigo-800">
+                    <option value="Da Assegnare" disabled>❓ Da Assegnare</option>
+                    {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Lavorate</label>
+                <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
+                <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800" />
+              </div>
+              
+              {(modalItem.dipendente === 'Alessandro Ciule' || dipendenteEffettivo === 'Alessandro Ciule') && (
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-purple-600 mb-1 uppercase">🚗 Ore Trasferta</label>
+                  <input type="number" step="0.5" value={oreTrasfertaEffettive} onChange={e => setOreTrasfertaEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-purple-50 border-purple-200 text-sm font-bold text-purple-800" />
+                </div>
+              )}
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => setModalItem(null)} className="w-1/2 p-2 bg-slate-100 rounded-xl font-bold">Annulla</button>
-              <button onClick={handleConfermaChiudi} className="w-1/2 p-2 bg-emerald-600 text-white rounded-xl font-bold">Salva ✅</button>
+
+            <div className="flex space-x-2 pt-2">
+              <button onClick={() => setModalItem(null)} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">Annulla</button>
+              <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all">
+                {loading ? '...' : (modalItem.stato === 'consuntivo' ? 'Salva Modifiche ✅' : 'Conferma e Salva ✅')}
+              </button>
             </div>
           </div>
         </div>
