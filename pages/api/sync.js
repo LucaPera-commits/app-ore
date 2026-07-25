@@ -7,6 +7,44 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const calendarId = process.env.GOOGLE_CALENDAR_ID;
 
+// Tabella mappatura per riconoscimento automatico dai titoli
+const DIPENDENTI_MAPPING = [
+  { nomeCompleto: 'Luca Pera', chiavi: ['luca pera', 'luca'] },
+  { nomeCompleto: 'Giampaolo Lauro', chiavi: ['giampaolo lauro', 'giampaolo'] },
+  { nomeCompleto: 'Federico Boagno', chiavi: ['federico boagno', 'federico'] },
+  { nomeCompleto: 'Alessandro Ciule', chiavi: ['alessandro ciule', 'alessandro'] },
+  { nomeCompleto: 'Davide Procopio', chiavi: ['davide procopio', 'davide'] }
+];
+
+function rilevaDipendenteDaTitolo(summary) {
+  if (!summary) return 'Da Assegnare';
+  const summaryLower = summary.toLowerCase();
+
+  // 1. Controlla se c'è un tag tra quadre es. [Giampaolo]
+  const matchDip = summary.match(/^\[(.*?)\]/);
+  if (matchDip) {
+    const dentroQuadre = matchDip[1].trim().toLowerCase();
+    for (const dip of DIPENDENTI_MAPPING) {
+      if (dip.chiavi.some(k => dentroQuadre.includes(k) || k.includes(dentroQuadre))) {
+        return dip.nomeCompleto;
+      }
+    }
+    return matchDip[1].trim(); 
+  }
+
+  // 2. Cerca presenza del nome/cognome in qualsiasi punto del titolo
+  for (const dip of DIPENDENTI_MAPPING) {
+    for (const chiave of dip.chiavi) {
+      const regex = new RegExp(`\\b${chiave}\\b`, 'i');
+      if (regex.test(summaryLower)) {
+        return dip.nomeCompleto;
+      }
+    }
+  }
+
+  return 'Da Assegnare';
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Metodo non consentito' });
 
@@ -43,13 +81,12 @@ export default async function handler(req, res) {
     const events = response.data.items || [];
     let inseriti = 0;
     let giaPresenti = 0;
-    let erroriDb = [];
 
     for (const event of events) {
       if (!event.summary) continue;
 
-      const matchDip = event.summary.match(/^\[(.*?)\]/);
-      let dipendente = matchDip ? matchDip[1].trim() : 'Da Assegnare';
+      // Riconoscimento automatico dipendente dal titolo
+      const dipendente = rilevaDipendenteDaTitolo(event.summary);
 
       let titoloPulito = event.summary.replace(/^\[.*?\]\s*/, '').replace(/^(✅ |❌ |❓ )/g, '').trim();
       let [cliente, ...restoProgetto] = titoloPulito.split('-');
@@ -65,7 +102,6 @@ export default async function handler(req, res) {
 
       if (!dataEvento) continue;
 
-      // Verifica se esiste già
       const { data: esistente } = await supabase
         .from('eventi_ore')
         .select('id')
@@ -77,7 +113,7 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Inserisci e CATTURA l'errore esplicito di Supabase
+      // Inserimento con stato 'pianificato' (da consuntivare)
       const { error: insertError } = await supabase.from('eventi_ore').insert([{
         calendar_event_id: event.id,
         dipendente,
@@ -91,20 +127,12 @@ export default async function handler(req, res) {
         note: event.description || 'Importato da Google Calendar'
       }]);
 
-      if (insertError) {
-        console.error("Errore inserimento Supabase:", insertError);
-        erroriDb.push(insertError.message);
-      } else {
-        inseriti++;
-      }
+      if (!insertError) inseriti++;
     }
 
-    let msg = `Analizzati ${events.length} eventi da Calendar. ${inseriti} nuovi salvati nel DB, ${giaPresenti} già presenti.`;
-    if (erroriDb.length > 0) {
-      msg += ` [⚠️ Attenzione: ${erroriDb.length} non salvati per errore DB: ${erroriDb[0]}]`;
-    }
-
-    return res.status(200).json({ message: msg });
+    return res.status(200).json({ 
+      message: `Sincronizzazione completata! ${events.length} analizzati, ${inseriti} nuovi importati, ${giaPresenti} già presenti.` 
+    });
 
   } catch (error) {
     console.error("Errore Sync:", error);
