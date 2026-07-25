@@ -168,23 +168,6 @@ function getParentPath(path) {
   return parts.join('/');
 }
 
-// VISUALIZZATORE UNIFICATO PER DOCUMENTI (PDF, IMMAGINI, WORD, EXCEL, PPT)
-function handlePreviewFile(item) {
-  if (!item || !item.percorso) return;
-  const path = String(item.percorso);
-  const ext = path.split('.').pop().toLowerCase();
-  const fileUrl = `${window.location.origin}/api/download?path=${encodeURIComponent(path)}`;
-
-  // Se è un file Microsoft Word, Excel o PowerPoint, usa il visore Microsoft Web
-  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
-    const msViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
-    window.open(msViewerUrl, '_blank');
-  } else {
-    // Altrimenti (PDF, JPG, PNG, TXT...) apri direttamente la scheda
-    window.open(fileUrl, '_blank');
-  }
-}
-
 function getGiorniLavorativiMese(annoMeseStr) {
   if (!annoMeseStr) return 22;
   try {
@@ -256,6 +239,9 @@ function HomeContent() {
   const [loadingNC, setLoadingNC] = useState(false);
   const [errorNC, setErrorNC] = useState(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
+
+  // --- STATO ANTEPRIMA DOCUMENTI ---
+  const [modalDocumento, setModalDocumento] = useState(null);
 
   // --- STATI REPORTISTICA E FERIE ---
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
@@ -588,7 +574,7 @@ function HomeContent() {
       fetchProgrammati();
     } catch (e) {
       alert("Errore di rete.");
-    } finally {
+    } fontally {
       setLoadingProgrammati(false);
     }
   };
@@ -2078,7 +2064,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON PULSANTI VISUALIZZA / SCARICA SUPPORTO EXCEL E WORD */}
+        {/* TAB 4: ESPLORATORE ARUBA NEXTCLOUD CON MODALE DEDICATA PER ANTEPRIMA DOCUMENTI */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden space-y-6">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -2124,7 +2110,7 @@ function HomeContent() {
                 </form>
               </div>
 
-              {/* ELENCO FILE CON PULSANTI VISUALIZZA (SUPPORTO OFFICE) E SCARICA */}
+              {/* ELENCO FILE CON APERTURA MODALE DI ANTEPRIMA */}
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                 {safeRisultatiNC.map((item, idx) => {
                   const isDir = item?.isFolder === true || item?.isFolder === 'true' || item?.type === 'dir' || item?.type === 'folder';
@@ -2136,7 +2122,7 @@ function HomeContent() {
                         if (isDir) {
                           handleApriCartella(item.percorso);
                         } else {
-                          handlePreviewFile(item);
+                          setModalDocumento(item);
                         }
                       }}
                       className="p-3.5 hover:bg-sky-50/80 flex items-center justify-between gap-3 cursor-pointer transition-all group"
@@ -2150,7 +2136,7 @@ function HomeContent() {
                         <div className="flex items-center space-x-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
                           <button 
                             type="button"
-                            onClick={() => handlePreviewFile(item)}
+                            onClick={() => setModalDocumento(item)}
                             className="bg-sky-100 text-sky-800 hover:bg-sky-600 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
                           >
                             👁️ Visualizza
@@ -2483,6 +2469,92 @@ function HomeContent() {
         )}
 
       </main>
+
+      {/* MODALE ANTEPRIMA DOCUMENTI (PDF, IMMAGINI, WORD, EXCEL, PPT) */}
+      {modalDocumento && (() => {
+        const path = String(modalDocumento.percorso || '');
+        const ext = path.split('.').pop().toLowerCase();
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const rawFileUrl = `${origin}/api/download?path=${encodeURIComponent(path)}`;
+        const isOffice = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext);
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
+        const isPdf = ext === 'pdf';
+
+        const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(rawFileUrl)}&embedded=true`;
+        const msViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(rawFileUrl)}`;
+
+        const iframeSrc = isOffice ? googleViewerUrl : rawFileUrl;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-3 md:p-6">
+            <div className="bg-white rounded-3xl max-w-5xl w-full h-[88vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+              {/* Header Modale */}
+              <div className="bg-slate-900 text-white p-4 flex items-center justify-between gap-3 border-b border-slate-800">
+                <div className="flex items-center space-x-3 truncate">
+                  <span className="text-2xl flex-shrink-0">{isOffice ? '📊' : isPdf ? '📄' : isImage ? '🖼️' : '📁'}</span>
+                  <div className="truncate">
+                    <h3 className="font-bold text-sm md:text-base truncate">{toText(modalDocumento.nome)}</h3>
+                    <p className="text-[10px] text-sky-400 font-medium uppercase tracking-wider">{ext} • Visualizzatore Online</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 flex-shrink-0">
+                  <a 
+                    href={`${rawFileUrl}&forceDownload=true`}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1 cursor-pointer"
+                  >
+                    📥 Scarica
+                  </a>
+                  <button 
+                    onClick={() => setModalDocumento(null)} 
+                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl font-bold transition-all text-sm cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Sotto-Intestazione per Opzioni Lettore Office */}
+              {isOffice && (
+                <div className="bg-slate-100 p-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-600 font-bold text-[11px]">💡 Modalità di lettura online attiva:</span>
+                  <div className="flex items-center space-x-2">
+                    <a 
+                      href={googleViewerUrl.replace('&embedded=true', '')} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      className="text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-lg border border-sky-200"
+                    >
+                      🌐 Google Docs
+                    </a>
+                    <a 
+                      href={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(rawFileUrl)}`} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      className="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200"
+                    >
+                      🖥️ MS Office Web
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Corpo Modale / Viewer */}
+              <div className="flex-1 bg-slate-200/60 p-2 overflow-hidden flex items-center justify-center">
+                {isImage ? (
+                  <img src={rawFileUrl} alt={toText(modalDocumento.nome)} className="max-h-full max-w-full object-contain rounded-xl shadow-md" />
+                ) : (
+                  <iframe 
+                    src={iframeSrc} 
+                    className="w-full h-full rounded-2xl border border-slate-300 bg-white shadow-inner" 
+                    title="Anteprima Documento"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODALE DETTAGLIO / EDITING UNIFICATA PER TUTTE LE RIGHE */}
       {modalItem && (
