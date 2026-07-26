@@ -32,6 +32,9 @@ const LISTA_CLIENTI = [
 function matchDipendente(testo) {
   if (!testo) return 'Da Assegnare';
   const t = testo.toLowerCase();
+  if (t.includes('da assegnare') || t.includes('[da assegnare]') || t.includes('❓')) {
+    return 'Da Assegnare';
+  }
   for (const dip of LISTA_DIPENDENTI) {
     const nomeIniziale = dip.split(' ')[0].toLowerCase();
     if (t.includes(dip.toLowerCase()) || t.includes(nomeIniziale)) {
@@ -104,7 +107,7 @@ export default async function handler(req, res) {
     const calendarId = process.env.GOOGLE_CALENDAR_ID;
 
     if (!clientEmail || !privateKey || !calendarId) {
-      return res.status(400).json({ message: 'Credenziali Google Calendar non configurate su Vercel.' });
+      return res.status(400).json({ message: 'Credenziali Google Calendar non configurate.' });
     }
 
     const auth = new google.auth.JWT({
@@ -115,7 +118,6 @@ export default async function handler(req, res) {
 
     const calendar = google.calendar({ version: 'v3', auth });
 
-    // Finestra di sincronizzazione: da -30 giorni a +60 giorni
     const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -139,21 +141,20 @@ export default async function handler(req, res) {
 
       if (!startDateStr) continue;
 
+      let dipendente = matchDipendente(summary);
       let stato = 'pianificato';
+
       if (summary.includes('[SVOLTO]') || summary.includes('✅')) stato = 'consuntivo';
       if (summary.includes('[IN APPROVAZIONE]')) stato = 'in_approvazione';
+      if (dipendente === 'Da Assegnare') stato = 'pianificato';
 
-      // Parsing del titolo
-      let dipendente = matchDipendente(summary);
       let cliente = matchCliente(summary);
       let progetto = '';
 
-      // Estrazione contenuto tra parentesi per il Progetto
       const matchProgetto = summary.match(/\((.*?)\)/);
       if (matchProgetto && matchProgetto[1]) {
         progetto = matchProgetto[1].trim();
       } else {
-        // Tentativo di pulizia dal titolo
         progetto = summary
           .replace(/\[.*?\]/g, '')
           .replace(dipendente, '')
@@ -162,11 +163,12 @@ export default async function handler(req, res) {
           .trim();
       }
 
-      // Estrazione dettagli ore dalla descrizione
       const { ore, ore_backoffice, ore_trasferta, ore_straordinario, note } = parseEstrazioneOre(event.description);
 
-      // Auto-Correzione del Titolo su Google Calendar se il formato era irregolare
-      const tagStato = stato === 'consuntivo' ? '✅ [SVOLTO]' : '⏳ [PIANIFICATO]';
+      // TAG CORRETTO PER GOOGLE CALENDAR
+      let tagStato = stato === 'consuntivo' ? '✅ [SVOLTO]' : '⏳ [PIANIFICATO]';
+      if (dipendente === 'Da Assegnare') tagStato = '❓ [DA ASSEGNARE]';
+
       const titoloCorretto = `${tagStato} ${dipendente} - ${cliente || 'Attività'} (${progetto || 'Dettagli'})`;
 
       if (summary !== titoloCorretto && !summary.includes('ASSENZA') && !summary.includes('FERIE')) {
@@ -176,12 +178,9 @@ export default async function handler(req, res) {
             eventId: calendarEventId,
             resource: { summary: titoloCorretto }
           });
-        } catch (patchErr) {
-          console.warn("Impossibile aggiornare titolo su Calendar:", patchErr?.message);
-        }
+        } catch (patchErr) {}
       }
 
-      // Inserimento o Aggiornamento su Supabase (Upsert)
       const payload = {
         calendar_event_id: calendarEventId,
         dipendente,
@@ -196,7 +195,6 @@ export default async function handler(req, res) {
         stato
       };
 
-      // Controlla se l'evento esiste già su Supabase
       const { data: existing } = await supabase
         .from('registrazioni_ore')
         .select('id, stato')
@@ -204,7 +202,6 @@ export default async function handler(req, res) {
         .maybeSingle();
 
       if (existing) {
-        // Aggiorna senza sovrascrivere se è già stato consuntivato dall'App
         if (existing.stato !== 'consuntivo') {
           await supabase
             .from('registrazioni_ore')
@@ -212,7 +209,6 @@ export default async function handler(req, res) {
             .eq('id', existing.id);
         }
       } else {
-        // Inserisce il nuovo evento
         await supabase
           .from('registrazioni_ore')
           .insert([payload]);
