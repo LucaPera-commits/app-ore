@@ -70,6 +70,11 @@ function getCurrentMonthStr() {
   return new Date().toISOString().slice(0, 7);
 }
 
+function getFirstDayOfCurrentMonthStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
 function getNextMonthStr() {
   const d = new Date();
   let year = d.getFullYear();
@@ -191,6 +196,33 @@ function getGiorniLavorativiMese(annoMeseStr) {
   }
 }
 
+// CALCOLO GIORNATE INCOMPLETE NEGLI ULTIMI 14 GIORNI
+function getGiorniLavorativiMancanti(storico, nomeDip) {
+  if (!nomeDip) return [];
+  const oggi = new Date();
+  const giorniMancanti = [];
+
+  for (let i = 1; i <= 14; i++) {
+    const d = new Date();
+    d.setDate(oggi.getDate() - i);
+    const dayOfWeek = d.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const dStr = d.toISOString().split('T')[0];
+      const haReg = storico.some(item => 
+        item && 
+        matchNomeDipendente(item.dipendente, nomeDip) && 
+        getNormalizedDate(item.data) === dStr && 
+        item.stato !== 'annullato'
+      );
+      if (!haReg) {
+        giorniMancanti.push(dStr);
+      }
+    }
+  }
+
+  return giorniMancanti.sort();
+}
+
 function HomeContent() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -239,7 +271,6 @@ function HomeContent() {
   const [subTabReport, setSubTabReport] = useState('paghe');
   const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
 
-  // MODALE EDITING STATO E CAMPI
   const [modalItem, setModalItem] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
   const [oreBackofficeEffettive, setOreBackofficeEffettive] = useState(0);
@@ -555,12 +586,12 @@ function HomeContent() {
     } catch (e) {}
   };
 
-  // SUBMIT CON VALIDAZIONE SEVERA
+  // SUBMIT CON CONTROLLI E ALERT DI SICUREZZA
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
 
-    // CONTROLLO DI VALIDITÀ SEVERO SUI CAMPI OBBLIGATORI
+    // 1. VALIDAZIONE CAMPI OBBLIGATORI
     if (!formData.cliente || !formData.cliente.trim()) {
       setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci o seleziona il Cliente! È un campo obbligatorio.' });
       return;
@@ -571,8 +602,33 @@ function HomeContent() {
       return;
     }
 
-    if (Number(formData.ore) <= 0 && Number(formData.ore_backoffice) <= 0) {
-      setStatusMessage({ type: 'error', text: '⚠️ Errore: Specificare almeno 0.5 ore di Lavoro o di Backoffice!' });
+    const totOreForm = Number(formData.ore || 0) + Number(formData.ore_backoffice || 0) + Number(formData.ore_straordinario || 0);
+    if (totOreForm <= 0) {
+      setStatusMessage({ type: 'error', text: '⚠️ Errore: Specificare almeno 0.5 ore di attività!' });
+      return;
+    }
+
+    // 2. ALERT SFORAMENTO ORE (>12 ORE NELLA STESSA GIORNATA)
+    if (totOreForm > 12) {
+      if (!confirm(`⚠️ Attenzione: stai registrando un totale di ${totOreForm} ore in una singola giornata. Confermi che la cifra è corretta?`)) {
+        return;
+      }
+    }
+
+    // 3. FREEZE CONTABILE (BLOCCO MESE PASSATO PER UTENTI NON ADMIN)
+    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
+    if (currentUser?.ruolo !== 'admin' && formData.data < primoGiornoMeseCorrente) {
+      setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Non puoi inserire o modificare dati dei mesi scorsi. Contatta un amministratore.' });
+      return;
+    }
+
+    // 4. INSERIMENTO RETRODATATO (>48 ORE) -> OBBLIGO DI NOTE
+    const oggi = new Date();
+    const dataSelezionata = new Date(formData.data);
+    const diffGiorni = (oggi - dataSelezionata) / (1000 * 60 * 60 * 24);
+
+    if (diffGiorni > 2.5 && (!formData.note || !formData.note.trim())) {
+      setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Quando registri attività passate con ritardo è OBBLIGATORIO specificare una breve nota esplicativa.' });
       return;
     }
 
@@ -660,7 +716,6 @@ function HomeContent() {
     }
   };
 
-  // SALVATAGGIO MODALE EDITING (ANCHE CLIENTE E PROGETTO)
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
 
@@ -670,6 +725,12 @@ function HomeContent() {
     }
     if (!progettoEffettivo || !progettoEffettivo.trim()) {
       alert("⚠️ Il campo Progetto / Dettaglio è obbligatorio per salvare l'attività!");
+      return;
+    }
+
+    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < primoGiornoMeseCorrente) {
+      alert("🔒 Mese Passato Consolidato: Non puoi modificare i dati dei mesi scorsi.");
       return;
     }
 
@@ -694,6 +755,12 @@ function HomeContent() {
 
   const handleElimina = async (item) => {
     if (!item || !canEditItem(item)) return alert("Operazione non permessa.");
+    
+    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < primoGiornoMeseCorrente) {
+      return alert("🔒 Non puoi eliminare attività dei mesi scorsi.");
+    }
+
     if (!confirm(`Annullare l'attività "${toText(item.cliente)}"?`)) return;
     setLoading(true);
     try {
@@ -781,6 +848,9 @@ function HomeContent() {
 
   const daAssegnareItems = safeStorico.filter(isItemDaAssegnare);
   const dipendentiVisibili = listaDipendenti;
+
+  // GIORNATE MANCANTI PER L'UTENTE LOGGATO
+  const giorniMancantiUtente = currentUser?.nome ? getGiorniLavorativiMancanti(safeStorico, currentUser.nome) : [];
 
   const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
   const mieAttivitaArretrato = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
@@ -1071,6 +1141,25 @@ function HomeContent() {
         {/* TAB 0: HOME */}
         {activeTab === 'home' && (
           <div className="space-y-8">
+            
+            {/* ALERT GIORNATE INCOMPLETE NELLA HOME */}
+            {giorniMancantiUtente.length > 0 && (
+              <div className="bg-gradient-to-r from-rose-600 to-rose-800 text-white p-5 rounded-3xl shadow-xl border-2 border-rose-400 flex flex-wrap items-center justify-between gap-4 animate-pulse">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-white text-rose-700 font-black rounded-2xl flex items-center justify-center text-2xl shadow-md">🚨</div>
+                  <div>
+                    <div className="text-sm font-black uppercase tracking-wider text-rose-200">Giornate Incomplete Rilevate!</div>
+                    <div className="text-xs text-rose-100">
+                      Hai <strong>{giorniMancantiUtente.length} giornat{giorniMancantiUtente.length > 1 ? 'e' : 'a'}</strong> lavorativ{giorniMancantiUtente.length > 1 ? 'e' : 'a'} passat{giorniMancantiUtente.length > 1 ? 'e' : 'a'} senza ore registrate ({giorniMancantiUtente.join(', ')}).
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => navigateTo('nuovo')} className="bg-white hover:bg-rose-50 text-rose-900 text-xs px-5 py-2.5 rounded-xl font-black shadow-md transition-all whitespace-nowrap cursor-pointer">
+                  Compila Ora ➔
+                </button>
+              </div>
+            )}
+
             {currentUser?.ruolo === 'admin' && assenzeDaApprovareAdmin.length > 0 && (
               <div className="bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-4 rounded-3xl shadow-xl border-2 border-purple-400 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center space-x-3">
@@ -1199,7 +1288,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 1: INSERIMENTO ORE CON VALIDAZIONE SEVERA */}
+        {/* TAB 1: INSERIMENTO ORE CON CONTROLLI E ALERT */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -1327,7 +1416,7 @@ function HomeContent() {
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Note &amp; Dettagli</label>
-                <textarea rows={2} placeholder="Note o descrizioni aggiuntive..." value={formData.note} onChange={e => setFormData({ ...formData, note: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none"></textarea>
+                <textarea rows={2} placeholder="Note o descrizioni aggiuntive... (Obbligatorie per registrazioni tardive >48h)" value={formData.note} onChange={e => setFormData({ ...formData, note: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none"></textarea>
               </div>
 
               {statusMessage && (
