@@ -1,7 +1,6 @@
 import React, { useState, useEffect, Component } from 'react';
 import Head from 'next/head';
 
-// COMPONENTE DI PROTEZIONE ANTI-CRASH
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -138,7 +137,6 @@ function matchNomeDipendente(nomeDb, filtro) {
   return partiFiltro[0] && partiDb[0] && partiFiltro[0] === partiDb[0];
 }
 
-// RICONOSCIMENTO ROBUSTO TASK DA ASSEGNARE
 function isItemDaAssegnare(item) {
   if (!item) return false;
   if (item.stato === 'annullato') return false;
@@ -199,7 +197,6 @@ function HomeContent() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   
-  // NAVIGAZIONE UNIFICATA
   const [activeTab, setActiveTab] = useState('home');
   const [pathNC, setPathNC] = useState('');
   const [navHistory, setNavHistory] = useState([]);
@@ -224,7 +221,6 @@ function HomeContent() {
   const [rispostaApertaId, setRispostaApertaId] = useState(null);
   const [testoRispostaAdmin, setTestoRispostaAdmin] = useState('');
 
-  // CARTELLE APERTE DI DEFAULT (INC. DA ASSEGNARE)
   const [cartelleAperte, setCartelleAperte] = useState({ 'Da Assegnare': true });
   const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
 
@@ -243,12 +239,16 @@ function HomeContent() {
   const [subTabReport, setSubTabReport] = useState('paghe');
   const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
 
+  // MODALE EDITING STATO E CAMPI
   const [modalItem, setModalItem] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
   const [oreBackofficeEffettive, setOreBackofficeEffettive] = useState(0);
   const [oreTrasfertaEffettive, setOreTrasfertaEffettive] = useState(0);
   const [oreStraordinarioEffettive, setOreStraordinarioEffettive] = useState(0);
   const [dipendenteEffettivo, setDipendenteEffettivo] = useState('');
+  const [clienteEffettivo, setClienteEffettivo] = useState('');
+  const [progettoEffettivo, setProgettoEffettivo] = useState('');
+  const [noteEffettive, setNoteEffettive] = useState('');
 
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
@@ -312,7 +312,6 @@ function HomeContent() {
     }
   }, [currentUser]);
 
-  // STATO AUTOMATICO: SE "DA ASSEGNARE" O DATA FUTURA -> PIANIFICATO, ALTRIMENTI CONSUNTIVO
   useEffect(() => {
     const today = getTodayStr();
     const eDaAssegnare = isItemDaAssegnare({ dipendente: formData.dipendente });
@@ -556,9 +555,27 @@ function HomeContent() {
     } catch (e) {}
   };
 
+  // SUBMIT CON VALIDAZIONE SEVERA
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
+
+    // CONTROLLO DI VALIDITÀ SEVERO SUI CAMPI OBBLIGATORI
+    if (!formData.cliente || !formData.cliente.trim()) {
+      setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci o seleziona il Cliente! È un campo obbligatorio.' });
+      return;
+    }
+
+    if (!formData.progetto || !formData.progetto.trim()) {
+      setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci il Progetto o Dettaglio dell\'attività! È un campo obbligatorio.' });
+      return;
+    }
+
+    if (Number(formData.ore) <= 0 && Number(formData.ore_backoffice) <= 0) {
+      setStatusMessage({ type: 'error', text: '⚠️ Errore: Specificare almeno 0.5 ore di Lavoro o di Backoffice!' });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -643,14 +660,28 @@ function HomeContent() {
     }
   };
 
+  // SALVATAGGIO MODALE EDITING (ANCHE CLIENTE E PROGETTO)
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
+
+    if (!clienteEffettivo || !clienteEffettivo.trim()) {
+      alert("⚠️ Il campo Cliente è obbligatorio per salvare l'attività!");
+      return;
+    }
+    if (!progettoEffettivo || !progettoEffettivo.trim()) {
+      alert("⚠️ Il campo Progetto / Dettaglio è obbligatorio per salvare l'attività!");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch('/api/gestisci', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
+          cliente: clienteEffettivo.trim(),
+          progetto: progettoEffettivo.trim(),
+          note: noteEffettive.trim(),
           ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive,
           ore_trasferta: oreTrasfertaEffettive, ore_straordinario: oreStraordinarioEffettive,
           dipendente: dipendenteEffettivo || modalItem.dipendente, chiudi_consuntivo: true
@@ -687,6 +718,9 @@ function HomeContent() {
     setOreTrasfertaEffettive(item.ore_trasferta || 0);
     setOreStraordinarioEffettive(item.ore_straordinario || 0);
     setDipendenteEffettivo(isItemDaAssegnare(item) ? currentUser?.nome : item.dipendente);
+    setClienteEffettivo(item.cliente || '');
+    setProgettoEffettivo(item.progetto || '');
+    setNoteEffettive(item.note || '');
   };
 
   const exportCSVPaghe = () => {
@@ -745,7 +779,6 @@ function HomeContent() {
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
 
-  // FILTRAGGIO ROBUSTO PER ATTIVITÀ DA ASSEGNARE
   const daAssegnareItems = safeStorico.filter(isItemDaAssegnare);
   const dipendentiVisibili = listaDipendenti;
 
@@ -820,9 +853,9 @@ function HomeContent() {
             )}
           </div>
           <div className="font-bold text-slate-900 text-sm truncate group-hover:text-sky-700 transition-colors">
-            {isAssenzaFlag ? toText(item.progetto) : (toText(item.cliente) || "Senza Cliente")}
+            {isAssenzaFlag ? toText(item.progetto) : (toText(item.cliente) || "⚠️ Cliente non assegnato")}
           </div>
-          {!isAssenzaFlag && <div className="text-xs text-slate-600 truncate max-w-xs">{toText(item.progetto) || "Nessun dettaglio"}</div>}
+          {!isAssenzaFlag && <div className="text-xs text-slate-600 truncate max-w-xs">{toText(item.progetto) || "⚠️ Dettaglio mancante"}</div>}
           {item.note && <div className="text-[11px] text-slate-500 italic mt-1 bg-white p-1.5 rounded-lg border border-slate-100 max-w-xs truncate shadow-xs">📝 {toText(item.note)}</div>}
           
           {currentUser?.ruolo === 'admin' && (
@@ -851,7 +884,7 @@ function HomeContent() {
           ) : isEditable ? (
             <>
               <button onClick={() => openEditModal(item)} className="flex-1 md:flex-none px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700">
-                {item.stato === 'consuntivo' ? '✏️ Modifica' : '✅ Conferma'}
+                {item.stato === 'consuntivo' ? '✏️ Modifica' : '✅ Conferma / Assegna'}
               </button>
               <button onClick={() => handleElimina(item)} className="flex-1 md:flex-none px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50">🗑️ Annulla</button>
             </>
@@ -956,7 +989,6 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* BARRA UTENTE MOBILE */}
             <div className="flex md:hidden items-center space-x-2 text-xs">
               <span className="text-slate-300 font-bold truncate max-w-[100px]">👤 {currentUser?.nome?.split(' ')[0]}</span>
               <button onClick={handleLogout} className="bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white px-2.5 py-1 rounded-lg font-bold transition-all">Esci</button>
@@ -1167,7 +1199,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 1: INSERIMENTO ORE */}
+        {/* TAB 1: INSERIMENTO ORE CON VALIDAZIONE SEVERA */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
@@ -1249,12 +1281,12 @@ function HomeContent() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Cliente</label>
-                  <input type="text" list="lista-aziende" placeholder="Es. ERREPI s.r.l" required value={formData.cliente} onChange={e => setFormData({ ...formData, cliente: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none" />
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Cliente <span className="text-rose-500">*</span></label>
+                  <input type="text" list="lista-aziende" placeholder="Es. ERREPI s.r.l" required value={formData.cliente} onChange={e => setFormData({ ...formData, cliente: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Progetto / Dettaglio Assenza</label>
-                  <input type="text" placeholder="Es. Qualifiche / Ferie estive" required value={formData.progetto} onChange={e => setFormData({ ...formData, progetto: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none" />
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1.5">Progetto / Dettaglio Assenza <span className="text-rose-500">*</span></label>
+                  <input type="text" placeholder="Es. Qualifiche / Ferie estive" required value={formData.progetto} onChange={e => setFormData({ ...formData, progetto: e.target.value })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-sky-200" />
                 </div>
               </div>
 
@@ -1311,7 +1343,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 2: GESTIONE ATTIVITÀ CON CARTELLA DA ASSEGNARE APERTA AUTOMATICAMENTE */}
+        {/* TAB 2: GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
           <div className="space-y-6">
             <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-wrap items-center justify-between gap-4 border border-slate-800">
@@ -1410,7 +1442,7 @@ function HomeContent() {
                   <span className="text-2xl">{cartelleAperte['Da Assegnare'] ? '📂' : '📁'}</span>
                   <div>
                     <h3 className="font-bold text-amber-950 text-base">Attività Da Assegnare</h3>
-                    <p className="text-xs text-amber-800">Eventi non ancora associati ad un tecnico</p>
+                    <p className="text-xs text-amber-800">Eventi non ancora associati ad un tecnico o con dettagli mancanti</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3">
@@ -1430,7 +1462,7 @@ function HomeContent() {
               )}
             </div>
 
-            {/* CARTELE DIPENDENTI */}
+            {/* CARTELLE DIPENDENTI */}
             <div className="space-y-4">
               {dipendentiVisibili.map(dipNome => {
                 const eventiDip = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, dipNome));
@@ -1932,10 +1964,10 @@ function HomeContent() {
         );
       })()}
 
-      {/* MODALE EDITING */}
+      {/* MODALE EDITING E ASSEGNAZIONE COMPLETA */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">{modalItem.stato === 'consuntivo' ? '✏️ Dettaglio Intervento' : '📋 Scheda Attività'}</h3>
@@ -1944,39 +1976,53 @@ function HomeContent() {
               <button onClick={() => setModalItem(null)} className="text-slate-400 hover:text-slate-600 font-black text-base p-1 cursor-pointer">✕</button>
             </div>
 
-            <div className="space-y-2 bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs">
-              <div><strong className="text-slate-500 uppercase text-[10px]">Cliente:</strong> <span className="font-bold text-slate-900">{toText(modalItem.cliente) || '-'}</span></div>
-              <div><strong className="text-slate-500 uppercase text-[10px]">Progetto / Dettaglio:</strong> <span className="font-bold text-slate-900">{toText(modalItem.progetto) || '-'}</span></div>
-              <div><strong className="text-slate-500 uppercase text-[10px]">Tecnico Assegnato:</strong> <span className="font-bold text-slate-900">{toText(modalItem.dipendente) || '-'}</span></div>
-              {modalItem.note && <div><strong className="text-slate-500 uppercase text-[10px]">Note:</strong> <span className="italic text-slate-700">{toText(modalItem.note)}</span></div>}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-1">
+            <div className="space-y-3 pt-1">
               {(isItemDaAssegnare(modalItem) || currentUser?.ruolo === 'admin') && (
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-indigo-500 mb-1 uppercase">Svolto da:</label>
-                  <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3 py-2 border rounded-xl bg-indigo-50 border-indigo-200 text-sm font-bold text-indigo-800">
-                    <option value="Da Assegnare" disabled>❓ Da Assegnare</option>
+                <div>
+                  <label className="block text-xs font-bold text-indigo-600 mb-1 uppercase">Tecnico Assegnato:</label>
+                  <select value={dipendenteEffettivo} onChange={e => setDipendenteEffettivo(e.target.value)} className="w-full px-3.5 py-2.5 border rounded-xl bg-indigo-50/70 border-indigo-200 text-sm font-bold text-indigo-900 outline-none">
+                    <option value="Da Assegnare">❓ Da Assegnare</option>
                     {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
               )}
-              
+
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Cantiere / Assenza</label>
-                <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-sky-200" />
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Cliente <span className="text-rose-500">*</span></label>
+                <input type="text" list="lista-aziende" required value={clienteEffettivo} onChange={e => setClienteEffettivo(e.target.value)} placeholder="Inserisci o seleziona cliente..." className="w-full px-3.5 py-2.5 border rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-sky-200" />
               </div>
+
               <div>
-                <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
-                <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800 outline-none focus:ring-2 focus:ring-sky-200" />
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Progetto / Dettaglio <span className="text-rose-500">*</span></label>
+                <input type="text" required value={progettoEffettivo} onChange={e => setProgettoEffettivo(e.target.value)} placeholder="Es. Assistenza / Manutenzione..." className="w-full px-3.5 py-2.5 border rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-sky-200" />
               </div>
-              <div className="col-span-2">
-                <label className="block text-xs font-bold text-amber-600 mb-1 uppercase">⚡ Ore Straordinario</label>
-                <input type="number" step="0.5" min="0" value={oreStraordinarioEffettive} onChange={e => setOreStraordinarioEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-amber-50 border-amber-300 text-sm font-extrabold text-amber-900 outline-none focus:ring-2 focus:ring-amber-200" />
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ore Cantiere / Assenza</label>
+                  <input type="number" step="0.5" value={oreEffettive} onChange={e => setOreEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-sky-200" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-sky-600 mb-1 uppercase">Ore Backoffice</label>
+                  <input type="number" step="0.5" value={oreBackofficeEffettive} onChange={e => setOreBackofficeEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-sky-50 border-sky-200 text-sm font-bold text-sky-800 outline-none focus:ring-2 focus:ring-sky-200" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-purple-600 mb-1 uppercase">🚗 Trasferta</label>
+                  <input type="number" step="0.5" value={oreTrasfertaEffettive} onChange={e => setOreTrasfertaEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-purple-50 border-purple-200 text-sm font-bold text-purple-800 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-amber-600 mb-1 uppercase">⚡ Straordinario</label>
+                  <input type="number" step="0.5" min="0" value={oreStraordinarioEffettive} onChange={e => setOreStraordinarioEffettive(parseFloat(e.target.value))} className="w-full px-3 py-2 border rounded-xl bg-amber-50 border-amber-300 text-sm font-extrabold text-amber-900 outline-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Note &amp; Dettagli</label>
+                <textarea rows={2} value={noteEffettive} onChange={e => setNoteEffettive(e.target.value)} placeholder="Note aggiuntive..." className="w-full px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-medium outline-none"></textarea>
               </div>
             </div>
 
-            <div className="flex space-x-2 pt-2">
+            <div className="flex space-x-2 pt-2 border-t border-slate-100">
               <button onClick={() => setModalItem(null)} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer">Annulla</button>
               <button onClick={handleConfermaChiudi} disabled={loading} className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer">
                 {loading ? '...' : (modalItem.stato === 'consuntivo' ? 'Salva Modifiche ✅' : 'Conferma e Salva ✅')}
