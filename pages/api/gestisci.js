@@ -55,13 +55,11 @@ export default async function handler(req, res) {
           const isDaAssegnare = !record.dipendente || record.dipendente.toLowerCase() === 'da assegnare';
           const projLower = (record.progetto || '').toLowerCase();
 
-          // GESTIONE INTELLIGENTE DEI TAG
           let tag = '⏳ [PIANIFICATO]';
           if (record.stato === 'consuntivo') tag = '✅ [SVOLTO]';
           if (record.stato === 'in_approvazione') tag = '⏳ [IN APPROVAZIONE]';
           if (isDaAssegnare) tag = '❓ [DA ASSEGNARE]';
 
-          // OVERRIDE PER ASSENZE (Sole, Orologio o Ospedale)
           if (projLower.includes('ferie')) tag = '🏖️ [FERIE]';
           else if (projLower.includes('permesso') || projLower.includes('rol')) tag = '⏱️ [PERMESSO]';
           else if (projLower.includes('malattia')) tag = '🏥 [MALATTIA]';
@@ -85,7 +83,34 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { id, calendar_event_id } = req.body;
+    const { id, calendar_event_id, items } = req.body;
+
+    // ELIMINAZIONE MULTIPLA
+    if (items && Array.isArray(items)) {
+      const idsToUpdate = items.map(i => i.id);
+      const { error } = await supabase.from('registrazioni_ore').update({ stato: 'annullato' }).in('id', idsToUpdate);
+      if (error) return res.status(500).json({ error: error.message });
+
+      try {
+        const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+        const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+        const calendarId = process.env.GOOGLE_CALENDAR_ID;
+        if (clientEmail && privateKey && calendarId) {
+          const auth = new google.auth.JWT({ email: clientEmail, key: privateKey, scopes: ['https://www.googleapis.com/auth/calendar'] });
+          const calendar = google.calendar({ version: 'v3', auth });
+          
+          for (const item of items) {
+            if (item.calendar_event_id) {
+              try { await calendar.events.delete({ calendarId, eventId: item.calendar_event_id }); } catch(e) {}
+            }
+          }
+        }
+      } catch(e) {}
+
+      return res.status(200).json({ message: 'Eliminazione multipla completata' });
+    }
+
+    // ELIMINAZIONE SINGOLA (Compatibilità retroattiva)
     const { error } = await supabase.from('registrazioni_ore').update({ stato: 'annullato' }).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
 
