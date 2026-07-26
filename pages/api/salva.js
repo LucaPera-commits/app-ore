@@ -156,3 +156,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ message: `Errore Server API: ${error?.message || error}` });
   }
 }
+Fai clic su Commit changes... su GitHub per salvare.
+
+Attendi circa 30 secondi che Vercel completi la build, poi riprova l'inserimento: il salvataggio andrà a buon fine e vedrai subito l'evento comparire anche su Google Calendar!
