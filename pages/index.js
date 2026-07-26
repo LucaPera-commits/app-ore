@@ -44,6 +44,18 @@ function getCurrentMonthStr() { return new Date().toISOString().slice(0, 7); }
 function getFirstDayOfCurrentMonthStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
 function getNextMonthStr() { const d = new Date(); let year = d.getFullYear(); let month = d.getMonth() + 2; if (month > 12) { month = 1; year += 1; } return `${year}-${String(month).padStart(2, '0')}`; }
 
+// FUNZIONE RIPRISTINATA (Risolve il ReferenceError)
+function getNomeMeseText(annoMeseStr) {
+  if (!annoMeseStr) return '';
+  try {
+    const [year, month] = annoMeseStr.split('-').map(Number);
+    const date = new Date(year, month - 1, 1);
+    return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  } catch (e) {
+    return String(annoMeseStr);
+  }
+}
+
 function getNormalizedDate(d) {
   if (!d) return getTodayStr();
   if (typeof d !== 'string' && typeof d !== 'number') return getTodayStr();
@@ -130,7 +142,7 @@ function HomeContent() {
   const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
   const [isAiTyping, setIsAiTyping] = useState(false);
 
-  // ANAGRAFICA CLIENTI (Local State per ora)
+  // ANAGRAFICA CLIENTI
   const [dbClienti, setDbClienti] = useState([
     { id: 1, ragione_sociale: 'ALSTOM ITALIA SPA', piva: 'IT01234567890', indirizzo: 'Via Sesto San Giovanni, Milano', email: 'admin@alstom.it', telefono: '02-123456', note: 'Cliente VIP' },
     { id: 2, ragione_sociale: 'BORELLI SRL', piva: 'IT09876543210', indirizzo: 'Via Roma 10, Torino', email: 'info@borelli.it', telefono: '011-987654', note: 'Manutenzione semestrale' }
@@ -138,7 +150,7 @@ function HomeContent() {
   const [modalCliente, setModalCliente] = useState(null);
   const [searchCliente, setSearchCliente] = useState('');
 
-  // APPUNTI / PDM (Local State per ora)
+  // APPUNTI / PDM
   const [dbAppunti, setDbAppunti] = useState([
     { id: 1, cliente: 'ALSTOM ITALIA SPA', progetto: 'Collaudo Impianto X', testo: 'Effettuato setup iniziale. Parametri OK, in attesa di verifica.', versione: 1, autore: 'Luca Pera', data_ora: new Date().toISOString() }
   ]);
@@ -181,6 +193,7 @@ function HomeContent() {
   const [searchQueryNC, setSearchQueryNC] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
   const [loadingNC, setLoadingNC] = useState(false);
+  const [errorNC, setErrorNC] = useState(null);
 
   const [modalDocumento, setModalDocumento] = useState(null);
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
@@ -201,7 +214,6 @@ function HomeContent() {
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
 
-  // CREA LISTA CLIENTI DINAMICA (Base + Anagrafica)
   const listaClientiCompleta = Array.from(new Set([...LISTA_CLIENTI_BASE, ...dbClienti.map(c => c.ragione_sociale)])).sort();
 
   function canEditItem(item) { if (!currentUser) return false; if (currentUser.ruolo === 'admin') return true; return matchNomeDipendente(item?.dipendente, currentUser.nome); }
@@ -416,11 +428,10 @@ function HomeContent() {
       }
 
       if (salvatiOk > 0) {
-        const msgOk = statoDaImpostare === 'in_approvazione' ? `Richiesta inviata in approvazione all'amministratore per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!` : `Registrazione effettuata per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!`;
-        setStatusMessage({ type: 'success', text: msgOk });
+        setStatusMessage({ type: 'success', text: `Registrazione salvata per ${salvatiOk} giornate!` });
         setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, usaIntervallo: false }));
         setCategoriaForm('lavoro'); fetchProgrammati();
-      } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore || 'Errore di salvataggio sconosciuto.' }); }
+      } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore }); }
     } catch (err) { setStatusMessage({ type: 'error', text: `Errore Rete` }); } finally { setLoading(false); }
   };
 
@@ -429,8 +440,7 @@ function HomeContent() {
     if (!clienteEffettivo || !clienteEffettivo.trim()) { alert("⚠️ Campo Cliente obbligatorio!"); return; }
     if (!progettoEffettivo || !progettoEffettivo.trim()) { alert("⚠️ Campo Progetto obbligatorio!"); return; }
 
-    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < primoGiornoMeseCorrente) { alert("🔒 Mese Passato Consolidato: Impossibile modificare."); return; }
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese Passato Consolidato: Impossibile modificare.");
 
     setLoading(true);
     try {
@@ -449,8 +459,7 @@ function HomeContent() {
 
   const handleElimina = async (item) => {
     if (!item || !canEditItem(item)) return alert("Operazione non permessa.");
-    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < primoGiornoMeseCorrente) { return alert("🔒 Mese chiuso."); }
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese chiuso.");
     if (!confirm(`Annullare l'attività "${toText(item.cliente)}"?`)) return;
 
     setLoading(true);
@@ -462,7 +471,7 @@ function HomeContent() {
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item)) { alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`); return; }
+    if (!canEditItem(item)) return alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`);
     setModalItem(item);
     setOreEffettive(item.ore || 0); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); setOreStraordinarioEffettive(item.ore_straordinario || 0);
     setDipendenteEffettivo(isItemDaAssegnare(item) ? currentUser?.nome : item.dipendente);
@@ -499,34 +508,20 @@ function HomeContent() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // FUNZIONI APPUNTI PDM
+  // APPUNTI PDM
   const handleSalvaAppunto = () => {
-    if (!appuntiClienteSel || !appuntiProgettoSel || !nuovoAppuntoTesto.trim()) return alert("Compila tutti i campi dell'appunto.");
+    if (!appuntiClienteSel || !appuntiProgettoSel || !nuovoAppuntoTesto.trim()) return alert("Compila tutti i campi!");
     const existingNotes = dbAppunti.filter(a => a.cliente === appuntiClienteSel && a.progetto === appuntiProgettoSel);
     const nextVersion = existingNotes.length > 0 ? Math.max(...existingNotes.map(n => n.versione)) + 1 : 1;
-    
-    const newNote = {
-      id: Date.now(),
-      cliente: appuntiClienteSel,
-      progetto: appuntiProgettoSel,
-      testo: nuovoAppuntoTesto,
-      versione: nextVersion,
-      autore: currentUser?.nome || 'Sconosciuto',
-      data_ora: new Date().toISOString()
-    };
-    
-    setDbAppunti([newNote, ...dbAppunti]);
-    setNuovoAppuntoTesto('');
+    const newNote = { id: Date.now(), cliente: appuntiClienteSel, progetto: appuntiProgettoSel, testo: nuovoAppuntoTesto, versione: nextVersion, autore: currentUser?.nome || 'Sconosciuto', data_ora: new Date().toISOString() };
+    setDbAppunti([newNote, ...dbAppunti]); setNuovoAppuntoTesto('');
   };
 
-  // FUNZIONI ANAGRAFICA
+  // ANAGRAFICA
   const handleSalvaCliente = (e) => {
     e.preventDefault();
-    if(modalCliente.id) {
-      setDbClienti(dbClienti.map(c => c.id === modalCliente.id ? modalCliente : c));
-    } else {
-      setDbClienti([...dbClienti, { ...modalCliente, id: Date.now() }]);
-    }
+    if(modalCliente.id) { setDbClienti(dbClienti.map(c => c.id === modalCliente.id ? modalCliente : c)); } 
+    else { setDbClienti([...dbClienti, { ...modalCliente, id: Date.now() }]); }
     setModalCliente(null);
   };
 
@@ -542,25 +537,11 @@ function HomeContent() {
   const mieAttivitaArretrato = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
   const mieAttivitaProssime = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
 
-  const nextMonthStr = getNextMonthStr();
-  const nomeMeseProssimoText = getNomeMeseText(nextMonthStr);
-  const giorniLavorativiProssimoMese = getGiorniLavorativiMese(nextMonthStr);
-  const oreLavorativeTotaliProssimoMese = giorniLavorativiProssimoMese * 8;
-
-  const riepilogoDisponibilitaProssimoMese = listaDipendenti.map(nomeDip => {
-    const eventiDipMese = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(nextMonthStr) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato');
-    const oreImpegnateTotali = eventiDipMese.reduce((acc, curr) => acc + Number(curr.ore || 0) + Number(curr.ore_backoffice || 0) + Number(curr.ore_trasferta || 0), 0);
-    const oreDisponibiliResidue = Math.max(0, oreLavorativeTotaliProssimoMese - oreImpegnateTotali);
-    const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
-    return { nome: nomeDip, oreImpegnateTotali, oreDisponibiliResidue, giorniDisponibiliResidui };
-  });
-
   const safeRisultatiNC = Array.isArray(risultatiNC) ? risultatiNC : [];
   const giorniSettimanaPlanner = get7DaysOfWeek(plannerWeekStart);
 
   const handleShiftWeek = (deltaDays) => {
-    const curr = new Date(plannerWeekStart);
-    curr.setDate(curr.getDate() + deltaDays);
+    const curr = new Date(plannerWeekStart); curr.setDate(curr.getDate() + deltaDays);
     setPlannerWeekStart(getMondayOfCurrentWeek(curr));
   };
 
@@ -586,7 +567,7 @@ function HomeContent() {
       <div key={keyVal} className="flex items-stretch gap-3 w-full transition-all">
         {isEditable && (
           <div className="flex flex-col justify-center px-1" onClick={e => e.stopPropagation()}>
-            <input type="checkbox" checked={isSelected} onChange={() => toggleSelection(item)} className={`w-5 h-5 cursor-pointer rounded border-slate-300 shadow-sm ${isSelected ? 'accent-sky-600' : ''}`} />
+            <input type="checkbox" checked={isSelected} onChange={() => toggleSelection(item)} className={`w-5 h-5 cursor-pointer accent-sky-500 rounded border-slate-300`} />
           </div>
         )}
         
@@ -624,10 +605,9 @@ function HomeContent() {
                 <button onClick={() => openEditModal(item)} className="px-4 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-600 hover:text-white text-xs font-bold rounded-xl transition-all border border-sky-100 cursor-pointer">
                   {item.stato === 'consuntivo' ? 'Modifica' : 'Conferma'}
                 </button>
+                <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-colors cursor-pointer">🗑️</button>
               </>
-            ) : (
-              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">Sola Lettura</span>
-            )}
+            ) : <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">Sola Lettura</span>}
           </div>
         </div>
       </div>
@@ -697,7 +677,6 @@ function HomeContent() {
               {(daAssegnareItems.length > 0) && <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
             
-            {/* NUOVI TAB AGGIUNTI */}
             <button onClick={() => navigateTo('anagrafiche')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'anagrafiche' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏢 Anagrafiche</button>
             <button onClick={() => navigateTo('appunti')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'appunti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📓 Appunti/PDM</button>
 
@@ -888,7 +867,7 @@ function HomeContent() {
                         <td className="p-3 text-slate-600">{c.indirizzo || '-'}</td>
                         <td className="p-3 text-slate-600">{c.email}<br/>{c.telefono}</td>
                         <td className="p-3 text-right">
-                          <button onClick={() => setModalCliente(c)} className="text-sky-600 font-bold hover:underline">Modifica</button>
+                          <button onClick={() => setModalCliente(c)} className="text-sky-600 font-bold hover:underline cursor-pointer">Modifica</button>
                         </td>
                       </tr>
                     ))}
@@ -957,7 +936,7 @@ function HomeContent() {
                     
                     <div className="p-4 border-b border-slate-100 bg-white">
                       <textarea value={nuovoAppuntoTesto} onChange={e=>setNuovoAppuntoTesto(e.target.value)} placeholder="Scrivi qui i nuovi appunti del cantiere o le modifiche..." className="w-full h-32 p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500 bg-slate-50"></textarea>
-                      <button onClick={handleSalvaAppunto} className="mt-2 w-full bg-sky-600 text-white font-bold py-2 rounded-xl shadow hover:bg-sky-500 transition-colors">
+                      <button onClick={handleSalvaAppunto} className="mt-2 w-full bg-sky-600 text-white font-bold py-2 rounded-xl shadow hover:bg-sky-500 transition-colors cursor-pointer">
                         Salva Nuova Revisione
                       </button>
                     </div>
@@ -977,7 +956,7 @@ function HomeContent() {
                           </div>
                           <p className="text-sm text-slate-700 whitespace-pre-wrap">{nota.testo}</p>
                           {idx !== 0 && (
-                            <button onClick={() => setNuovoAppuntoTesto(nota.testo)} className="mt-3 text-[10px] font-bold text-sky-600 hover:underline">Ripristina come base</button>
+                            <button onClick={() => setNuovoAppuntoTesto(nota.testo)} className="mt-3 text-[10px] font-bold text-sky-600 hover:underline cursor-pointer">Ripristina come base</button>
                           )}
                         </div>
                       ))}
@@ -1011,7 +990,7 @@ function HomeContent() {
 
             {/* LEGENDA CROMATICA MIGLIORATA E CON ICONE */}
             <div className="flex flex-wrap items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 text-xs font-bold shadow-sm">
-              <span className="text-slate-400 uppercase font-black text-[10px]">Legenda Colori & Icone:</span>
+              <span className="text-slate-400 uppercase font-black text-[10px]">Legenda Colori &amp; Icone:</span>
               <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 Pianificato (⏳)</span>
               <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-xl">🟢 Svolto (✅)</span>
               <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-xl">🟣 Assenza (🏖️/🏥)</span>
@@ -1051,7 +1030,7 @@ function HomeContent() {
                         const eventiCella = safeStorico.filter(item => isItemDaAssegnare(item) && getNormalizedDate(item.data) === gStr);
                         const isExpanded = plannerEspansi['Da Assegnare'];
                         return (
-                          <td key={`da_ass_${gStr}`} onClick={() => isExpanded && setFormData(prev => ({...prev, dipendente: 'Da Assegnare', data: gStr, data_fine: gStr, usaIntervallo: false})) || (isExpanded && navigateTo('nuovo'))} className={`p-2 border-r border-amber-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-amber-100/40 cursor-pointer group' : 'h-12'}`}>
+                          <td key={`da_ass_${gStr}`} onClick={() => isExpanded && nuovaAttivitaDaPlanner('Da Assegnare', gStr)} className={`p-2 border-r border-amber-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-amber-100/40 cursor-pointer group' : 'h-12'}`}>
                             {isExpanded ? (
                               <div className="space-y-1.5">
                                 {eventiCella.map((ev, evIdx) => (
