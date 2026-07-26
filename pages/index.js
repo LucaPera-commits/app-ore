@@ -4,26 +4,19 @@ import Head from 'next/head';
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React intercettato:", error, errorInfo); }
+  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 p-8 flex flex-col items-center justify-center font-sans">
           <div className="max-w-3xl w-full bg-white p-8 rounded-3xl border border-rose-200 shadow-2xl text-center space-y-4">
             <div className="text-5xl">⚠️</div>
-            <h2 className="text-2xl font-black text-rose-600">Si è verificato un errore nell'interfaccia</h2>
-            <p className="text-sm text-slate-500">Dettaglio dell'eccezione intercettata:</p>
-            
+            <h2 className="text-2xl font-black text-rose-600">Errore nell'interfaccia</h2>
             <div className="bg-slate-900 text-left p-4 rounded-xl overflow-x-auto">
               <p className="text-rose-400 font-mono text-sm font-bold">{this.state.error && this.state.error.toString()}</p>
-              <pre className="text-slate-400 font-mono text-[10px] mt-2 whitespace-pre-wrap">
-                {this.state.errorInfo && this.state.errorInfo.componentStack}
-              </pre>
+              <pre className="text-slate-400 font-mono text-[10px] mt-2 whitespace-pre-wrap">{this.state.errorInfo && this.state.errorInfo.componentStack}</pre>
             </div>
-
-            <button onClick={() => window.location.reload()} className="px-6 py-3 bg-sky-600 text-white font-bold rounded-xl shadow-md hover:bg-sky-500 transition-all cursor-pointer">
-              🔄 Ricarica l'Applicazione
-            </button>
+            <button onClick={() => window.location.reload()} className="px-6 py-3 bg-sky-600 text-white font-bold rounded-xl shadow-md cursor-pointer">🔄 Ricarica l'App</button>
           </div>
         </div>
       );
@@ -40,27 +33,16 @@ const UTENTI = {
   'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
 };
 
-const LISTA_CLIENTI = [
+const LISTA_CLIENTI_BASE = [
   '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
   'BARBERO ROBERTO IMPIANTI TERMOSANITARI', 'BORELLI', 'BOSCO ITALIA S.P.A', 'BUCHER MUNICIPAL', 'C.T.L. s.r.l.', 'CAGLIERO S.R.L', 'CAGNAZZO s.n.c', 'CAMA 1 s.p.a', 'CASTIM 2000', 
-  'CDR ITALIA S.P.A', 'CHERCHISYSTEM', 'CIEMMEBI', 'COGORNO SERGIO', 'COLMAR Technik Spa', 'COMET', 'COMETAL s.r.l', 'COMETTO', 'COSPAL COMPOSITES S.P.A', 'COSTA RODOLFO s.r.l', 
-  'DAVIDE BERNARDI', 'DEMONT', 'DIGITALISO', 'DMB', 'ECOTECH', 'EMMEGI SCS', 'ENOMECCANICA BOSIO', 'ERREPI', 'FARID', 'GIOLITO', 'GIORDANO LUCA e C. s.a.s', 'GT GESTIONI TECNOLOGICHE', 
-  'Hitachi Rail', 'HYDRO', 'ICOSE', 'IDEO TECNICA', 'IIS', 'IIS CERT', 'IMI s.r.l', 'Ing. Bertolotti', 'IPV', 'IRIDE', 'ISAF BUS COMPONENTS', 'ISOCLIMA', 'Jilin QIXING', 
-  'LIZ ITALIANA', 'MA s.r.l', 'MANPOWER', 'MERLO S.P.A', 'MICHELE SALE', 'MONDINO', 'MOVINTER S.R.L', 'MSA DAMPER', 'NKB s.r.l', 'NORD ENGINEERING', 'OM3', 'ONN WATER', 
-  'OPERVAL', 'PERANO BRUNO S.R.L', 'PERANO SPA', 'PRINCIPI s.r.l', 'PROMETES SISTEMI', 'RECIF', 'RG TECH', 'RI.ME.BO', 'ROLFO', 'S.C.A.M.I.C', 'SARACINO COSTRUZIONI', 
-  'SARACINO', 'SAVINO', 'SICMA', 'SIMIC S.P.A', 'SPEICH s.r.l', 'STAT', 'STAT_BENACCHIO GROUP', 'STUDIO POLIGEO', 'T.M.C', 'TPL_Borgo S.Dalmazzo', 'TSM', 'TUBILINE s.r.l', 'VASILY UDODOV', 'VEGLIA'
+  'CDR ITALIA S.P.A', 'CHERCHISYSTEM', 'CIEMMEBI', 'COGORNO SERGIO', 'COLMAR Technik Spa', 'COMET', 'COMETAL s.r.l', 'COMETTO', 'COSPAL COMPOSITES S.P.A', 'COSTA RODOLFO s.r.l'
 ];
 
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 function getCurrentMonthStr() { return new Date().toISOString().slice(0, 7); }
 function getFirstDayOfCurrentMonthStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
 function getNextMonthStr() { const d = new Date(); let year = d.getFullYear(); let month = d.getMonth() + 2; if (month > 12) { month = 1; year += 1; } return `${year}-${String(month).padStart(2, '0')}`; }
-
-function getNomeMeseText(annoMeseStr) {
-  if (!annoMeseStr) return '';
-  try { const [year, month] = annoMeseStr.split('-').map(Number); const date = new Date(year, month - 1, 1); return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }); } 
-  catch (e) { return String(annoMeseStr); }
-}
 
 function getNormalizedDate(d) {
   if (!d) return getTodayStr();
@@ -74,31 +56,19 @@ function formatDateSafely(dateVal) {
   catch (e) { return String(dateVal); }
 }
 
-function toText(val) {
-  if (val === null || val === undefined) return '';
-  if (typeof val === 'object') return JSON.stringify(val);
-  return String(val);
-}
-
-function renderStars(rating) {
-  const parsed = Math.floor(Number(rating));
-  const count = isNaN(parsed) || parsed < 1 ? 5 : Math.min(5, parsed);
-  return '⭐'.repeat(count);
-}
+function toText(val) { if (val === null || val === undefined) return ''; if (typeof val === 'object') return JSON.stringify(val); return String(val); }
 
 function matchNomeDipendente(nomeDb, filtro) {
   if (!filtro || filtro === 'Tutti') return true; 
   if (!nomeDb) return false;
-  const db = String(nomeDb).toLowerCase().trim();
-  const flt = String(filtro).toLowerCase().trim();
+  const db = String(nomeDb).toLowerCase().trim(); const flt = String(filtro).toLowerCase().trim();
   if (db === flt) return true;
   const pF = flt.split(' ').filter(Boolean); const pD = db.split(' ').filter(Boolean);
   return pF[0] && pD[0] && pF[0] === pD[0];
 }
 
 function isItemDaAssegnare(item) {
-  if (!item) return false;
-  if (item.stato === 'annullato') return false;
+  if (!item) return false; if (item.stato === 'annullato') return false;
   const dip = toText(item.dipendente).toLowerCase().trim();
   return !dip || dip === 'da assegnare' || dip === 'da_assegnare' || dip === 'nessuno' || dip === 'null' || dip === 'undefined';
 }
@@ -113,13 +83,8 @@ function getParentPath(path) { if (!path) return ''; const cleanPath = String(pa
 function getGiorniLavorativiMese(annoMeseStr) {
   if (!annoMeseStr) return 22;
   try {
-    const [year, month] = annoMeseStr.split('-').map(Number);
-    let count = 0; const date = new Date(year, month - 1, 1);
-    while (date.getMonth() === month - 1) {
-      const day = date.getDay();
-      if (day !== 0 && day !== 6) count++;
-      date.setDate(date.getDate() + 1);
-    }
+    const [year, month] = annoMeseStr.split('-').map(Number); let count = 0; const date = new Date(year, month - 1, 1);
+    while (date.getMonth() === month - 1) { const day = date.getDay(); if (day !== 0 && day !== 6) count++; date.setDate(date.getDate() + 1); }
     return count;
   } catch (e) { return 22; }
 }
@@ -132,19 +97,14 @@ function getMondayOfCurrentWeek(dateInput = new Date()) {
 
 function get7DaysOfWeek(mondayStr) {
   const days = []; const curr = new Date(mondayStr);
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(curr); d.setDate(curr.getDate() + i);
-    days.push(d.toISOString().split('T')[0]);
-  }
+  for (let i = 0; i < 7; i++) { const d = new Date(curr); d.setDate(curr.getDate() + i); days.push(d.toISOString().split('T')[0]); }
   return days;
 }
 
 function getGiorniLavorativiMancanti(storico, nomeDip) {
-  if (!nomeDip) return [];
-  const oggi = new Date(); const giorniMancanti = [];
+  if (!nomeDip) return []; const oggi = new Date(); const giorniMancanti = [];
   for (let i = 1; i <= 14; i++) {
-    const d = new Date(); d.setDate(oggi.getDate() - i);
-    const dayOfWeek = d.getDay();
+    const d = new Date(); d.setDate(oggi.getDate() - i); const dayOfWeek = d.getDay();
     if (dayOfWeek !== 0 && dayOfWeek !== 6) {
       const dStr = d.toISOString().split('T')[0];
       const haReg = storico.some(item => item && matchNomeDipendente(item.dipendente, nomeDip) && getNormalizedDate(item.data) === dStr && item.stato !== 'annullato');
@@ -159,18 +119,32 @@ function HomeContent() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   
   const [activeTab, setActiveTab] = useState('home');
   const [pathNC, setPathNC] = useState('');
   const [navHistory, setNavHistory] = useState([]);
 
-  // OROLOGIO IN TEMPO REALE
-  const [currentTime, setCurrentTime] = useState(new Date());
-
   // AI Assistant State
   const [aiInput, setAiInput] = useState('');
   const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
   const [isAiTyping, setIsAiTyping] = useState(false);
+
+  // ANAGRAFICA CLIENTI (Local State per ora)
+  const [dbClienti, setDbClienti] = useState([
+    { id: 1, ragione_sociale: 'ALSTOM ITALIA SPA', piva: 'IT01234567890', indirizzo: 'Via Sesto San Giovanni, Milano', email: 'admin@alstom.it', telefono: '02-123456', note: 'Cliente VIP' },
+    { id: 2, ragione_sociale: 'BORELLI SRL', piva: 'IT09876543210', indirizzo: 'Via Roma 10, Torino', email: 'info@borelli.it', telefono: '011-987654', note: 'Manutenzione semestrale' }
+  ]);
+  const [modalCliente, setModalCliente] = useState(null);
+  const [searchCliente, setSearchCliente] = useState('');
+
+  // APPUNTI / PDM (Local State per ora)
+  const [dbAppunti, setDbAppunti] = useState([
+    { id: 1, cliente: 'ALSTOM ITALIA SPA', progetto: 'Collaudo Impianto X', testo: 'Effettuato setup iniziale. Parametri OK, in attesa di verifica.', versione: 1, autore: 'Luca Pera', data_ora: new Date().toISOString() }
+  ]);
+  const [appuntiClienteSel, setAppuntiClienteSel] = useState('');
+  const [appuntiProgettoSel, setAppuntiProgettoSel] = useState('');
+  const [nuovoAppuntoTesto, setNuovoAppuntoTesto] = useState('');
 
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
@@ -184,12 +158,9 @@ function HomeContent() {
     Object.values(UTENTI).forEach(u => init[u.nome] = true);
     return init;
   });
-
   const togglePlannerRow = (dipNome) => setPlannerEspansi(prev => ({ ...prev, [dipNome]: !prev[dipNome] }));
 
-  // SELEZIONE MULTIPLA E "SELEZIONA TUTTO"
   const [selectedItems, setSelectedItems] = useState([]);
-
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   const [storicoCompleto, setStoricoCompleto] = useState([]);
@@ -201,22 +172,17 @@ function HomeContent() {
   const [filtroArchivioAdmin, setFiltroArchivioAdmin] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' });
   const [feedbackStatus, setFeedbackStatus] = useState(null);
-  const [rispostaApertaId, setRispostaApertaId] = useState(null);
-  const [testoRispostaAdmin, setTestoRispostaAdmin] = useState('');
 
   const [cartelleAperte, setCartelleAperte] = useState({ 'Da Assegnare': true });
   const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
-
   const toggleCartella = (nome) => setCartelleAperte(prev => ({ ...prev, [nome]: !prev[nome] }));
   const toggleSottoCartella = (key) => setSottoCartelleAperte(prev => ({ ...prev, [key]: !prev[key] }));
 
   const [searchQueryNC, setSearchQueryNC] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
   const [loadingNC, setLoadingNC] = useState(false);
-  const [errorNC, setErrorNC] = useState(null);
 
   const [modalDocumento, setModalDocumento] = useState(null);
-
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
   const [subTabReport, setSubTabReport] = useState('paghe');
   const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
@@ -234,44 +200,36 @@ function HomeContent() {
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
-  const safeReadIds = Array.isArray(readFeedbackIds) ? readFeedbackIds : [];
 
-  function canEditItem(item) {
-    if (!currentUser) return false;
-    if (currentUser.ruolo === 'admin') return true;
-    return matchNomeDipendente(item?.dipendente, currentUser.nome);
-  }
+  // CREA LISTA CLIENTI DINAMICA (Base + Anagrafica)
+  const listaClientiCompleta = Array.from(new Set([...LISTA_CLIENTI_BASE, ...dbClienti.map(c => c.ragione_sociale)])).sort();
+
+  function canEditItem(item) { if (!currentUser) return false; if (currentUser.ruolo === 'admin') return true; return matchNomeDipendente(item?.dipendente, currentUser.nome); }
 
   function navigateTo(targetTab, targetPathNC = '') {
     const cleanTargetFolder = targetPathNC ? String(targetPathNC).replace(/^\/+|\/+$/g, '') : '';
     if (targetTab === activeTab && cleanTargetFolder === pathNC) return;
     setNavHistory(prev => [...prev, { tab: activeTab, pathNC: pathNC }]);
-    setActiveTab(targetTab);
-    setPathNC(cleanTargetFolder);
+    setActiveTab(targetTab); setPathNC(cleanTargetFolder);
   }
 
   function handleGoBack() {
     if (navHistory.length === 0) return;
     const lastState = navHistory[navHistory.length - 1];
     setNavHistory(prev => prev.slice(0, prev.length - 1));
-    setActiveTab(lastState.tab);
-    setPathNC(lastState.pathNC || '');
-    setSearchQueryNC('');
+    setActiveTab(lastState.tab); setPathNC(lastState.pathNC || ''); setSearchQueryNC('');
   }
 
   function handleApriCartella(percorso) { setSearchQueryNC(''); navigateTo('documenti', percorso); }
   function handleCartellaSuperioreNC() { const parent = getParentPath(pathNC); setSearchQueryNC(''); navigateTo('documenti', parent); }
 
   const renderBreadcrumbs = () => {
-    const parts = pathNC ? pathNC.split('/').filter(Boolean) : [];
-    let accumulatedPath = '';
+    const parts = pathNC ? pathNC.split('/').filter(Boolean) : []; let accumulatedPath = '';
     return (
       <div className="flex flex-wrap items-center space-x-1.5 text-xs font-bold text-slate-700 truncate min-w-0 flex-1">
         <button onClick={() => navigateTo('documenti', '')} className={`hover:text-sky-600 cursor-pointer ${parts.length === 0 ? 'text-sky-700 font-black' : 'underline'}`}>🏠 Root</button>
         {parts.map((part, idx) => {
-          accumulatedPath += (accumulatedPath ? '/' : '') + part;
-          const isLast = idx === parts.length - 1;
-          const currentPartPath = accumulatedPath;
+          accumulatedPath += (accumulatedPath ? '/' : '') + part; const isLast = idx === parts.length - 1; const currentPartPath = accumulatedPath;
           return (
             <React.Fragment key={idx}>
               <span className="text-slate-400">/</span>
@@ -286,10 +244,7 @@ function HomeContent() {
   useEffect(() => {
     setIsMounted(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    
-    try { const saved = localStorage.getItem('bw_user'); if (saved) setCurrentUser(JSON.parse(saved)); } catch (e) { localStorage.removeItem('bw_user'); }
-    try { const savedRead = localStorage.getItem('bw_read_feedbacks'); if (savedRead) { const parsed = JSON.parse(savedRead); if (Array.isArray(parsed)) setReadFeedbackIds(parsed); } } catch (e) {}
-
+    try { const saved = localStorage.getItem('bw_user'); if (saved) setCurrentUser(JSON.parse(saved)); } catch (e) {}
     return () => clearInterval(timer);
   }, []);
 
@@ -297,8 +252,7 @@ function HomeContent() {
   useEffect(() => { setSelectedItems([]); }, [activeTab]);
 
   useEffect(() => {
-    const today = getTodayStr();
-    const eDaAssegnare = isItemDaAssegnare({ dipendente: formData.dipendente });
+    const today = getTodayStr(); const eDaAssegnare = isItemDaAssegnare({ dipendente: formData.dipendente });
     if (eDaAssegnare || formData.data > today) { setFormData(prev => ({ ...prev, stato: 'pianificato', ore_straordinario: 0 })); } 
     else { setFormData(prev => ({ ...prev, stato: 'consuntivo' })); }
   }, [formData.data, formData.dipendente]);
@@ -312,27 +266,15 @@ function HomeContent() {
 
   const fetchProgrammati = async () => {
     setLoadingProgrammati(true);
-    try {
-      const res = await fetch(`/api/gestisci?mode=all&_t=${Date.now()}`);
-      if (res.ok) { const dati = await res.json(); setStoricoCompleto(Array.isArray(dati) ? dati : []); }
-    } catch (e) { console.error("Errore fetch:", e); } 
-    finally { setLoadingProgrammati(false); }
+    try { const res = await fetch(`/api/gestisci?mode=all&_t=${Date.now()}`); if (res.ok) { const dati = await res.json(); setStoricoCompleto(Array.isArray(dati) ? dati : []); } } catch (e) {} finally { setLoadingProgrammati(false); }
   };
 
   const fetchFeedback = async () => {
     setLoadingFeedback(true);
-    try {
-      const isInclude = currentUser?.ruolo === 'admin' && filtroArchivioAdmin;
-      const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}&_t=${Date.now()}`);
-      if (res.ok) { const data = await res.json(); setFeedbackList(Array.isArray(data) ? data : []); }
-    } catch (e) { console.error("Errore feedback:", e); }
-    finally { setLoadingFeedback(false); }
+    try { const isInclude = currentUser?.ruolo === 'admin' && filtroArchivioAdmin; const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}&_t=${Date.now()}`); if (res.ok) { const data = await res.json(); setFeedbackList(Array.isArray(data) ? data : []); } } catch (e) {} finally { setLoadingFeedback(false); }
   };
 
-  const handleSilentSync = async () => {
-    if (currentUser?.ruolo !== 'admin') return;
-    try { const res = await fetch('/api/sync', { method: 'POST' }); if (res.ok) fetchProgrammati(); } catch (e) {}
-  };
+  const handleSilentSync = async () => { if (currentUser?.ruolo !== 'admin') return; try { const res = await fetch('/api/sync', { method: 'POST' }); if (res.ok) fetchProgrammati(); } catch (e) {} };
 
   useEffect(() => {
     if (currentUser && isMounted) {
@@ -343,29 +285,18 @@ function HomeContent() {
 
   const toggleSelection = (item) => {
     if (!canEditItem(item)) return;
-    setSelectedItems(prev => {
-      if (prev.some(i => i.id === item.id)) return prev.filter(i => i.id !== item.id);
-      return [...prev, item];
-    });
+    setSelectedItems(prev => { if (prev.some(i => i.id === item.id)) return prev.filter(i => i.id !== item.id); return [...prev, item]; });
   };
 
-  // FUNZIONE SELEZIONA TUTTO
   const handleSelectAll = (itemsToSelect) => {
     const editableItems = itemsToSelect.filter(item => canEditItem(item));
-    if (editableItems.length === 0) return alert("Non hai i permessi per modificare queste attività o sono di sola lettura.");
-    
+    if (editableItems.length === 0) return alert("Non hai permessi per modificare queste attività.");
     const allSelected = editableItems.every(item => selectedItems.some(sel => sel.id === item.id));
-    
-    if (allSelected) {
-      setSelectedItems(prev => prev.filter(sel => !editableItems.some(item => item.id === sel.id)));
-    } else {
+    if (allSelected) { setSelectedItems(prev => prev.filter(sel => !editableItems.some(item => item.id === sel.id))); } 
+    else {
       setSelectedItems(prev => {
         const newSelection = [...prev];
-        editableItems.forEach(item => {
-          if (!newSelection.some(sel => sel.id === item.id)) {
-            newSelection.push(item);
-          }
-        });
+        editableItems.forEach(item => { if (!newSelection.some(sel => sel.id === item.id)) newSelection.push(item); });
         return newSelection;
       });
     }
@@ -375,116 +306,57 @@ function HomeContent() {
     if (selectedItems.length === 0) return;
     const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
     const validItems = []; const skippedItems = [];
-
-    selectedItems.forEach(item => {
-      if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < primoGiornoMeseCorrente) { skippedItems.push(item); } 
-      else { validItems.push(item); }
-    });
-
-    if (skippedItems.length > 0) {
-      alert(`🔒 ${skippedItems.length} attività non possono essere eliminate (mese chiuso).`);
-      if (validItems.length === 0) return;
-    }
-
+    selectedItems.forEach(item => { if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < primoGiornoMeseCorrente) { skippedItems.push(item); } else { validItems.push(item); } });
+    if (skippedItems.length > 0) { alert(`🔒 ${skippedItems.length} attività non eliminabili (mese chiuso).`); if (validItems.length === 0) return; }
     if (!confirm(`🗑️ Sei sicuro di voler annullare definitivamente le ${validItems.length} attività selezionate?`)) return;
 
     setLoading(true);
     try {
-      const res = await fetch('/api/gestisci', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: validItems.map(i => ({ id: i.id, calendar_event_id: i.calendar_event_id })) })
-      });
-      if (res.ok) { setSelectedItems([]); fetchProgrammati(); } 
-      else { alert('Errore durante l\'eliminazione multipla.'); }
-    } catch (e) { alert('Errore di rete.'); } 
-    finally { setLoading(false); }
+      const res = await fetch('/api/gestisci', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: validItems.map(i => ({ id: i.id, calendar_event_id: i.calendar_event_id })) }) });
+      if (res.ok) { setSelectedItems([]); fetchProgrammati(); } else { alert('Errore.'); }
+    } catch (e) { alert('Errore di rete.'); } finally { setLoading(false); }
   };
 
   const handleAiSubmit = (e) => {
-    e.preventDefault();
-    if (!aiInput.trim()) return;
-    const newMsgs = [...aiMessages, { role: 'user', text: aiInput }];
-    setAiMessages(newMsgs);
-    setAiInput('');
-    setIsAiTyping(true);
-    setTimeout(() => {
-      setAiMessages([...newMsgs, { role: 'ai', text: 'Assistente AI attivo in modalità demo. In futuro potrò riassumerti l\'andamento delle commesse ed estrarre i rapportini!' }]);
-      setIsAiTyping(false);
-    }, 1200);
+    e.preventDefault(); if (!aiInput.trim()) return;
+    const newMsgs = [...aiMessages, { role: 'user', text: aiInput }]; setAiMessages(newMsgs); setAiInput(''); setIsAiTyping(true);
+    setTimeout(() => { setAiMessages([...newMsgs, { role: 'ai', text: 'Assistente AI attivo in modalità demo. In futuro potrò riassumerti l\'andamento delle commesse ed estrarre i rapportini!' }]); setIsAiTyping(false); }, 1200);
   };
 
   const unreadFeedbackCount = safeFeedbackList.filter(fb => {
-    if (!fb || fb.is_deleted) return false;
-    const key = getFeedbackKey(fb); if (!key) return false;
+    if (!fb || fb.is_deleted) return false; const key = getFeedbackKey(fb); if (!key) return false;
     if (currentUser?.ruolo === 'admin') return !fb.risposta && !safeReadIds.includes(key);
     const isMyReply = currentUser?.nome && matchNomeDipendente(fb.autore, currentUser.nome) && fb.risposta;
     return (isMyReply || !safeReadIds.includes(String(fb.id))) && !safeReadIds.includes(key);
   }).length;
 
   const handleInviaFeedback = async (e) => {
-    e.preventDefault(); if (!feedbackForm.messaggio.trim()) return;
-    setLoading(true); setFeedbackStatus(null);
+    e.preventDefault(); if (!feedbackForm.messaggio.trim()) return; setLoading(true); setFeedbackStatus(null);
     try {
-      const res = await fetch('/api/feedback', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autore: currentUser.nome, categoria: feedbackForm.categoria, valutazione: feedbackForm.valutazione, messaggio: feedbackForm.messaggio.trim() })
-      });
-      if (res.ok) { setFeedbackStatus({ type: 'success', text: 'Suggerimento inviato!' }); setFeedbackForm({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' }); fetchFeedback(); } 
-      else { setFeedbackStatus({ type: 'error', text: 'Errore invio.' }); }
-    } catch (e) { setFeedbackStatus({ type: 'error', text: 'Errore rete.' }); } 
-    finally { setLoading(false); }
-  };
-
-  const handleInviaRispostaAdmin = async (id) => {
-    if (!testoRispostaAdmin.trim()) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/feedback', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, risposta: testoRispostaAdmin.trim() }) });
-      if (res.ok) { setRispostaApertaId(null); setTestoRispostaAdmin(''); fetchFeedback(); }
-    } catch (e) {} finally { setLoading(false); }
-  };
-
-  const handleToggleSoftDelete = async (id, statoAttuale) => {
-    const nuovaAzione = !statoAttuale;
-    if (!confirm(nuovaAzione ? "Rimuovere dalla bacheca?" : "Ripristinare?")) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/feedback', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, is_deleted: nuovaAzione }) });
-      if (res.ok) fetchFeedback();
-    } catch (e) {} finally { setLoading(false); }
+      const res = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autore: currentUser.nome, categoria: feedbackForm.categoria, valutazione: feedbackForm.valutazione, messaggio: feedbackForm.messaggio.trim() }) });
+      if (res.ok) { setFeedbackStatus({ type: 'success', text: 'Suggerimento inviato!' }); setFeedbackForm({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' }); fetchFeedback(); } else { setFeedbackStatus({ type: 'error', text: 'Errore invio.' }); }
+    } catch (e) { setFeedbackStatus({ type: 'error', text: 'Errore rete.' }); } finally { setLoading(false); }
   };
 
   const handleApprovaAssenza = async (item) => {
     if (!item) return; setLoading(true);
-    try {
-      const res = await fetch('/api/gestisci', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id, stato: 'pianificato', chiudi_consuntivo: false }) });
-      if (res.ok) fetchProgrammati();
-    } catch (e) { alert("Errore"); } finally { setLoading(false); }
+    try { const res = await fetch('/api/gestisci', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id, stato: 'pianificato', chiudi_consuntivo: false }) }); if (res.ok) fetchProgrammati(); } catch (e) { alert("Errore"); } finally { setLoading(false); }
   };
 
   const handleRifiutaAssenza = async (item) => {
-    if (!item) return; if (!confirm(`Rifiutare la richiesta di ${toText(item.progetto)}?`)) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/gestisci', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id }) });
-      if (res.ok) fetchProgrammati();
-    } catch (e) { alert("Errore"); } finally { setLoading(false); }
+    if (!item) return; if (!confirm(`Rifiutare la richiesta di ${toText(item.progetto)}?`)) return; setLoading(true);
+    try { const res = await fetch('/api/gestisci', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id }) }); if (res.ok) fetchProgrammati(); } catch (e) { alert("Errore"); } finally { setLoading(false); }
   };
 
   const caricaContenutoNC = async (folderPath = '', search = '') => {
     setLoadingNC(true); setErrorNC(null);
     try {
       const res = await fetch(`/api/documenti?folder=${encodeURIComponent(folderPath)}&query=${encodeURIComponent(search)}`);
-      const data = await res.json();
-      if (res.ok) { setRisultatiNC(Array.isArray(data.risultati) ? data.risultati : []); } 
-      else { setErrorNC(data.message || 'Errore caricamento'); }
-    } catch (err) { setErrorNC('Errore Nextcloud'); } 
-    finally { setLoadingNC(false); }
+      const data = await res.json(); if (res.ok) { setRisultatiNC(Array.isArray(data.risultati) ? data.risultati : []); } else { setErrorNC(data.message || 'Errore caricamento'); }
+    } catch (err) { setErrorNC('Errore Nextcloud'); } finally { setLoadingNC(false); }
   };
 
   useEffect(() => { if (activeTab === 'documenti' && !searchQueryNC && isMounted) { caricaContenutoNC(pathNC, ''); } }, [activeTab, pathNC, isMounted]);
-
   const handleCercaNextcloud = (e) => { e.preventDefault(); if (!searchQueryNC.trim()) caricaContenutoNC(pathNC, ''); else caricaContenutoNC('', searchQueryNC); };
 
   const handleLogin = (e) => {
@@ -496,31 +368,19 @@ function HomeContent() {
   const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('bw_user'); setLoginForm({ username: '', password: '' }); setShowPassword(false); };
 
   const handleSyncCalendar = async () => {
-    if (currentUser?.ruolo !== 'admin') return alert("Solo admin.");
-    setLoadingProgrammati(true);
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' }); const data = await res.json();
-      alert(data.message || "Sincronizzato."); fetchProgrammati();
-    } catch (e) { alert("Errore rete"); } 
-    finally { setLoadingProgrammati(false); }
+    if (currentUser?.ruolo !== 'admin') return alert("Solo admin."); setLoadingProgrammati(true);
+    try { await fetch('/api/sync', { method: 'POST' }); fetchProgrammati(); } catch (e) {} finally { setLoadingProgrammati(false); }
   };
 
   const handleQuickReassign = async (item, nuovoDipendente) => {
     if (currentUser?.ruolo !== 'admin' || !item || !nuovoDipendente || nuovoDipendente === item.dipendente) return;
-    try {
-      const res = await fetch('/api/gestisci', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id, dipendente: nuovoDipendente, chiudi_consuntivo: false }) });
-      if (res.ok) fetchProgrammati();
-    } catch (e) {}
+    try { await fetch('/api/gestisci', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id, dipendente: nuovoDipendente, chiudi_consuntivo: false }) }); fetchProgrammati(); } catch (e) {}
   };
 
-  const nuovaAttivitaDaPlanner = (dip, dataStr) => {
-    setFormData(prev => ({ ...prev, dipendente: dip, data: dataStr, data_fine: dataStr, usaIntervallo: false }));
-    navigateTo('nuovo');
-  };
+  const nuovaAttivitaDaPlanner = (dip, dataStr) => { setFormData(prev => ({ ...prev, dipendente: dip, data: dataStr, data_fine: dataStr, usaIntervallo: false })); navigateTo('nuovo'); };
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setStatusMessage(null);
-
     if (!formData.cliente || !formData.cliente.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci il Cliente!' }); return; }
     if (!formData.progetto || !formData.progetto.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci il Progetto/Dettaglio!' }); return; }
 
@@ -529,50 +389,30 @@ function HomeContent() {
     if (totOreForm > 12) { if (!confirm(`⚠️ Stai registrando un totale di ${totOreForm} ore in una singola giornata. Confermi?`)) { return; } }
 
     const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
-    if (currentUser?.ruolo !== 'admin' && formData.data < primoGiornoMeseCorrente) {
-      setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Impossibile inserire/modificare i mesi scorsi.' }); return;
-    }
+    if (currentUser?.ruolo !== 'admin' && formData.data < primoGiornoMeseCorrente) { setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Impossibile inserire/modificare i mesi scorsi.' }); return; }
 
-    const oggi = new Date(); const dataSelezionata = new Date(formData.data);
-    const diffGiorni = (oggi - dataSelezionata) / (1000 * 60 * 60 * 24);
-
-    if (diffGiorni > 2.5 && (!formData.note || !formData.note.trim())) {
-      setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Le Note sono obbligatorie per registrazioni tardive.' }); return;
-    }
+    const diffGiorni = (new Date() - new Date(formData.data)) / (1000 * 60 * 60 * 24);
+    if (diffGiorni > 2.5 && (!formData.note || !formData.note.trim())) { setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Le Note sono obbligatorie per registrazioni tardive.' }); return; }
 
     setLoading(true);
     try {
       let dateDaSalvare = [formData.data];
       if (formData.usaIntervallo && formData.data_fine > formData.data) {
         dateDaSalvare = []; let curr = new Date(formData.data); const end = new Date(formData.data_fine);
-        while (curr <= end) {
-          const dayOfWeek = curr.getDay();
-          if (dayOfWeek !== 0 && dayOfWeek !== 6) { dateDaSalvare.push(curr.toISOString().split('T')[0]); }
-          curr.setDate(curr.getDate() + 1);
-        }
+        while (curr <= end) { const dayOfWeek = curr.getDay(); if (dayOfWeek !== 0 && dayOfWeek !== 6) { dateDaSalvare.push(curr.toISOString().split('T')[0]); } curr.setDate(curr.getDate() + 1); }
       }
       if (dateDaSalvare.length === 0) dateDaSalvare = [formData.data];
 
-      const testoProgetto = (formData.progetto || '').toLowerCase();
-      const testoCliente = (formData.cliente || '').toLowerCase();
+      const testoProgetto = (formData.progetto || '').toLowerCase(); const testoCliente = (formData.cliente || '').toLowerCase();
       const eRichiestaAssenza = categoriaForm === 'ferie' || categoriaForm === 'permesso' || testoProgetto.includes('ferie') || testoProgetto.includes('permesso') || testoProgetto.includes('rol') || testoCliente.includes('assenze');
 
-      let statoDaImpostare = formData.stato;
-      if (eRichiestaAssenza && currentUser?.ruolo !== 'admin') { statoDaImpostare = 'in_approvazione'; }
+      let statoDaImpostare = formData.stato; if (eRichiestaAssenza && currentUser?.ruolo !== 'admin') { statoDaImpostare = 'in_approvazione'; }
 
       let salvatiOk = 0; let ultimoMessaggioErrore = '';
-
       for (const d of dateDaSalvare) {
         const payload = { ...formData, data: d, stato: statoDaImpostare, ore_straordinario: formData.stato === 'consuntivo' ? (formData.ore_straordinario || 0) : 0 };
         const res = await fetch('/api/salva', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-
-        if (res.ok) { salvatiOk++; } 
-        else {
-          let errText = '';
-          try { const errData = await res.json(); errText = errData.message || errData.error || `Errore HTTP ${res.status}`; } 
-          catch (pErr) { const rawBody = await res.text().catch(() => ''); errText = `Errore Server (${res.status}): ${rawBody.slice(0, 120) || 'Risposta non valida'}`; }
-          ultimoMessaggioErrore = errText;
-        }
+        if (res.ok) { salvatiOk++; } else { const errData = await res.json().catch(()=>({})); ultimoMessaggioErrore = errData.message || 'Errore Server'; }
       }
 
       if (salvatiOk > 0) {
@@ -581,8 +421,7 @@ function HomeContent() {
         setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, usaIntervallo: false }));
         setCategoriaForm('lavoro'); fetchProgrammati();
       } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore || 'Errore di salvataggio sconosciuto.' }); }
-    } catch (err) { setStatusMessage({ type: 'error', text: `Errore Rete Client: ${err?.message || err}` }); } 
-    finally { setLoading(false); }
+    } catch (err) { setStatusMessage({ type: 'error', text: `Errore Rete` }); } finally { setLoading(false); }
   };
 
   const handleConfermaChiudi = async () => {
@@ -633,11 +472,7 @@ function HomeContent() {
   const exportCSVPaghe = () => {
     let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore Impegnate\n";
     listaDipendenti.forEach(nomeDip => {
-      const eventi = safeStorico.filter(item => {
-        if (!item) return false;
-        const dNorm = getNormalizedDate(item.data);
-        return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo';
-      });
+      const eventi = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo');
       const oreCantiere = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
       const oreBackoffice = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
       const oreTrasferta = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
@@ -648,7 +483,6 @@ function HomeContent() {
       const tot = oreCantiere + oreBackoffice + oreStraordinario + oreFerie + orePermesso + oreMalattia;
       csv += `"${nomeDip}";"${filtroMeseReport}";"${oreCantiere}";"${oreBackoffice}";"${oreTrasferta}";"${oreStraordinario}";"${oreFerie}";"${orePermesso}";"${oreMalattia}";"${tot}"\n`;
     });
-
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob);
     const link = document.createElement("a"); link.setAttribute("href", url); link.setAttribute("download", `Report_Buste_Paga_${filtroMeseReport}.csv`);
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
@@ -656,21 +490,44 @@ function HomeContent() {
 
   const exportCSVFatturazione = () => {
     let csv = "Cliente;Commessa / Progetto;Dipendente;Data;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Note\n";
-    const consuntivi = safeStorico.filter(item => {
-      if (!item) return false;
-      const dNorm = getNormalizedDate(item.data);
-      const inMese = dNorm && dNorm.startsWith(filtroMeseReport);
-      const matchCliente = filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione;
-      return inMese && matchCliente && item.stato === 'consuntivo' && !isAssenza(item);
-    });
-
+    const consuntivi = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(filtroMeseReport) && (filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione) && item.stato === 'consuntivo' && !isAssenza(item));
     [...consuntivi].sort((a, b) => toText(a.cliente).localeCompare(toText(b.cliente))).forEach(row => {
       csv += `"${toText(row.cliente)}";"${toText(row.progetto)}";"${toText(row.dipendente)}";"${getNormalizedDate(row.data)}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${row.ore_straordinario || 0}";"${toText(row.note).replace(/"/g, '""')}"\n`;
     });
-
     const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob);
     const link = document.createElement("a"); link.setAttribute("href", url); link.setAttribute("download", `Report_Fatturazione_${filtroMeseReport}.csv`);
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  // FUNZIONI APPUNTI PDM
+  const handleSalvaAppunto = () => {
+    if (!appuntiClienteSel || !appuntiProgettoSel || !nuovoAppuntoTesto.trim()) return alert("Compila tutti i campi dell'appunto.");
+    const existingNotes = dbAppunti.filter(a => a.cliente === appuntiClienteSel && a.progetto === appuntiProgettoSel);
+    const nextVersion = existingNotes.length > 0 ? Math.max(...existingNotes.map(n => n.versione)) + 1 : 1;
+    
+    const newNote = {
+      id: Date.now(),
+      cliente: appuntiClienteSel,
+      progetto: appuntiProgettoSel,
+      testo: nuovoAppuntoTesto,
+      versione: nextVersion,
+      autore: currentUser?.nome || 'Sconosciuto',
+      data_ora: new Date().toISOString()
+    };
+    
+    setDbAppunti([newNote, ...dbAppunti]);
+    setNuovoAppuntoTesto('');
+  };
+
+  // FUNZIONI ANAGRAFICA
+  const handleSalvaCliente = (e) => {
+    e.preventDefault();
+    if(modalCliente.id) {
+      setDbClienti(dbClienti.map(c => c.id === modalCliente.id ? modalCliente : c));
+    } else {
+      setDbClienti([...dbClienti, { ...modalCliente, id: Date.now() }]);
+    }
+    setModalCliente(null);
   };
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
@@ -691,11 +548,7 @@ function HomeContent() {
   const oreLavorativeTotaliProssimoMese = giorniLavorativiProssimoMese * 8;
 
   const riepilogoDisponibilitaProssimoMese = listaDipendenti.map(nomeDip => {
-    const eventiDipMese = safeStorico.filter(item => {
-      if (!item) return false;
-      const dNorm = getNormalizedDate(item.data);
-      return dNorm && dNorm.startsWith(nextMonthStr) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
-    });
+    const eventiDipMese = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(nextMonthStr) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato');
     const oreImpegnateTotali = eventiDipMese.reduce((acc, curr) => acc + Number(curr.ore || 0) + Number(curr.ore_backoffice || 0) + Number(curr.ore_trasferta || 0), 0);
     const oreDisponibiliResidue = Math.max(0, oreLavorativeTotaliProssimoMese - oreImpegnateTotali);
     const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
@@ -706,7 +559,8 @@ function HomeContent() {
   const giorniSettimanaPlanner = get7DaysOfWeek(plannerWeekStart);
 
   const handleShiftWeek = (deltaDays) => {
-    const curr = new Date(plannerWeekStart); curr.setDate(curr.getDate() + deltaDays);
+    const curr = new Date(plannerWeekStart);
+    curr.setDate(curr.getDate() + deltaDays);
     setPlannerWeekStart(getMondayOfCurrentWeek(curr));
   };
 
@@ -732,19 +586,11 @@ function HomeContent() {
       <div key={keyVal} className="flex items-stretch gap-3 w-full transition-all">
         {isEditable && (
           <div className="flex flex-col justify-center px-1" onClick={e => e.stopPropagation()}>
-            <input 
-              type="checkbox" 
-              checked={isSelected}
-              onChange={() => toggleSelection(item)}
-              className={`w-5 h-5 cursor-pointer rounded border-slate-300 shadow-sm ${isSelected ? 'accent-sky-600' : ''}`}
-            />
+            <input type="checkbox" checked={isSelected} onChange={() => toggleSelection(item)} className={`w-5 h-5 cursor-pointer rounded border-slate-300 shadow-sm ${isSelected ? 'accent-sky-600' : ''}`} />
           </div>
         )}
         
-        <div 
-          onClick={() => openEditModal(item)} 
-          className={`flex-1 p-4 bg-white border ${isSelected ? 'border-sky-500 ring-2 ring-sky-400/30 shadow-md' : 'border-slate-200 shadow-xs'} rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 cursor-pointer hover:border-sky-300 hover:shadow-md transition-all group`}
-        >
+        <div onClick={() => openEditModal(item)} className={`flex-1 p-4 bg-white border ${isSelected ? 'border-sky-500 ring-2 ring-sky-400/30 shadow-md' : 'border-slate-200 shadow-xs'} rounded-2xl flex flex-col md:flex-row md:items-start justify-between gap-4 cursor-pointer hover:border-sky-300 hover:shadow-md transition-all group`}>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200">{normDate === todayStr ? 'Oggi' : normDate}</span>
@@ -828,7 +674,7 @@ function HomeContent() {
         <title>BW Solutions | Hub</title>
         <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230ea5e9'/><text x='50' y='55' font-family='Arial, sans-serif' font-size='50' fill='white' font-weight='bold' text-anchor='middle' alignment-baseline='middle'>bw</text></svg>" />
       </Head>
-      <datalist id="lista-aziende">{LISTA_CLIENTI.map((azienda, index) => <option key={index} value={azienda} />)}</datalist>
+      <datalist id="lista-aziende">{listaClientiCompleta.map((azienda, index) => <option key={index} value={azienda} />)}</datalist>
 
       {/* SIDEBAR PROFESSIONALE CON LOGHI */}
       <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex-shrink-0 flex flex-col justify-between p-5 md:h-screen sticky top-0 z-40 border-r border-slate-800 shadow-2xl">
@@ -850,6 +696,11 @@ function HomeContent() {
               <div className="flex gap-3">⏳ Attività</div>
               {(daAssegnareItems.length > 0) && <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
+            
+            {/* NUOVI TAB AGGIUNTI */}
+            <button onClick={() => navigateTo('anagrafiche')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'anagrafiche' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏢 Anagrafiche</button>
+            <button onClick={() => navigateTo('appunti')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'appunti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📓 Appunti/PDM</button>
+
             <button onClick={() => navigateTo('documenti', pathNC)} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'documenti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📂 Cloud Aruba</button>
             <button onClick={() => navigateTo('feedback')} className={`w-full px-4 py-3 rounded-xl flex items-center justify-between transition-all cursor-pointer ${activeTab === 'feedback' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
               <div className="flex gap-3">💡 Feedback</div>
@@ -1003,6 +854,146 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB ANAGRAFICHE CLIENTI */}
+        {activeTab === 'anagrafiche' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><span>🏢</span> Anagrafica Clienti</h2>
+                <p className="text-xs text-slate-500 mt-1">Gestisci le informazioni dei clienti, contatti e indirizzi.</p>
+              </div>
+              <button onClick={() => setModalCliente({ ragione_sociale: '', piva: '', indirizzo: '', email: '', telefono: '', note: '' })} className="bg-sky-600 text-white font-bold px-4 py-2 rounded-xl text-sm shadow-md hover:bg-sky-500 transition-colors cursor-pointer">
+                + Nuovo Cliente
+              </button>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+              <input type="text" placeholder="Cerca cliente..." value={searchCliente} onChange={e => setSearchCliente(e.target.value)} className="w-full mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500" />
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 uppercase border-b border-slate-200">
+                      <th className="p-3">Ragione Sociale</th>
+                      <th className="p-3">P.IVA / C.F.</th>
+                      <th className="p-3">Indirizzo</th>
+                      <th className="p-3">Contatti</th>
+                      <th className="p-3 text-right">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dbClienti.filter(c => c.ragione_sociale.toLowerCase().includes(searchCliente.toLowerCase())).map(c => (
+                      <tr key={c.id} className="hover:bg-slate-50">
+                        <td className="p-3 font-bold text-slate-900">{c.ragione_sociale}</td>
+                        <td className="p-3 font-mono text-slate-600">{c.piva || '-'}</td>
+                        <td className="p-3 text-slate-600">{c.indirizzo || '-'}</td>
+                        <td className="p-3 text-slate-600">{c.email}<br/>{c.telefono}</td>
+                        <td className="p-3 text-right">
+                          <button onClick={() => setModalCliente(c)} className="text-sky-600 font-bold hover:underline">Modifica</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {dbClienti.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-slate-400">Nessun cliente in anagrafica.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB APPUNTI PDM */}
+        {activeTab === 'appunti' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><span>📓</span> Appunti Cantieri &amp; PDM</h2>
+                <p className="text-xs text-slate-500 mt-1">Prendi note operative per le tue commesse. Ogni salvataggio crea una nuova revisione.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-6">
+              {/* Sidebar sinistra PDM */}
+              <div className="w-full md:w-1/3 bg-white rounded-3xl border border-slate-200 p-4 shadow-sm h-[600px] overflow-y-auto">
+                <h3 className="font-bold text-slate-800 text-sm mb-4 border-b pb-2">Seleziona Commessa</h3>
+                <div className="space-y-2">
+                  {listaClientiCompleta.map(cliente => {
+                    const progettiCliente = [...new Set(dbAppunti.filter(a => a.cliente === cliente).map(a => a.progetto))];
+                    const isClientSel = appuntiClienteSel === cliente;
+                    return (
+                      <div key={cliente}>
+                        <div onClick={() => { setAppuntiClienteSel(isClientSel ? '' : cliente); setAppuntiProgettoSel(''); }} className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ${isClientSel ? 'bg-slate-900 text-white' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'}`}>
+                          {isClientSel ? '📂' : '📁'} {cliente}
+                        </div>
+                        {isClientSel && (
+                          <div className="pl-4 mt-2 space-y-1">
+                            {progettiCliente.map(prog => (
+                              <div key={prog} onClick={() => setAppuntiProgettoSel(prog)} className={`p-2 rounded-lg text-xs cursor-pointer ${appuntiProgettoSel === prog ? 'bg-sky-100 text-sky-800 font-bold border border-sky-300' : 'hover:bg-slate-50 text-slate-600'}`}>
+                                📄 {prog}
+                              </div>
+                            ))}
+                            <div onClick={() => { const p = prompt('Nuovo Progetto:'); if(p) setAppuntiProgettoSel(p); }} className="p-2 text-[10px] text-sky-600 font-bold cursor-pointer hover:underline">
+                              + Aggiungi Nuovo Progetto
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Area destra Editor PDM */}
+              <div className="w-full md:w-2/3 bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col h-[600px] overflow-hidden">
+                {appuntiClienteSel && appuntiProgettoSel ? (
+                  <>
+                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
+                      <div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase">{appuntiClienteSel}</div>
+                        <h3 className="font-bold text-slate-900">{appuntiProgettoSel}</h3>
+                      </div>
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-1 rounded border border-emerald-200">
+                        PDM Attivo
+                      </span>
+                    </div>
+                    
+                    <div className="p-4 border-b border-slate-100 bg-white">
+                      <textarea value={nuovoAppuntoTesto} onChange={e=>setNuovoAppuntoTesto(e.target.value)} placeholder="Scrivi qui i nuovi appunti del cantiere o le modifiche..." className="w-full h-32 p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500 bg-slate-50"></textarea>
+                      <button onClick={handleSalvaAppunto} className="mt-2 w-full bg-sky-600 text-white font-bold py-2 rounded-xl shadow hover:bg-sky-500 transition-colors">
+                        Salva Nuova Revisione
+                      </button>
+                    </div>
+
+                    <div className="flex-1 p-4 overflow-y-auto bg-slate-50 space-y-4">
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Storico Revisioni</h4>
+                      {dbAppunti.filter(a => a.cliente === appuntiClienteSel && a.progetto === appuntiProgettoSel)
+                        .sort((a,b) => b.versione - a.versione)
+                        .map((nota, idx) => (
+                        <div key={nota.id} className={`p-4 rounded-xl border ${idx === 0 ? 'bg-white border-sky-200 shadow-sm' : 'bg-slate-100 border-slate-200 opacity-80'}`}>
+                          <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
+                            <div>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${idx === 0 ? 'bg-sky-500 text-white' : 'bg-slate-300 text-slate-700'}`}>v{nota.versione}</span>
+                              <span className="text-xs font-bold text-slate-800 ml-2">{nota.autore}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">{formatDateSafely(nota.data_ora)}</span>
+                          </div>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{nota.testo}</p>
+                          {idx !== 0 && (
+                            <button onClick={() => setNuovoAppuntoTesto(nota.testo)} className="mt-3 text-[10px] font-bold text-sky-600 hover:underline">Ripristina come base</button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+                    <span className="text-4xl mb-2">📓</span>
+                    <p className="text-sm font-semibold">Seleziona o crea un progetto dalla barra laterale per visualizzare e scrivere gli appunti.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* TAB PLANNER */}
         {activeTab === 'planner' && (
           <div className="space-y-6">
@@ -1016,6 +1007,18 @@ function HomeContent() {
                 <button onClick={() => setPlannerWeekStart(getMondayOfCurrentWeek())} className="px-4 py-1.5 bg-sky-500 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">Oggi</button>
                 <button onClick={() => handleShiftWeek(7)} className="px-3 py-1.5 hover:bg-white text-slate-600 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer">Succ ▶</button>
               </div>
+            </div>
+
+            {/* LEGENDA CROMATICA MIGLIORATA E CON ICONE */}
+            <div className="flex flex-wrap items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 text-xs font-bold shadow-sm">
+              <span className="text-slate-400 uppercase font-black text-[10px]">Legenda Colori & Icone:</span>
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 Pianificato (⏳)</span>
+              <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-xl">🟢 Svolto (✅)</span>
+              <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-xl">🟣 Assenza (🏖️/🏥)</span>
+              <span className="bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-1 rounded-xl">🔴 Scaduto</span>
+              <div className="w-px h-4 bg-slate-300 mx-1"></div>
+              <span className="text-slate-600">💼 Cantiere</span>
+              <span className="text-slate-600">🖥️ Backoffice</span>
             </div>
             
             <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
@@ -1048,13 +1051,13 @@ function HomeContent() {
                         const eventiCella = safeStorico.filter(item => isItemDaAssegnare(item) && getNormalizedDate(item.data) === gStr);
                         const isExpanded = plannerEspansi['Da Assegnare'];
                         return (
-                          <td key={`da_ass_${gStr}`} onClick={() => isExpanded && nuovaAttivitaDaPlanner('Da Assegnare', gStr)} className={`p-2 border-r border-amber-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-amber-100/40 cursor-pointer group' : 'h-12'}`}>
+                          <td key={`da_ass_${gStr}`} onClick={() => isExpanded && setFormData(prev => ({...prev, dipendente: 'Da Assegnare', data: gStr, data_fine: gStr, usaIntervallo: false})) || (isExpanded && navigateTo('nuovo'))} className={`p-2 border-r border-amber-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-amber-100/40 cursor-pointer group' : 'h-12'}`}>
                             {isExpanded ? (
                               <div className="space-y-1.5">
                                 {eventiCella.map((ev, evIdx) => (
                                   <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className="p-2 rounded-xl border shadow-xs hover:scale-102 transition-all bg-amber-100 text-amber-900 border-amber-300">
-                                    <div className="truncate font-bold text-xs">{toText(ev.cliente)}</div>
-                                    <div className="truncate text-[10px] opacity-80">{toText(ev.progetto)}</div>
+                                    <div className="truncate font-bold text-xs flex items-center gap-1"><span>⏳</span> {toText(ev.cliente)}</div>
+                                    <div className="truncate text-[10px] opacity-80 pl-4">{toText(ev.progetto)}</div>
                                   </div>
                                 ))}
                                 {eventiCella.length === 0 && <span className="opacity-0 group-hover:opacity-100 text-[10px] font-bold text-amber-600 block text-center mt-6">+ Assegna</span>}
@@ -1091,14 +1094,23 @@ function HomeContent() {
                                   <div className="space-y-1.5">
                                     {eventiCella.map((ev, evIdx) => {
                                       const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
-                                      let stC = 'bg-slate-100 text-slate-700 border-slate-300';
-                                      if (isCons) stC = 'bg-emerald-50 text-emerald-800 border-emerald-200'; 
-                                      else if (isAss) stC = 'bg-purple-50 text-purple-800 border-purple-200'; 
-                                      else if (isScaduto) stC = 'bg-rose-50 text-rose-800 border-rose-200';
+                                      
+                                      let stC = 'bg-amber-50 text-amber-800 border-amber-200';
+                                      let cellIcon = '⏳';
+                                      if (isCons) { stC = 'bg-emerald-50 text-emerald-800 border-emerald-200'; cellIcon = '✅'; }
+                                      else if (isAss) { stC = 'bg-purple-50 text-purple-800 border-purple-200'; cellIcon = isFerie(ev)?'🏖️':'🏥'; }
+                                      else if (isScaduto) { stC = 'bg-rose-50 text-rose-800 border-rose-200'; cellIcon = '🔴'; }
+
+                                      const typeIcon = Number(ev.ore_backoffice || 0) > 0 ? '🖥️' : '💼';
+
                                       return (
-                                        <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-2 rounded-xl border shadow-xs hover:scale-102 transition-all ${stC}`}>
-                                          <div className="truncate font-bold text-xs">{isAss ? toText(ev.progetto) : toText(ev.cliente)}</div>
-                                          {!isAss && <div className="truncate text-[10px] opacity-80">{toText(ev.progetto)}</div>}
+                                        <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-2 rounded-xl border shadow-sm hover:scale-102 transition-all ${stC}`}>
+                                          <div className="truncate font-bold text-xs flex items-center gap-1">
+                                            <span>{isAss ? cellIcon : typeIcon}</span> 
+                                            {isAss ? toText(ev.progetto) : toText(ev.cliente)}
+                                          </div>
+                                          {!isAss && <div className="truncate text-[10px] opacity-80 pl-4">{toText(ev.progetto)}</div>}
+                                          <div className="text-[9px] font-black pl-4 mt-0.5 opacity-60">{ev.ore}h {!isAss && cellIcon}</div>
                                         </div>
                                       );
                                     })}
@@ -1108,8 +1120,8 @@ function HomeContent() {
                                   <div className="flex flex-wrap gap-1 items-center justify-center pt-2">
                                     {eventiCella.map((ev, evIdx) => {
                                       const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
-                                      let bgD = 'bg-slate-400'; if (isCons) bgD = 'bg-emerald-400'; else if (isAss) bgD = 'bg-purple-400'; else if (isScaduto) bgD = 'bg-rose-500';
-                                      return <div key={ev.id || evIdx} className={`w-2.5 h-2.5 rounded-full ${bgD} shadow-xs`}></div>;
+                                      let bgD = 'bg-amber-400'; if (isCons) bgD = 'bg-emerald-400'; else if (isAss) bgD = 'bg-purple-400'; else if (isScaduto) bgD = 'bg-rose-500';
+                                      return <div key={ev.id || evIdx} className={`w-2.5 h-2.5 rounded-full ${bgD} shadow-sm`}></div>;
                                     })}
                                   </div>
                                 )}
@@ -1217,7 +1229,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB GESTIONE ATTIVITÀ CON CHECKBOX "SELEZIONA TUTTO" */}
+        {/* TAB GESTIONE ATTIVITÀ CON SELEZIONA TUTTO NELLE CARTELLE */}
         {activeTab === 'programmati' && (
           <div className="space-y-6 pb-20">
             <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
@@ -1508,10 +1520,36 @@ function HomeContent() {
         );
       })()}
 
+      {/* MODALE NUOVO/MODIFICA CLIENTE */}
+      {modalCliente && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+              <h3 className="text-xl font-bold text-slate-900">{modalCliente.id ? 'Modifica Cliente' : 'Nuovo Cliente'}</h3>
+              <button onClick={() => setModalCliente(null)} className="text-slate-400 hover:bg-slate-100 w-8 h-8 rounded-full font-black text-base flex items-center justify-center transition-colors cursor-pointer">✕</button>
+            </div>
+            <form onSubmit={handleSalvaCliente} className="space-y-4 pt-2">
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Ragione Sociale *</label><input type="text" required value={modalCliente.ragione_sociale} onChange={e=>setModalCliente({...modalCliente, ragione_sociale: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-sky-500" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">P.IVA / Cod. Fisc.</label><input type="text" value={modalCliente.piva} onChange={e=>setModalCliente({...modalCliente, piva: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+                <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Telefono</label><input type="text" value={modalCliente.telefono} onChange={e=>setModalCliente({...modalCliente, telefono: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+              </div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Email</label><input type="email" value={modalCliente.email} onChange={e=>setModalCliente({...modalCliente, email: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Indirizzo Sede</label><input type="text" value={modalCliente.indirizzo} onChange={e=>setModalCliente({...modalCliente, indirizzo: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Note Anagrafiche</label><textarea rows={2} value={modalCliente.note} onChange={e=>setModalCliente({...modalCliente, note: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-medium outline-none"></textarea></div>
+              <div className="flex gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => setModalCliente(null)} className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors cursor-pointer">Annulla</button>
+                <button type="submit" className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors cursor-pointer">Salva Cliente ✅</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODALE EDITING ATTIVITÀ */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <h3 className="text-xl font-bold text-slate-900">{modalItem.stato === 'consuntivo' ? 'Dettaglio Intervento' : 'Scheda Attività'}</h3>
               <button onClick={() => setModalItem(null)} className="text-slate-400 hover:bg-slate-100 w-8 h-8 rounded-full font-black text-base flex items-center justify-center transition-colors cursor-pointer">✕</button>
