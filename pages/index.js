@@ -39,7 +39,6 @@ const LISTA_CLIENTI_BASE = [
   'CDR ITALIA S.P.A', 'CHERCHISYSTEM', 'CIEMMEBI', 'COGORNO SERGIO', 'COLMAR Technik Spa', 'COMET', 'COMETAL s.r.l', 'COMETTO', 'COSPAL COMPOSITES S.P.A', 'COSTA RODOLFO s.r.l'
 ];
 
-// LISTA AFORISMI DINAMICI
 const AFORISMI = [
   "“L'unico modo di fare un ottimo lavoro è amare quello che fai.” – Steve Jobs",
   "“Nessun grande risultato è mai stato raggiunto senza entusiasmo.” – Ralph Waldo Emerson",
@@ -60,8 +59,13 @@ function getNextMonthStr() { const d = new Date(); let year = d.getFullYear(); l
 
 function getNomeMeseText(annoMeseStr) {
   if (!annoMeseStr) return '';
-  try { const [year, month] = annoMeseStr.split('-').map(Number); const date = new Date(year, month - 1, 1); return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }); } 
-  catch (e) { return String(annoMeseStr); }
+  try {
+    const [year, month] = annoMeseStr.split('-').map(Number);
+    const date = new Date(year, month - 1, 1);
+    return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  } catch (e) {
+    return String(annoMeseStr);
+  }
 }
 
 function getNormalizedDate(d) {
@@ -204,6 +208,7 @@ function HomeContent() {
   const [searchQueryNC, setSearchQueryNC] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
   const [loadingNC, setLoadingNC] = useState(false);
+  const [errorNC, setErrorNC] = useState(null);
 
   const [modalDocumento, setModalDocumento] = useState(null);
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
@@ -832,7 +837,7 @@ function HomeContent() {
                 </form>
               </div>
 
-              {/* STATISTICHE RAPIDE INTERATTIVE E CLICCABILI */}
+              {/* STATISTICHE RAPIDE INTERATTIVE */}
               <div className="space-y-4">
                 <div className="bg-white p-5 rounded-[2rem] border border-slate-200/80 shadow-xs">
                   <h4 className="font-bold text-slate-800 text-sm mb-3">Statistiche Rapide</h4>
@@ -1001,7 +1006,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB PLANNER */}
+        {/* TAB PLANNER TEAM */}
         {activeTab === 'planner' && (
           <div className="space-y-6">
             <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
@@ -1016,15 +1021,17 @@ function HomeContent() {
               </div>
             </div>
 
+            {/* LEGENDA CROMATICA CON ICONE */}
             <div className="flex flex-wrap items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 text-xs font-bold shadow-sm">
               <span className="text-slate-400 uppercase font-black text-[10px]">Legenda Colori &amp; Icone:</span>
-              <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 Pianificato (⏳)</span>
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 In Programma (⏳)</span>
               <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-xl">🟢 Svolto (✅)</span>
               <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-xl">🟣 Assenza (🏖️/🏥)</span>
               <span className="bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-1 rounded-xl">🔴 Scaduto</span>
               <div className="w-px h-4 bg-slate-300 mx-1"></div>
               <span className="text-slate-600">💼 Cantiere</span>
               <span className="text-slate-600">🖥️ Backoffice</span>
+              <span className="text-slate-600">🚗 Trasferta</span>
             </div>
             
             <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
@@ -1045,6 +1052,7 @@ function HomeContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
+                    {/* Riga Da Assegnare */}
                     <tr className="bg-amber-50/50 hover:bg-amber-100/30">
                       <td onClick={() => togglePlannerRow('Da Assegnare')} className="p-4 font-bold text-amber-900 sticky left-0 bg-amber-50 z-10 border-r border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
                         <div className="flex items-center justify-between">
@@ -1077,6 +1085,7 @@ function HomeContent() {
                       })}
                     </tr>
 
+                    {/* Righe Utenti */}
                     {listaDipendenti.map(nomeDip => {
                       const isExpanded = plannerEspansi[nomeDip];
                       return (
@@ -1098,12 +1107,15 @@ function HomeContent() {
                                   <div className="space-y-1.5">
                                     {eventiCella.map((ev, evIdx) => {
                                       const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
+                                      
                                       let stC = 'bg-amber-50 text-amber-800 border-amber-200'; let cellIcon = '⏳';
                                       if (isCons) { stC = 'bg-emerald-50 text-emerald-800 border-emerald-200'; cellIcon = '✅'; }
                                       else if (isAss) { stC = 'bg-purple-50 text-purple-800 border-purple-200'; cellIcon = isFerie(ev)?'🏖️':'🏥'; }
                                       else if (isScaduto) { stC = 'bg-rose-50 text-rose-800 border-rose-200'; cellIcon = '🔴'; }
 
-                                      const typeIcon = Number(ev.ore_backoffice || 0) > 0 ? '🖥️' : '💼';
+                                      let typeIcon = '💼';
+                                      if (Number(ev.ore_backoffice || 0) > 0) typeIcon = '🖥️';
+                                      if (Number(ev.ore_trasferta || 0) > 0) typeIcon = '🚗';
 
                                       return (
                                         <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-2 rounded-xl border shadow-xs hover:scale-102 transition-all ${stC}`}>
@@ -1231,7 +1243,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB GESTIONE ATTIVITÀ CON SELEZIONA TUTTO */}
+        {/* TAB GESTIONE ATTIVITÀ CON REPOSITORY SOTTOCARTELLE */}
         {activeTab === 'programmati' && (
           <div className="space-y-6 pb-20">
             <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
@@ -1479,15 +1491,179 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB REPORTISTICA */}
+        {/* TAB REPORTISTICA COMPLETA E RIPRISTINATA */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
-           <div className="bg-white rounded-3xl shadow-xs border border-slate-200/80 p-6 space-y-6">
-             <h2 className="text-xl font-bold text-slate-900">📊 Reportistica Aziendale</h2>
-             <div className="flex flex-wrap items-center gap-4">
-               <input type="month" value={filtroMeseReport} onChange={e => setFiltroMeseReport(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold px-4 py-2.5 rounded-xl outline-none" />
-               <button onClick={exportCSVPaghe} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md cursor-pointer">📥 Esporta Paghe CSV</button>
-               <button onClick={exportCSVFatturazione} className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md cursor-pointer">📥 Esporta Fatture CSV</button>
+           <div className="space-y-6">
+             <div className="bg-slate-900 rounded-[2rem] p-6 text-white shadow-xl space-y-4">
+               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                 <div>
+                   <h2 className="text-xl font-bold tracking-tight">📊 Centro Reportistica Aziendale</h2>
+                   <p className="text-xs text-slate-400 mt-0.5">Analisi avanzata e consuntivi per contabilità e paghe.</p>
+                 </div>
+
+                 <div className="flex items-center space-x-2 bg-slate-800 p-1.5 rounded-2xl border border-slate-700 overflow-x-auto">
+                   <button onClick={() => setSubTabReport('paghe')} className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${subTabReport === 'paghe' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>💶 Buste Paga</button>
+                   <button onClick={() => setSubTabReport('fatturazione')} className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${subTabReport === 'fatturazione' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>🧾 Fatturazione</button>
+                   <button onClick={() => setSubTabReport('ferie')} className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${subTabReport === 'ferie' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>🏖️ Archivio Ferie</button>
+                 </div>
+               </div>
+
+               <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                 <div className="flex items-center space-x-3">
+                   <label className="text-xs font-bold uppercase text-slate-400">Mese:</label>
+                   <input type="month" value={filtroMeseReport} onChange={e => setFiltroMeseReport(e.target.value)} className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 outline-none" />
+                 </div>
+
+                 {subTabReport === 'paghe' && <button onClick={exportCSVPaghe} className="bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md cursor-pointer transition-colors">📥 Esporta CSV Paghe</button>}
+                 {subTabReport === 'fatturazione' && <button onClick={exportCSVFatturazione} className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md cursor-pointer transition-colors">📥 Esporta CSV Fatture</button>}
+               </div>
              </div>
+
+             {/* SUBTAB 1: BUSTE PAGA */}
+             {subTabReport === 'paghe' && (
+               <div className="bg-white rounded-3xl shadow-xs border border-slate-200/80 p-6 space-y-4">
+                 <div className="border-b border-slate-100 pb-3">
+                   <h3 className="font-bold text-slate-900 text-base">💶 Prospetto Ore Dipendenti ({filtroMeseReport})</h3>
+                 </div>
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-left text-xs border-collapse">
+                     <thead>
+                       <tr className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
+                         <th className="py-3 px-3">Dipendente</th>
+                         <th className="py-3 px-3 text-center">Cantiere</th>
+                         <th className="py-3 px-3 text-center">Backoffice</th>
+                         <th className="py-3 px-3 text-center">Trasferta</th>
+                         <th className="py-3 px-3 text-center text-amber-900 bg-amber-50/50">⚡ Straordinari</th>
+                         <th className="py-3 px-3 text-center text-amber-700">Ferie</th>
+                         <th className="py-3 px-3 text-center text-indigo-700">Permessi</th>
+                         <th className="py-3 px-3 text-center text-rose-700">Malattia</th>
+                         <th className="py-3 px-3 text-center font-black">Totale Impegnate</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100 font-medium">
+                       {listaDipendenti.map(nomeDip => {
+                         const eventi = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo');
+                         const oreCantiere = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                         const oreBackoffice = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
+                         const oreTrasferta = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
+                         const oreStraordinario = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_straordinario || 0), 0);
+                         const oreFerie = eventi.filter(i => isFerie(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                         const orePermesso = eventi.filter(i => isPermesso(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                         const oreMalattia = eventi.filter(i => isMalattia(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
+                         const tot = oreCantiere + oreBackoffice + oreStraordinario + oreFerie + orePermesso + oreMalattia;
+
+                         return (
+                           <tr key={nomeDip} className="hover:bg-slate-50 cursor-pointer" onClick={() => { navigateTo('programmati'); toggleCartella(nomeDip); }}>
+                             <td className="py-3 px-3 font-bold text-slate-900">{nomeDip}</td>
+                             <td className="py-3 px-3 text-center font-bold">{oreCantiere} h</td>
+                             <td className="py-3 px-3 text-center font-bold text-sky-700">{oreBackoffice} h</td>
+                             <td className="py-3 px-3 text-center font-bold text-purple-700">{oreTrasferta} h</td>
+                             <td className="py-3 px-3 text-center font-extrabold text-amber-900 bg-amber-50/50">{oreStraordinario} h</td>
+                             <td className="py-3 px-3 text-center font-bold text-amber-700">{oreFerie} h</td>
+                             <td className="py-3 px-3 text-center font-bold text-indigo-700">{orePermesso} h</td>
+                             <td className="py-3 px-3 text-center font-bold text-rose-700">{oreMalattia} h</td>
+                             <td className="py-3 px-3 text-center font-black bg-slate-50 text-slate-900">{tot} h</td>
+                           </tr>
+                         );
+                       })}
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+             )}
+
+             {/* SUBTAB 2: FATTURAZIONE */}
+             {subTabReport === 'fatturazione' && (
+               <div className="bg-white rounded-3xl shadow-xs border border-slate-200/80 p-6 space-y-4">
+                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                   <h3 className="font-bold text-slate-900 text-base">🧾 Report Ore da Fatturare ({filtroMeseReport})</h3>
+                   <select value={filtroClienteFatturazione} onChange={e => setFiltroClienteFatturazione(e.target.value)} className="text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 outline-none">
+                     <option value="Tutti">Tutti i Clienti</option>
+                     {listaClientiCompleta.map(c => <option key={c} value={c}>{c}</option>)}
+                   </select>
+                 </div>
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-left text-xs border-collapse">
+                     <thead>
+                       <tr className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
+                         <th className="py-3 px-3">Data</th>
+                         <th className="py-3 px-3">Cliente</th>
+                         <th className="py-3 px-3">Commessa / Progetto</th>
+                         <th className="py-3 px-3">Eseguito da</th>
+                         <th className="py-3 px-3 text-center">Cantiere</th>
+                         <th className="py-3 px-3 text-center">Backoffice</th>
+                         <th className="py-3 px-3 text-center text-amber-900 bg-amber-50/50">Straordinari</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100 font-medium">
+                       {[...safeStorico]
+                         .filter(item => item && getNormalizedDate(item.data).startsWith(filtroMeseReport) && (filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione) && item.stato === 'consuntivo' && !isAssenza(item))
+                         .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
+                         .map((item, idx) => (
+                           <tr key={item.id || idx} onClick={() => openEditModal(item)} className="hover:bg-sky-50/80 cursor-pointer transition-colors">
+                             <td className="py-2.5 px-3 text-slate-500 font-bold">{getNormalizedDate(item.data)}</td>
+                             <td className="py-2.5 px-3 font-bold text-slate-900">{toText(item.cliente)}</td>
+                             <td className="py-2.5 px-3 text-slate-700">{toText(item.progetto)}</td>
+                             <td className="py-2.5 px-3 font-semibold text-slate-800">{toText(item.dipendente)}</td>
+                             <td className="py-2.5 px-3 text-center font-bold text-slate-900">{item.ore || 0} h</td>
+                             <td className="py-2.5 px-3 text-center font-bold text-sky-700">{item.ore_backoffice || 0} h</td>
+                             <td className="py-2.5 px-3 text-center font-extrabold text-amber-900 bg-amber-50/50">{item.ore_straordinario || 0} h</td>
+                           </tr>
+                         ))}
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+             )}
+
+             {/* SUBTAB 3: ARCHIVIO FERIE */}
+             {subTabReport === 'ferie' && (
+               <div className="bg-white rounded-3xl shadow-xs border border-slate-200/80 p-6 space-y-6">
+                 <div className="border-b border-slate-100 pb-3">
+                   <h3 className="font-bold text-slate-900 text-base">🏖️ Archivio Ferie &amp; Permessi</h3>
+                 </div>
+                 <div className="space-y-5">
+                   {listaDipendenti.map(nomeDip => {
+                     const inApprovazione = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato === 'in_approvazione');
+                     const approvate = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, nomeDip) && isAssenza(e) && e.stato !== 'in_approvazione' && e.stato !== 'annullato' && getNormalizedDate(e.data).startsWith(filtroMeseReport));
+
+                     if (inApprovazione.length === 0 && approvate.length === 0) return null;
+
+                     return (
+                       <div key={nomeDip} className="border border-slate-200 rounded-2xl overflow-hidden">
+                         <div className="bg-slate-50 p-3.5 border-b border-slate-200 flex justify-between items-center">
+                           <span className="font-bold text-slate-800 text-sm">👤 {nomeDip}</span>
+                         </div>
+                         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                           <div className="space-y-2">
+                             <h4 className="text-xs font-black text-amber-700 uppercase">⏳ In Approvazione</h4>
+                             {inApprovazione.map((item, idx) => (
+                               <div key={item.id || idx} onClick={() => openEditModal(item)} className="p-3 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer">
+                                 <div className="text-xs font-bold text-amber-900">{getNormalizedDate(item.data)} - {toText(item.progetto)} ({item.ore}h)</div>
+                                 <div className="flex space-x-2 mt-2" onClick={e => e.stopPropagation()}>
+                                   <button onClick={() => handleApprovaAssenza(item)} className="flex-1 py-1 bg-emerald-500 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-emerald-600">✅ Approva</button>
+                                   <button onClick={() => handleRifiutaAssenza(item)} className="flex-1 py-1 bg-rose-500 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-rose-600">❌ Rifiuta</button>
+                                 </div>
+                               </div>
+                             ))}
+                             {inApprovazione.length === 0 && <p className="text-xs text-slate-400">Nessuna richiesta in sospeso.</p>}
+                           </div>
+                           <div className="space-y-2">
+                             <h4 className="text-xs font-black text-emerald-700 uppercase">✅ Approvate ({filtroMeseReport})</h4>
+                             {approvate.map((item, idx) => (
+                               <div key={item.id || idx} onClick={() => openEditModal(item)} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl cursor-pointer">
+                                 <span className="text-xs font-bold text-emerald-900">{getNormalizedDate(item.data)} - {toText(item.progetto)} ({item.ore}h)</span>
+                               </div>
+                             ))}
+                             {approvate.length === 0 && <p className="text-xs text-slate-400">Nessuna assenza per questo mese.</p>}
+                           </div>
+                         </div>
+                       </div>
+                     );
+                   })}
+                 </div>
+               </div>
+             )}
            </div>
         )}
 
