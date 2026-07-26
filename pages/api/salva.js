@@ -1,31 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-function getGoogleAuth() {
-  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-  const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-
-  if (!clientEmail || !privateKey) {
-    return null;
-  }
-
-  return new google.auth.JWT({
-    email: clientEmail,
-    key: privateKey,
-    scopes: ['https://www.googleapis.com/auth/calendar']
-  });
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Metodo non consentito' });
   }
 
   try {
+    // 1. Inizializzazione Client Supabase con chiavi di fallback
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ 
+        message: 'Configurazione mancante: verificare le chiavi Supabase nelle variabili d\'ambiente di Vercel.' 
+      });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const {
       dipendente,
       cliente,
@@ -43,56 +36,59 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: 'Campi obbligatori mancanti (dipendente, data).' });
     }
 
-    let calendarEventId = null;
-
-    // 1. CALCOLO DATE E CREAZIONE EVENTO GOOGLE CALENDAR
     const startDateStr = String(data).split('T')[0];
-    const startDateObj = new Date(startDateStr);
-    const endDateObj = new Date(startDateObj);
-    endDateObj.setDate(endDateObj.getDate() + 1);
-    const endDateStr = endDateObj.toISOString().split('T')[0];
 
+    // 2. Creazione Evento Google Calendar (Isolato in Try-Catch)
+    let calendarEventId = null;
     try {
-      const auth = getGoogleAuth();
+      const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+      const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
       const calendarId = process.env.GOOGLE_CALENDAR_ID;
 
-      if (auth && calendarId) {
-        const calendar = google.calendar({ version: 'v3', auth });
+      if (clientEmail && privateKey && calendarId) {
+        const auth = new google.auth.JWT({
+          email: clientEmail,
+          key: privateKey,
+          scopes: ['https://www.googleapis.com/auth/calendar']
+        });
+
+        const startDateObj = new Date(startDateStr);
+        const endDateObj = new Date(startDateObj);
+        endDateObj.setDate(endDateObj.getDate() + 1);
+        const endDateStr = endDateObj.toISOString().split('T')[0];
 
         let etichettaStato = '✅ [SVOLTO]';
         if (stato === 'pianificato') etichettaStato = '⏳ [PIANIFICATO]';
         if (stato === 'in_approvazione') etichettaStato = '⏳ [IN APPROVAZIONE]';
 
         const summaryText = `${etichettaStato} ${dipendente} - ${cliente || 'Attività'} (${progetto || 'Senza Dettaglio'})`;
-        
-        let descriptionText = `Svolto da: ${dipendente}\nCliente: ${cliente || '-'}\nProgetto: ${progetto || '-'}\nOre Cantiere/Ordinarie: ${ore}h`;
-        if (Number(ore_backoffice) > 0) descriptionText += `\nOre Backoffice: ${ore_backoffice}h`;
-        if (Number(ore_trasferta) > 0) descriptionText += `\nOre Trasferta: ${ore_trasferta}h`;
-        if (Number(ore_straordinario) > 0) descriptionText += `\nOre Straordinario: ${ore_straordinario}h`;
+        let descriptionText = `Svolto da: ${dipendente}\nCliente: ${cliente || '-'}\nProgetto: ${progetto || '-'}\nOre Cantiere: ${ore}h`;
+        if (Number(ore_backoffice) > 0) descriptionText += `\nBackoffice: ${ore_backoffice}h`;
+        if (Number(ore_trasferta) > 0) descriptionText += `\nTrasferta: ${ore_trasferta}h`;
+        if (Number(ore_straordinario) > 0) descriptionText += `\nStraordinario: ${ore_straordinario}h`;
         if (note) descriptionText += `\n\nNote: ${note}`;
 
-        const eventResource = {
-          summary: summaryText,
-          description: descriptionText,
-          start: { date: startDateStr },
-          end: { date: endDateStr }
-        };
-
+        const calendar = google.calendar({ version: 'v3', auth });
         const calRes = await calendar.events.insert({
-          calendarId: calendarId,
-          resource: eventResource
+          calendarId,
+          resource: {
+            summary: summaryText,
+            description: descriptionText,
+            start: { date: startDateStr },
+            end: { date: endDateStr }
+          }
         });
 
-        if (calRes && calRes.data && calRes.data.id) {
+        if (calRes?.data?.id) {
           calendarEventId = calRes.data.id;
         }
       }
-    } catch (calErr) {
-      console.error("Avviso Google Calendar:", calErr?.response?.data || calErr?.message || calErr);
+    } catch (gErr) {
+      console.error("Google Calendar Error (non-bloccante):", gErr?.message || gErr);
     }
 
-    // 2. SALVATAGGIO NEL DATABASE SUPABASE
-    const payloadDb = {
+    // 3. TENTATIVO 1: Inserimento Completo nel DB Supabase
+    const fullPayload = {
       dipendente,
       cliente: cliente || '',
       progetto: progetto || '',
@@ -106,19 +102,19 @@ export default async function handler(req, res) {
     };
 
     if (calendarEventId) {
-      payloadDb.calendar_event_id = calendarEventId;
+      fullPayload.calendar_event_id = calendarEventId;
     }
 
     let { data: dbResult, error: dbError } = await supabase
       .from('registrazioni_ore')
-      .insert([payloadDb])
+      .insert([fullPayload])
       .select();
 
-    // FALLBACK IN CASO DI COLONNE MANCANTI NEL DATABASE
+    // 4. TENTATIVO 2 (FALLBACK): Se il tentativo 1 fallisce per colonne mancano sul DB
     if (dbError) {
-      console.error("Errore primo inserimento Supabase:", dbError);
+      console.error("Errore Inserimento Completo Supabase:", dbError);
 
-      const fallbackPayload = {
+      const minimalPayload = {
         dipendente,
         cliente: cliente || '',
         progetto: progetto || '',
@@ -130,19 +126,18 @@ export default async function handler(req, res) {
 
       const fallbackRes = await supabase
         .from('registrazioni_ore')
-        .insert([fallbackPayload])
+        .insert([minimalPayload])
         .select();
 
       if (fallbackRes.error) {
-        console.error("Errore fallback Supabase:", fallbackRes.error);
-        const errMsg = dbError.message || dbError.details || JSON.stringify(dbError);
+        console.error("Errore Inserimento Fallback Supabase:", fallbackRes.error);
+        const msgDettagliato = dbError.message || dbError.details || JSON.stringify(dbError);
         return res.status(500).json({ 
-          message: `Errore Supabase DB: ${errMsg}`, 
-          error: dbError 
+          message: `Errore Supabase DB: ${msgDettagliato}` 
         });
-      } else {
-        dbResult = fallbackRes.data;
       }
+
+      dbResult = fallbackRes.data;
     }
 
     return res.status(200).json({
@@ -151,11 +146,10 @@ export default async function handler(req, res) {
       calendar_event_id: calendarEventId
     });
 
-  } catch (error) {
-    console.error("Errore generale API salva:", error);
-    return res.status(500).json({ message: `Errore Server API: ${error?.message || error}` });
+  } catch (err) {
+    console.error("Errore Imprevisto Server API salva:", err);
+    return res.status(500).json({ 
+      message: `Errore Server: ${err?.message || 'Eccezione sconosciuta'}` 
+    });
   }
 }
-Fai clic su Commit changes... su GitHub per salvare.
-
-Attendi circa 30 secondi che Vercel completi la build, poi riprova l'inserimento: il salvataggio andrà a buon fine e vedrai subito l'evento comparire anche su Google Calendar!
