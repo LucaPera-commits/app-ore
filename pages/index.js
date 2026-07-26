@@ -165,13 +165,17 @@ function HomeContent() {
   const [modalCliente, setModalCliente] = useState(null);
   const [searchCliente, setSearchCliente] = useState('');
 
-  // APPUNTI / PDM
+  // APPUNTI / PDM CON VISTA ONENOTE
   const [dbAppunti, setDbAppunti] = useState([
-    { id: 1, cliente: 'ALSTOM ITALIA SPA', progetto: 'Collaudo Impianto X', testo: 'Effettuato setup iniziale. Parametri OK, in attesa di verifica.', versione: 1, autore: 'Luca Pera', data_ora: new Date().toISOString() }
+    { id: 1, cliente: 'ALSTOM ITALIA SPA', progetto: 'Collaudo Impianto X', testo: 'Effettuato setup iniziale dei quadri elettrici. Taratura sensori completata, in attesa di test di carico finale.', versione: 1, autore: 'Luca Pera', data_ora: new Date(Date.now() - 86400000).toISOString() },
+    { id: 2, cliente: 'ALSTOM ITALIA SPA', progetto: 'Collaudo Impianto X', testo: 'Aggiornamento collaudo: superati test di carico con esito positivo. Rilasciata scheda tecnica preliminare.', versione: 2, autore: 'Giampaolo Lauro', data_ora: new Date().toISOString() },
+    { id: 3, cliente: 'BORELLI SRL', progetto: 'Manutenzione Presse A1', testo: 'Sostituite guarnizioni idrauliche principali e rabboccato olio. Prossimo controllo tra 3 mesi.', versione: 1, autore: 'Alessandro Ciule', data_ora: new Date().toISOString() }
   ]);
   const [appuntiClienteSel, setAppuntiClienteSel] = useState('');
   const [appuntiProgettoSel, setAppuntiProgettoSel] = useState('');
   const [nuovoAppuntoTesto, setNuovoAppuntoTesto] = useState('');
+  const [ricercaAppunti, setSearchAppunti] = useState('');
+  const [modalNuovaNota, setModalNuovaNota] = useState(false);
 
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
@@ -271,8 +275,6 @@ function HomeContent() {
   useEffect(() => {
     setIsMounted(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    
-    // Cambia aforisma
     const randIndex = Math.floor(Math.random() * AFORISMI.length);
     setAforismaGiorno(AFORISMI[randIndex]);
 
@@ -533,13 +535,28 @@ function HomeContent() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // APPUNTI PDM
+  // LOGICA RAGGRUPPAMENTO ONENOTE
+  const appuntiRaggruppati = React.useMemo(() => {
+    const map = {};
+    dbAppunti.forEach(app => {
+      const key = `${app.cliente}|||${app.progetto}`;
+      if (!map[key] || app.versione > map[key].versione) {
+        map[key] = {
+          ...app,
+          totaleRevisioni: dbAppunti.filter(a => a.cliente === app.cliente && a.progetto === app.progetto).length
+        };
+      }
+    });
+    return Object.values(map);
+  }, [dbAppunti]);
+
+  // APPUNTI PDM NUOVA REVISIONE
   const handleSalvaAppunto = () => {
     if (!appuntiClienteSel || !appuntiProgettoSel || !nuovoAppuntoTesto.trim()) return alert("Compila tutti i campi!");
     const existingNotes = dbAppunti.filter(a => a.cliente === appuntiClienteSel && a.progetto === appuntiProgettoSel);
     const nextVersion = existingNotes.length > 0 ? Math.max(...existingNotes.map(n => n.versione)) + 1 : 1;
     const newNote = { id: Date.now(), cliente: appuntiClienteSel, progetto: appuntiProgettoSel, testo: nuovoAppuntoTesto, versione: nextVersion, autore: currentUser?.nome || 'Sconosciuto', data_ora: new Date().toISOString() };
-    setDbAppunti([newNote, ...dbAppunti]); setNuovoAppuntoTesto('');
+    setDbAppunti([newNote, ...dbAppunti]); setNuovoAppuntoTesto(''); setModalNuovaNota(false);
   };
 
   // ANAGRAFICA
@@ -564,11 +581,6 @@ function HomeContent() {
 
   const safeRisultatiNC = Array.isArray(risultatiNC) ? risultatiNC : [];
   const giorniSettimanaPlanner = get7DaysOfWeek(plannerWeekStart);
-
-  const handleShiftWeek = (deltaDays) => {
-    const curr = new Date(plannerWeekStart); curr.setDate(curr.getDate() + deltaDays);
-    setPlannerWeekStart(getMondayOfCurrentWeek(curr));
-  };
 
   const renderRigaAttivita = (item, colorTheme, idx = 0) => {
     if (!item) return null;
@@ -681,7 +693,7 @@ function HomeContent() {
       </Head>
       <datalist id="lista-aziende">{listaClientiCompleta.map((azienda, index) => <option key={index} value={azienda} />)}</datalist>
 
-      {/* SIDEBAR PROFESSIONALE CON LOGHI */}
+      {/* SIDEBAR PROFESSIONALE */}
       <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex-shrink-0 flex flex-col justify-between p-5 md:h-screen sticky top-0 z-40 border-r border-slate-800 shadow-2xl">
         <div className="space-y-6">
           <div className="flex items-center space-x-3 cursor-pointer pb-6 border-b border-slate-800" onClick={() => navigateTo('home')}>
@@ -752,8 +764,6 @@ function HomeContent() {
         {/* TAB HOME */}
         {activeTab === 'home' && (
           <div className="space-y-8 animate-fade-in">
-            
-            {/* OROLOGIO E NOTIZIE WIDGET */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/60 flex items-center gap-5 relative overflow-hidden">
                 <div className="absolute -right-6 -top-6 w-32 h-32 bg-sky-50 rounded-full blur-2xl"></div>
@@ -775,7 +785,6 @@ function HomeContent() {
               </a>
             </div>
 
-            {/* AFORISMA MOTIVAZIONALE DEL GIORNO */}
             <div className="bg-gradient-to-r from-sky-50 via-indigo-50 to-purple-50 border border-sky-100 rounded-[2rem] p-5 shadow-xs flex items-center gap-4">
               <span className="text-3xl">💬</span>
               <div>
@@ -811,7 +820,6 @@ function HomeContent() {
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* ASSISTENTE AI */}
               <div className="lg:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 rounded-[2rem] p-6 shadow-xl border border-slate-700 text-white flex flex-col relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl"></div>
                 <div className="relative z-10 flex items-center gap-3 mb-4">
@@ -837,7 +845,6 @@ function HomeContent() {
                 </form>
               </div>
 
-              {/* STATISTICHE RAPIDE INTERATTIVE */}
               <div className="space-y-4">
                 <div className="bg-white p-5 rounded-[2rem] border border-slate-200/80 shadow-xs">
                   <h4 className="font-bold text-slate-800 text-sm mb-3">Statistiche Rapide</h4>
@@ -865,6 +872,121 @@ function HomeContent() {
                 </a>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TAB APPUNTI CON VISTA ONENOTE E REVISIONI PDM */}
+        {activeTab === 'appunti' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><span>📓</span> Quaderno Appunti &amp; PDM Revisioni</h2>
+                <p className="text-xs text-slate-500 mt-1">Sfoglia le note per commessa in stile OneNote o crea una nuova revisione PDM.</p>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <input 
+                  type="text" 
+                  placeholder="🔍 Cerca appunti, commessa..." 
+                  value={ricercaAppunti}
+                  onChange={e => setSearchAppunti(e.target.value)}
+                  className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <button onClick={() => { setAppuntiClienteSel(listaClientiCompleta[0] || ''); setAppuntiProgettoSel(''); setNuovoAppuntoTesto(''); setModalNuovaNota(true); }} className="bg-sky-600 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md hover:bg-sky-500 transition-colors cursor-pointer flex items-center gap-1">
+                  ➕ <span className="hidden sm:inline">Nuovo Appunto</span>
+                </button>
+              </div>
+            </div>
+
+            {/* GRIGLIA STILE ONENOTE PER COMMESSA */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {appuntiRaggruppati
+                .filter(a => 
+                  a.cliente.toLowerCase().includes(ricercaAppunti.toLowerCase()) || 
+                  a.progetto.toLowerCase().includes(ricercaAppunti.toLowerCase()) ||
+                  a.testo.toLowerCase().includes(ricercaAppunti.toLowerCase())
+                )
+                .map((app) => (
+                <div 
+                  key={`${app.cliente}_${app.progetto}`} 
+                  onClick={() => { setAppuntiClienteSel(app.cliente); setAppuntiProgettoSel(app.progetto); }}
+                  className="bg-white rounded-3xl border border-slate-200 hover:border-sky-400 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between overflow-hidden group relative"
+                >
+                  <div className="h-2 bg-sky-500 w-full"></div>
+                  <div className="p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black uppercase text-sky-600 bg-sky-50 border border-sky-100 px-2.5 py-0.5 rounded-md truncate max-w-[180px]">{app.cliente}</span>
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 font-black text-[10px] px-2 py-0.5 rounded-full flex-shrink-0">
+                        Rev. v{app.versione}
+                      </span>
+                    </div>
+
+                    <h3 className="font-black text-slate-900 text-base leading-snug group-hover:text-sky-600 transition-colors">{app.progetto}</h3>
+
+                    <p className="text-slate-600 text-xs leading-relaxed line-clamp-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                      {app.testo}
+                    </p>
+                  </div>
+
+                  <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-400">
+                    <span className="flex items-center gap-1">👤 {app.autore}</span>
+                    <span>{formatDateSafely(app.data_ora)}</span>
+                  </div>
+                </div>
+              ))}
+
+              {appuntiRaggruppati.length === 0 && (
+                <div className="col-span-full bg-white p-12 rounded-3xl border border-dashed text-center text-slate-400 space-y-2">
+                  <span className="text-4xl block">📓</span>
+                  <p className="text-sm font-semibold">Nessun appunto trovato. Clicca su "+ Nuovo Appunto" per iniziare.</p>
+                </div>
+              )}
+            </div>
+
+            {/* DETTAGLIO EDITING / REVISIONI DEL PROGETTO SELEZIONATO */}
+            {appuntiClienteSel && appuntiProgettoSel && (
+              <div className="bg-white rounded-3xl border-2 border-sky-400 shadow-xl p-6 space-y-5 animate-fade-in mt-6">
+                <div className="flex justify-between items-center border-b pb-4">
+                  <div>
+                    <span className="text-xs font-black uppercase text-sky-600">{appuntiClienteSel}</span>
+                    <h3 className="text-xl font-black text-slate-900">{appuntiProgettoSel}</h3>
+                  </div>
+                  <button onClick={() => { setAppuntiClienteSel(''); setAppuntiProgettoSel(''); }} className="text-slate-400 hover:text-slate-600 font-bold text-xs bg-slate-100 px-3 py-1.5 rounded-xl cursor-pointer">
+                    ✕ Chiudi Scheda
+                  </button>
+                </div>
+
+                {/* Editor Aggiunta Nuova Revisione */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2"><span>✏️</span> Aggiungi Nuova Revisione (PDM)</h4>
+                  <textarea value={nuovoAppuntoTesto} onChange={e=>setNuovoAppuntoTesto(e.target.value)} placeholder="Scrivi gli aggiornamenti della nota qui..." className="w-full h-28 p-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500"></textarea>
+                  <button onClick={handleSalvaAppunto} className="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow cursor-pointer transition-colors">
+                    Salva e Pubblica Revisione 🚀
+                  </button>
+                </div>
+
+                {/* Storico Revisioni Passate */}
+                <div className="space-y-3 pt-2">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Storico Completo Revisioni</h4>
+                  {dbAppunti.filter(a => a.cliente === appuntiClienteSel && a.progetto === appuntiProgettoSel)
+                    .sort((a,b) => b.versione - a.versione)
+                    .map((nota, idx) => (
+                    <div key={nota.id} className={`p-4 rounded-2xl border ${idx === 0 ? 'bg-sky-50/50 border-sky-200' : 'bg-slate-50 border-slate-200 opacity-80'}`}>
+                      <div className="flex justify-between items-center mb-2 border-b border-slate-200/60 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${idx === 0 ? 'bg-sky-600 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                            Versione v{nota.versione} {idx === 0 ? '(In Uso)' : ''}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">👤 {nota.autore}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono">{formatDateSafely(nota.data_ora)}</span>
+                      </div>
+                      <p className="text-sm text-slate-800 whitespace-pre-wrap font-medium">{nota.testo}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -914,99 +1036,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB APPUNTI PDM */}
-        {activeTab === 'appunti' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><span>📓</span> Appunti Cantieri &amp; PDM</h2>
-                <p className="text-xs text-slate-500 mt-1">Prendi note operative per le tue commesse. Ogni salvataggio crea una nuova revisione.</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col md:flex-row gap-6">
-              <div className="w-full md:w-1/3 bg-white rounded-3xl border border-slate-200 p-4 shadow-sm h-[600px] overflow-y-auto">
-                <h3 className="font-bold text-slate-800 text-sm mb-4 border-b pb-2">Seleziona Commessa</h3>
-                <div className="space-y-2">
-                  {listaClientiCompleta.map(cliente => {
-                    const progettiCliente = [...new Set(dbAppunti.filter(a => a.cliente === cliente).map(a => a.progetto))];
-                    const isClientSel = appuntiClienteSel === cliente;
-                    return (
-                      <div key={cliente}>
-                        <div onClick={() => { setAppuntiClienteSel(isClientSel ? '' : cliente); setAppuntiProgettoSel(''); }} className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ${isClientSel ? 'bg-slate-900 text-white' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'}`}>
-                          {isClientSel ? '📂' : '📁'} {cliente}
-                        </div>
-                        {isClientSel && (
-                          <div className="pl-4 mt-2 space-y-1">
-                            {progettiCliente.map(prog => (
-                              <div key={prog} onClick={() => setAppuntiProgettoSel(prog)} className={`p-2 rounded-lg text-xs cursor-pointer ${appuntiProgettoSel === prog ? 'bg-sky-100 text-sky-800 font-bold border border-sky-300' : 'hover:bg-slate-50 text-slate-600'}`}>
-                                📄 {prog}
-                              </div>
-                            ))}
-                            <div onClick={() => { const p = prompt('Nuovo Progetto:'); if(p) setAppuntiProgettoSel(p); }} className="p-2 text-[10px] text-sky-600 font-bold cursor-pointer hover:underline">
-                              + Aggiungi Nuovo Progetto
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="w-full md:w-2/3 bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col h-[600px] overflow-hidden">
-                {appuntiClienteSel && appuntiProgettoSel ? (
-                  <>
-                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
-                      <div>
-                        <div className="text-[10px] font-bold text-slate-400 uppercase">{appuntiClienteSel}</div>
-                        <h3 className="font-bold text-slate-900">{appuntiProgettoSel}</h3>
-                      </div>
-                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-1 rounded border border-emerald-200">
-                        PDM Attivo
-                      </span>
-                    </div>
-                    
-                    <div className="p-4 border-b border-slate-100 bg-white">
-                      <textarea value={nuovoAppuntoTesto} onChange={e=>setNuovoAppuntoTesto(e.target.value)} placeholder="Scrivi qui i nuovi appunti del cantiere o le modifiche..." className="w-full h-32 p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500 bg-slate-50"></textarea>
-                      <button onClick={handleSalvaAppunto} className="mt-2 w-full bg-sky-600 text-white font-bold py-2 rounded-xl shadow hover:bg-sky-500 transition-colors cursor-pointer">
-                        Salva Nuova Revisione
-                      </button>
-                    </div>
-
-                    <div className="flex-1 p-4 overflow-y-auto bg-slate-50 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Storico Revisioni</h4>
-                      {dbAppunti.filter(a => a.cliente === appuntiClienteSel && a.progetto === appuntiProgettoSel)
-                        .sort((a,b) => b.versione - a.versione)
-                        .map((nota, idx) => (
-                        <div key={nota.id} className={`p-4 rounded-xl border ${idx === 0 ? 'bg-white border-sky-200 shadow-sm' : 'bg-slate-100 border-slate-200 opacity-80'}`}>
-                          <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
-                            <div>
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${idx === 0 ? 'bg-sky-500 text-white' : 'bg-slate-300 text-slate-700'}`}>v{nota.versione}</span>
-                              <span className="text-xs font-bold text-slate-800 ml-2">{nota.autore}</span>
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-mono">{formatDateSafely(nota.data_ora)}</span>
-                          </div>
-                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{nota.testo}</p>
-                          {idx !== 0 && (
-                            <button onClick={() => setNuovoAppuntoTesto(nota.testo)} className="mt-3 text-[10px] font-bold text-sky-600 hover:underline cursor-pointer">Ripristina come base</button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
-                    <span className="text-4xl mb-2">📓</span>
-                    <p className="text-sm font-semibold">Seleziona o crea un progetto dalla barra laterale per visualizzare e scrivere gli appunti.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB PLANNER TEAM */}
+        {/* TAB PLANNER */}
         {activeTab === 'planner' && (
           <div className="space-y-6">
             <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
@@ -1021,7 +1051,6 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* LEGENDA CROMATICA CON ICONE */}
             <div className="flex flex-wrap items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 text-xs font-bold shadow-sm">
               <span className="text-slate-400 uppercase font-black text-[10px]">Legenda Colori &amp; Icone:</span>
               <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 In Programma (⏳)</span>
@@ -1052,7 +1081,6 @@ function HomeContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {/* Riga Da Assegnare */}
                     <tr className="bg-amber-50/50 hover:bg-amber-100/30">
                       <td onClick={() => togglePlannerRow('Da Assegnare')} className="p-4 font-bold text-amber-900 sticky left-0 bg-amber-50 z-10 border-r border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
                         <div className="flex items-center justify-between">
@@ -1085,7 +1113,6 @@ function HomeContent() {
                       })}
                     </tr>
 
-                    {/* Righe Utenti */}
                     {listaDipendenti.map(nomeDip => {
                       const isExpanded = plannerEspansi[nomeDip];
                       return (
@@ -1107,7 +1134,6 @@ function HomeContent() {
                                   <div className="space-y-1.5">
                                     {eventiCella.map((ev, evIdx) => {
                                       const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
-                                      
                                       let stC = 'bg-amber-50 text-amber-800 border-amber-200'; let cellIcon = '⏳';
                                       if (isCons) { stC = 'bg-emerald-50 text-emerald-800 border-emerald-200'; cellIcon = '✅'; }
                                       else if (isAss) { stC = 'bg-purple-50 text-purple-800 border-purple-200'; cellIcon = isFerie(ev)?'🏖️':'🏥'; }
@@ -1491,7 +1517,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB REPORTISTICA COMPLETA E RIPRISTINATA */}
+        {/* TAB REPORTISTICA */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
            <div className="space-y-6">
              <div className="bg-slate-900 rounded-[2rem] p-6 text-white shadow-xl space-y-4">
@@ -1668,6 +1694,42 @@ function HomeContent() {
         )}
 
       </main>
+
+      {/* MODALE NUOVO APPUNTO RAPIDO */}
+      {modalNuovaNota && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+              <h3 className="text-xl font-bold text-slate-900">📓 Nuovo Appunto / PDM</h3>
+              <button onClick={() => setModalNuovaNota(false)} className="text-slate-400 hover:bg-slate-100 w-8 h-8 rounded-full font-black text-base flex items-center justify-center transition-colors cursor-pointer">✕</button>
+            </div>
+            
+            <div className="space-y-4 pt-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Cliente *</label>
+                <select value={appuntiClienteSel} onChange={e => setAppuntiClienteSel(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-sky-500">
+                  {listaClientiCompleta.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Progetto / Commessa *</label>
+                <input type="text" placeholder="Es. Collaudo Impianto X" value={appuntiProgettoSel} onChange={e=>setAppuntiProgettoSel(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-sky-500" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Testo dell'Appunto *</label>
+                <textarea rows={4} placeholder="Scrivi qui i dettagli tecnici o gli appunti..." value={nuovoAppuntoTesto} onChange={e=>setNuovoAppuntoTesto(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500"></textarea>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t border-slate-100">
+              <button onClick={() => setModalNuovaNota(false)} className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl cursor-pointer">Annulla</button>
+              <button onClick={handleSalvaAppunto} className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md cursor-pointer">Salva Appunto 🚀</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODALE ANTEPRIMA DOCUMENTI */}
       {modalDocumento && (() => {
