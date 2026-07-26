@@ -4,26 +4,21 @@ import Head from 'next/head';
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React intercettato:", error, errorInfo); }
+  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-50 p-8 flex flex-col items-center justify-center font-sans">
+        <div className="min-h-screen bg-slate-100 p-8 flex flex-col items-center justify-center font-sans">
           <div className="max-w-3xl w-full bg-white p-8 rounded-3xl border border-rose-200 shadow-2xl text-center space-y-4">
             <div className="text-5xl">⚠️</div>
-            <h2 className="text-2xl font-black text-rose-600">Si è verificato un errore nell'interfaccia</h2>
-            <p className="text-sm text-slate-500">Dettaglio dell'eccezione intercettata:</p>
-            
+            <h2 className="text-2xl font-black text-rose-600">Errore nell'interfaccia</h2>
             <div className="bg-slate-900 text-left p-4 rounded-xl overflow-x-auto">
               <p className="text-rose-400 font-mono text-sm font-bold">{this.state.error && this.state.error.toString()}</p>
               <pre className="text-slate-400 font-mono text-[10px] mt-2 whitespace-pre-wrap">
                 {this.state.errorInfo && this.state.errorInfo.componentStack}
               </pre>
             </div>
-
-            <button onClick={() => window.location.reload()} className="px-6 py-3 bg-sky-600 text-white font-bold rounded-xl shadow-md hover:bg-sky-500 transition-all">
-              🔄 Ricarica l'Applicazione
-            </button>
+            <button onClick={() => window.location.reload()} className="px-6 py-3 bg-sky-600 text-white font-bold rounded-xl shadow-md hover:bg-sky-500 transition-all">🔄 Ricarica l'App</button>
           </div>
         </div>
       );
@@ -166,7 +161,7 @@ function HomeContent() {
 
   // AI Assistant State
   const [aiInput, setAiInput] = useState('');
-  const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono il tuo assistente virtuale BW Solutions. Come posso aiutarti oggi?'}]);
+  const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
   const [isAiTyping, setIsAiTyping] = useState(false);
 
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
@@ -201,6 +196,7 @@ function HomeContent() {
   const [rispostaApertaId, setRispostaApertaId] = useState(null);
   const [testoRispostaAdmin, setTestoRispostaAdmin] = useState('');
 
+  // STATO PER REPOSITORY SOTTOCARTELLE RIPRISTINATO
   const [cartelleAperte, setCartelleAperte] = useState({ 'Da Assegnare': true });
   const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
 
@@ -211,7 +207,6 @@ function HomeContent() {
   const [risultatiNC, setRisultatiNC] = useState([]);
   const [loadingNC, setLoadingNC] = useState(false);
   const [errorNC, setErrorNC] = useState(null);
-  const [isSearchMode, setIsSearchMode] = useState(false);
 
   const [modalDocumento, setModalDocumento] = useState(null);
 
@@ -260,7 +255,6 @@ function HomeContent() {
   function handleApriCartella(percorso) { setSearchQueryNC(''); navigateTo('documenti', percorso); }
   function handleCartellaSuperioreNC() { const parent = getParentPath(pathNC); setSearchQueryNC(''); navigateTo('documenti', parent); }
 
-  // DEFINIZIONE CORRETTA BREADCRUMBS
   const renderBreadcrumbs = () => {
     const parts = pathNC ? pathNC.split('/').filter(Boolean) : [];
     let accumulatedPath = '';
@@ -285,7 +279,7 @@ function HomeContent() {
   useEffect(() => {
     setIsMounted(true);
     try { const saved = localStorage.getItem('bw_user'); if (saved) setCurrentUser(JSON.parse(saved)); } catch (e) { localStorage.removeItem('bw_user'); }
-    try { const savedRead = localStorage.getItem('bw_read_feedbacks'); if (savedRead) { const parsed = JSON.parse(savedRead); if (Array.isArray(parsed)) setReadFeedbackIds(parsed); } } catch (e) { localStorage.removeItem('bw_read_feedbacks'); }
+    try { const savedRead = localStorage.getItem('bw_read_feedbacks'); if (savedRead) { const parsed = JSON.parse(savedRead); if (Array.isArray(parsed)) setReadFeedbackIds(parsed); } } catch (e) {}
   }, []);
 
   useEffect(() => { if (currentUser) { setFormData(prev => ({ ...prev, dipendente: currentUser.nome })); } }, [currentUser]);
@@ -382,15 +376,14 @@ function HomeContent() {
     setAiInput('');
     setIsAiTyping(true);
     setTimeout(() => {
-      setAiMessages([...newMsgs, { role: 'ai', text: 'Assistente AI in modalità dimostrativa. In futuro potrò analizzare le commesse, consuntivare le ore al tuo posto e generare i rapportini per i clienti!' }]);
+      setAiMessages([...newMsgs, { role: 'ai', text: 'Assistente AI attivo in modalità demo. In futuro potrò riassumerti l\'andamento delle commesse ed estrarre i rapportini!' }]);
       setIsAiTyping(false);
     }, 1200);
   };
 
   const unreadFeedbackCount = safeFeedbackList.filter(fb => {
     if (!fb || fb.is_deleted) return false;
-    const key = getFeedbackKey(fb);
-    if (!key) return false;
+    const key = getFeedbackKey(fb); if (!key) return false;
     if (currentUser?.ruolo === 'admin') return !fb.risposta && !safeReadIds.includes(key);
     const isMyReply = currentUser?.nome && matchNomeDipendente(fb.autore, currentUser.nome) && fb.risposta;
     return (isMyReply || !safeReadIds.includes(String(fb.id))) && !safeReadIds.includes(key);
@@ -401,33 +394,13 @@ function HomeContent() {
     setLoading(true); setFeedbackStatus(null);
     try {
       const res = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ autore: currentUser.nome, categoria: feedbackForm.categoria, valutazione: feedbackForm.valutazione, messaggio: feedbackForm.messaggio.trim() })
       });
       if (res.ok) { setFeedbackStatus({ type: 'success', text: 'Suggerimento inviato!' }); setFeedbackForm({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' }); fetchFeedback(); } 
       else { setFeedbackStatus({ type: 'error', text: 'Errore invio.' }); }
-    } catch (e) { setFeedbackStatus({ type: 'error', text: 'Errore di connessione.' }); } 
+    } catch (e) { setFeedbackStatus({ type: 'error', text: 'Errore rete.' }); } 
     finally { setLoading(false); }
-  };
-
-  const handleInviaRispostaAdmin = async (id) => {
-    if (!testoRispostaAdmin.trim()) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/feedback', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, risposta: testoRispostaAdmin.trim() }) });
-      if (res.ok) { setRispostaApertaId(null); setTestoRispostaAdmin(''); fetchFeedback(); }
-    } catch (e) {} finally { setLoading(false); }
-  };
-
-  const handleToggleSoftDelete = async (id, statoAttuale) => {
-    const nuovaAzione = !statoAttuale;
-    if (!confirm(nuovaAzione ? "Rimuovere dalla bacheca?" : "Ripristinare?")) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/feedback', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, is_deleted: nuovaAzione }) });
-      if (res.ok) fetchFeedback();
-    } catch (e) {} finally { setLoading(false); }
   };
 
   const handleApprovaAssenza = async (item) => {
@@ -439,7 +412,7 @@ function HomeContent() {
   };
 
   const handleRifiutaAssenza = async (item) => {
-    if (!item) return; if (!confirm(`Rifiutare?`)) return; setLoading(true);
+    if (!item) return; if (!confirm(`Rifiutare la richiesta?`)) return; setLoading(true);
     try {
       const res = await fetch('/api/gestisci', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id }) });
       if (res.ok) fetchProgrammati();
@@ -451,8 +424,8 @@ function HomeContent() {
     try {
       const res = await fetch(`/api/documenti?folder=${encodeURIComponent(folderPath)}&query=${encodeURIComponent(search)}`);
       const data = await res.json();
-      if (res.ok) { setRisultatiNC(Array.isArray(data.risultati) ? data.risultati : []); setIsSearchMode(data.isSearch || false); } 
-      else { setErrorNC(data.message || 'Errore'); }
+      if (res.ok) { setRisultatiNC(Array.isArray(data.risultati) ? data.risultati : []); } 
+      else { setErrorNC(data.message || 'Errore caricamento'); }
     } catch (err) { setErrorNC('Errore Nextcloud'); } 
     finally { setLoadingNC(false); }
   };
@@ -494,25 +467,21 @@ function HomeContent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setStatusMessage(null);
-
     if (!formData.cliente || !formData.cliente.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci il Cliente!' }); return; }
     if (!formData.progetto || !formData.progetto.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci il Progetto/Dettaglio!' }); return; }
 
     const totOreForm = Number(formData.ore || 0) + Number(formData.ore_backoffice || 0) + Number(formData.ore_straordinario || 0);
     if (totOreForm <= 0) { setStatusMessage({ type: 'error', text: '⚠️ Inserisci almeno 0.5 ore.' }); return; }
-
-    if (totOreForm > 12) { if (!confirm(`⚠️ Stai registrando un totale di ${totOreForm} ore in una singola giornata. Confermi?`)) { return; } }
+    if (totOreForm > 12) { if (!confirm(`⚠️ Stai registrando ${totOreForm} ore in una sola giornata. Confermi?`)) return; }
 
     const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
     if (currentUser?.ruolo !== 'admin' && formData.data < primoGiornoMeseCorrente) {
-      setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Non puoi inserire/modificare i mesi scorsi.' }); return;
+      setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Impossibile inserire dati nei mesi passati.' }); return;
     }
 
-    const oggi = new Date(); const dataSelezionata = new Date(formData.data);
-    const diffGiorni = (oggi - dataSelezionata) / (1000 * 60 * 60 * 24);
-
+    const diffGiorni = (new Date() - new Date(formData.data)) / (1000 * 60 * 60 * 24);
     if (diffGiorni > 2.5 && (!formData.note || !formData.note.trim())) {
-      setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Le Note sono obbligatorie per registrazioni tardive.' }); return;
+      setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Le Note sono obbligatorie.' }); return;
     }
 
     setLoading(true);
@@ -521,8 +490,7 @@ function HomeContent() {
       if (formData.usaIntervallo && formData.data_fine > formData.data) {
         dateDaSalvare = []; let curr = new Date(formData.data); const end = new Date(formData.data_fine);
         while (curr <= end) {
-          const dayOfWeek = curr.getDay();
-          if (dayOfWeek !== 0 && dayOfWeek !== 6) { dateDaSalvare.push(curr.toISOString().split('T')[0]); }
+          const dayOfWeek = curr.getDay(); if (dayOfWeek !== 0 && dayOfWeek !== 6) { dateDaSalvare.push(curr.toISOString().split('T')[0]); }
           curr.setDate(curr.getDate() + 1);
         }
       }
@@ -536,37 +504,27 @@ function HomeContent() {
       if (eRichiestaAssenza && currentUser?.ruolo !== 'admin') { statoDaImpostare = 'in_approvazione'; }
 
       let salvatiOk = 0; let ultimoMessaggioErrore = '';
-
       for (const d of dateDaSalvare) {
         const payload = { ...formData, data: d, stato: statoDaImpostare, ore_straordinario: formData.stato === 'consuntivo' ? (formData.ore_straordinario || 0) : 0 };
         const res = await fetch('/api/salva', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-
-        if (res.ok) { salvatiOk++; } 
-        else {
-          let errText = '';
-          try { const errData = await res.json(); errText = errData.message || errData.error || `Errore HTTP ${res.status}`; } 
-          catch (pErr) { const rawBody = await res.text().catch(() => ''); errText = `Errore Server (${res.status}): ${rawBody.slice(0, 120) || 'Risposta non valida'}`; }
-          ultimoMessaggioErrore = errText;
-        }
+        if (res.ok) { salvatiOk++; } else { const errData = await res.json().catch(()=>({})); ultimoMessaggioErrore = errData.message || 'Errore Server'; }
       }
 
       if (salvatiOk > 0) {
-        const msgOk = statoDaImpostare === 'in_approvazione' ? `Richiesta inviata in approvazione all'amministratore per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!` : `Registrazione effettuata per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!`;
-        setStatusMessage({ type: 'success', text: msgOk });
+        setStatusMessage({ type: 'success', text: `Registrazione salvata per ${salvatiOk} giornate!` });
         setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, usaIntervallo: false }));
         setCategoriaForm('lavoro'); fetchProgrammati();
-      } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore || 'Errore di salvataggio sconosciuto.' }); }
-    } catch (err) { setStatusMessage({ type: 'error', text: `Errore Rete Client: ${err?.message || err}` }); } 
+      } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore }); }
+    } catch (err) { setStatusMessage({ type: 'error', text: `Errore Rete` }); } 
     finally { setLoading(false); }
   };
 
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
-    if (!clienteEffettivo || !clienteEffettivo.trim()) { alert("⚠️ Campo Cliente obbligatorio!"); return; }
-    if (!progettoEffettivo || !progettoEffettivo.trim()) { alert("⚠️ Campo Progetto obbligatorio!"); return; }
+    if (!clienteEffettivo || !clienteEffettivo.trim()) return alert("⚠️ Campo Cliente obbligatorio!");
+    if (!progettoEffettivo || !progettoEffettivo.trim()) return alert("⚠️ Campo Progetto obbligatorio!");
 
-    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < primoGiornoMeseCorrente) { alert("🔒 Mese Passato Consolidato: Non puoi modificare i mesi scorsi."); return; }
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese Passato Consolidato: Impossibile modificare.");
 
     setLoading(true);
     try {
@@ -585,8 +543,7 @@ function HomeContent() {
 
   const handleElimina = async (item) => {
     if (!item || !canEditItem(item)) return alert("Operazione non permessa.");
-    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < primoGiornoMeseCorrente) { return alert("🔒 Mese chiuso."); }
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese chiuso.");
     if (!confirm(`Annullare l'attività "${toText(item.cliente)}"?`)) return;
 
     setLoading(true);
@@ -598,7 +555,7 @@ function HomeContent() {
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item)) { alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`); return; }
+    if (!canEditItem(item)) return alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`);
     setModalItem(item);
     setOreEffettive(item.ore || 0); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); setOreStraordinarioEffettive(item.ore_straordinario || 0);
     setDipendenteEffettivo(isItemDaAssegnare(item) ? currentUser?.nome : item.dipendente);
@@ -711,7 +668,7 @@ function HomeContent() {
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200">{normDate === todayStr ? 'Oggi' : normDate}</span>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${badgeStyle}`}>{icona} {etichetta}</span>
-              {isInApprovazione && <span className="text-[10px] font-bold bg-amber-400 text-slate-900 px-2 py-0.5 rounded-md shadow-xs">⏳ In Approvazione</span>}
+              {isInApprovazione && <span className="text-[10px] font-bold bg-amber-400 text-slate-900 px-2 py-0.5 rounded-md shadow-xs animate-pulse">⏳ In Approvazione</span>}
               {Number(item.ore_straordinario || 0) > 0 && <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300">⚡ +{item.ore_straordinario}h Straord.</span>}
             </div>
             <div className="font-bold text-slate-900 text-sm group-hover:text-sky-600 transition-colors">{isAssenzaFlag ? toText(item.progetto) : (toText(item.cliente) || "⚠️ Cliente non assegnato")}</div>
@@ -732,15 +689,15 @@ function HomeContent() {
           <div className="flex space-x-2 mt-2 md:mt-0 items-center h-full" onClick={e => e.stopPropagation()}>
             {isInApprovazione && currentUser?.ruolo === 'admin' ? (
               <>
-                <button onClick={() => handleApprovaAssenza(item)} className="px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700">✅ Approva</button>
-                <button onClick={() => handleRifiutaAssenza(item)} className="px-3.5 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-rose-700">❌ Rifiuta</button>
+                <button onClick={() => handleApprovaAssenza(item)} className="px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-700 cursor-pointer">✅ Approva</button>
+                <button onClick={() => handleRifiutaAssenza(item)} className="px-3.5 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-rose-700 cursor-pointer">❌ Rifiuta</button>
               </>
             ) : isEditable ? (
               <>
-                <button onClick={() => openEditModal(item)} className="px-4 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-600 hover:text-white text-xs font-bold rounded-xl transition-all border border-sky-100">
+                <button onClick={() => openEditModal(item)} className="px-4 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-600 hover:text-white text-xs font-bold rounded-xl transition-all border border-sky-100 cursor-pointer">
                   {item.stato === 'consuntivo' ? 'Modifica' : 'Conferma'}
                 </button>
-                <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-colors">🗑️</button>
+                <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-colors cursor-pointer">🗑️</button>
               </>
             ) : <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">Sola Lettura</span>}
           </div>
@@ -776,7 +733,7 @@ function HomeContent() {
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg hover:text-slate-600 transition-colors">{showPassword ? '👁️' : '🙈'}</button>
               </div>
             </div>
-            <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-xl shadow-slate-900/20 transition-all text-sm mt-2">Accedi alla Piattaforma</button>
+            <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-xl shadow-slate-900/20 transition-all text-sm mt-2 cursor-pointer">Accedi alla Piattaforma</button>
           </form>
         </div>
       </div>
@@ -791,7 +748,7 @@ function HomeContent() {
       </Head>
       <datalist id="lista-aziende">{LISTA_CLIENTI.map((azienda, index) => <option key={index} value={azienda} />)}</datalist>
 
-      {/* SIDEBAR PROFESSIONALE */}
+      {/* SIDEBAR PROFESSIONALE CON LOGHI */}
       <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex-shrink-0 flex flex-col justify-between p-5 md:h-screen sticky top-0 z-40 border-r border-slate-800 shadow-2xl">
         <div className="space-y-6">
           <div className="flex items-center space-x-3 cursor-pointer pb-6 border-b border-slate-800" onClick={() => navigateTo('home')}>
@@ -803,21 +760,21 @@ function HomeContent() {
           </div>
 
           <nav className="flex md:flex-col space-x-2 md:space-x-0 md:space-y-1.5 overflow-x-auto md:overflow-x-visible text-sm font-semibold">
-            {navHistory.length > 0 && <button onClick={handleGoBack} className="w-full px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl mb-2 transition-all flex gap-2"><span>⬅️</span> Indietro</button>}
-            <button onClick={() => navigateTo('home')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'home' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏠 Home</button>
-            <button onClick={() => navigateTo('planner')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'planner' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📅 Planner Team</button>
-            <button onClick={() => navigateTo('nuovo')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'nuovo' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📝 Inserisci Ore</button>
-            <button onClick={() => navigateTo('programmati')} className={`w-full px-4 py-3 rounded-xl flex items-center justify-between transition-all ${activeTab === 'programmati' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
+            {navHistory.length > 0 && <button onClick={handleGoBack} className="w-full px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl mb-2 transition-all flex gap-2 cursor-pointer"><span>⬅️</span> Indietro</button>}
+            <button onClick={() => navigateTo('home')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'home' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏠 Home</button>
+            <button onClick={() => navigateTo('planner')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'planner' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📅 Planner Team</button>
+            <button onClick={() => navigateTo('nuovo')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'nuovo' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📝 Inserisci Ore</button>
+            <button onClick={() => navigateTo('programmati')} className={`w-full px-4 py-3 rounded-xl flex items-center justify-between transition-all cursor-pointer ${activeTab === 'programmati' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
               <div className="flex gap-3">⏳ Attività</div>
               {(daAssegnareItems.length > 0) && <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
-            <button onClick={() => navigateTo('documenti', pathNC)} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'documenti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📂 Cloud Aruba</button>
-            <button onClick={() => navigateTo('feedback')} className={`w-full px-4 py-3 rounded-xl flex items-center justify-between transition-all ${activeTab === 'feedback' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
+            <button onClick={() => navigateTo('documenti', pathNC)} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'documenti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📂 Cloud Aruba</button>
+            <button onClick={() => navigateTo('feedback')} className={`w-full px-4 py-3 rounded-xl flex items-center justify-between transition-all cursor-pointer ${activeTab === 'feedback' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
               <div className="flex gap-3">💡 Feedback</div>
               {unreadFeedbackCount > 0 && <span className="bg-purple-500 text-white font-black px-2 py-0.5 rounded-full text-[10px] animate-pulse">{unreadFeedbackCount}</span>}
             </button>
             {currentUser?.ruolo === 'admin' && (
-              <button onClick={() => navigateTo('cruscotto')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${activeTab === 'cruscotto' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📊 Reportistica</button>
+              <button onClick={() => navigateTo('cruscotto')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'cruscotto' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📊 Reportistica</button>
             )}
           </nav>
         </div>
@@ -828,7 +785,7 @@ function HomeContent() {
               <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white text-xs">{(currentUser?.nome || 'U')[0]}</div>
               <span className="text-white font-bold text-xs truncate">{currentUser?.nome}</span>
             </div>
-            <button onClick={handleLogout} className="text-slate-400 hover:text-rose-400 p-1 transition-colors">🚪</button>
+            <button onClick={handleLogout} className="text-slate-400 hover:text-rose-400 p-1 transition-colors cursor-pointer">🚪</button>
           </div>
         </div>
       </aside>
@@ -841,7 +798,7 @@ function HomeContent() {
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-full shadow-2xl z-50 flex items-center gap-6 border border-slate-700 animate-pulse">
             <span className="font-bold text-sm">Hai selezionato <span className="text-sky-400">{selectedItems.length}</span> attività</span>
             <div className="flex gap-3">
-              <button onClick={() => setSelectedItems([])} className="text-xs font-bold text-slate-400 hover:text-white">Annulla</button>
+              <button onClick={() => setSelectedItems([])} className="text-xs font-bold text-slate-400 hover:text-white cursor-pointer">Annulla</button>
               <button onClick={handleBulkDelete} disabled={loading} className="bg-rose-500 hover:bg-rose-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md cursor-pointer">Elimina Selezionate</button>
             </div>
           </div>
@@ -849,7 +806,7 @@ function HomeContent() {
 
         {navHistory.length > 0 && activeTab !== 'home' && (
           <div className="md:hidden mb-4">
-            <button onClick={handleGoBack} className="inline-flex items-center space-x-2 px-4 py-2 bg-white text-slate-800 font-extrabold text-xs rounded-2xl border shadow-xs"><span>⬅️ Torna indietro</span></button>
+            <button onClick={handleGoBack} className="inline-flex items-center space-x-2 px-4 py-2 bg-white text-slate-800 font-extrabold text-xs rounded-2xl border shadow-xs cursor-pointer"><span>⬅️ Torna indietro</span></button>
           </div>
         )}
 
@@ -972,7 +929,6 @@ function HomeContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {/* Riga Da Assegnare */}
                     <tr className="bg-amber-50/50 hover:bg-amber-100/30">
                       <td onClick={() => togglePlannerRow('Da Assegnare')} className="p-4 font-bold text-amber-900 sticky left-0 bg-amber-50 z-10 border-r border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
                         <div className="flex items-center justify-between">
@@ -1005,7 +961,6 @@ function HomeContent() {
                       })}
                     </tr>
 
-                    {/* Righe Utenti */}
                     {listaDipendenti.map(nomeDip => {
                       const isExpanded = plannerEspansi[nomeDip];
                       return (
@@ -1075,10 +1030,10 @@ function HomeContent() {
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-2 tracking-wide">Tipologia</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <button type="button" onClick={() => setCategoriaForm('lavoro')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'lavoro' ? 'bg-sky-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>💼 Lavoro</button>
-                  <button type="button" onClick={() => setCategoriaForm('ferie')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'ferie' ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏖️ Ferie</button>
-                  <button type="button" onClick={() => setCategoriaForm('permesso')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'permesso' ? 'bg-indigo-500 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>⏱️ Permesso</button>
-                  <button type="button" onClick={() => setCategoriaForm('malattia')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'malattia' ? 'bg-rose-500 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏥 Malattia</button>
+                  <button type="button" onClick={() => setCategoriaForm('lavoro')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'lavoro' ? 'bg-sky-600 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>💼 Lavoro</button>
+                  <button type="button" onClick={() => setCategoriaForm('ferie')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'ferie' ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏖️ Ferie</button>
+                  <button type="button" onClick={() => setCategoriaForm('permesso')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'permesso' ? 'bg-indigo-500 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>⏱️ Permesso</button>
+                  <button type="button" onClick={() => setCategoriaForm('malattia')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'malattia' ? 'bg-rose-500 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏥 Malattia</button>
                 </div>
               </div>
 
@@ -1153,43 +1108,131 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB GESTIONE ATTIVITÀ */}
+        {/* TAB GESTIONE ATTIVITÀ - REPOSITORY SOTTOCARTELLE RIPRISTINATO COMPLETO */}
         {activeTab === 'programmati' && (
           <div className="space-y-6 pb-20">
             <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
-              <div><h2 className="text-xl font-bold text-slate-900">Gestione Attività</h2><p className="text-xs text-slate-500 mt-1">Seleziona i box a sinistra per eliminazioni multiple.</p></div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">📁 Repository Attività Team</h2>
+                <p className="text-xs text-slate-500 mt-1">Sfoglia per dipendente e sottocartella tematica. Usa la spunta a sinistra per eliminazioni multiple.</p>
+              </div>
               <div className="flex gap-2">
-                {currentUser?.ruolo === 'admin' && <button onClick={handleSyncCalendar} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors cursor-pointer">Sincronizza Google</button>}
-                <button onClick={fetchProgrammati} className="bg-sky-500 hover:bg-sky-400 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors shadow-xs cursor-pointer">Aggiorna</button>
+                {currentUser?.ruolo === 'admin' && <button onClick={handleSyncCalendar} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors cursor-pointer">⬇️ Sincronizza Google</button>}
+                <button onClick={fetchProgrammati} className="bg-sky-500 hover:bg-sky-400 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors shadow-xs cursor-pointer">🔄 Aggiorna</button>
               </div>
             </div>
 
-            {/* Cartella Da Assegnare */}
-            <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
-              <div onClick={() => toggleCartella('Da Assegnare')} className="p-5 bg-amber-50/50 hover:bg-amber-50 cursor-pointer flex justify-between items-center transition-colors">
-                <div className="flex items-center gap-3"><span className="text-2xl">📁</span><h3 className="font-bold text-amber-900">Da Assegnare</h3></div>
-                <div className="flex items-center gap-3"><span className="bg-amber-500 text-white font-bold text-xs px-3 py-1 rounded-full">{daAssegnareItems.length}</span></div>
+            {/* CARTELLA DA ASSEGNARE */}
+            <div className="bg-amber-50/80 border-2 border-amber-300 rounded-3xl overflow-hidden shadow-xs">
+              <div onClick={() => toggleCartella('Da Assegnare')} className="p-5 flex items-center justify-between cursor-pointer hover:bg-amber-100/50 select-none">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">{cartelleAperte['Da Assegnare'] ? '📂' : '📁'}</span>
+                  <div>
+                    <h3 className="font-bold text-amber-950 text-base">Attività Da Assegnare</h3>
+                    <p className="text-xs text-amber-800">Eventi non ancora associati ad un tecnico o con dettagli mancanti</p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <span className="bg-amber-400 text-slate-950 font-black text-xs px-3 py-1 rounded-full">{daAssegnareItems.length} da assegnare</span>
+                  <span className="text-amber-900 font-bold text-xs bg-amber-200/80 px-3 py-1.5 rounded-xl border border-amber-300">{cartelleAperte['Da Assegnare'] ? '▲ Chiudi Cartella' : '▼ Apri Cartella'}</span>
+                </div>
               </div>
-              {cartelleAperte['Da Assegnare'] && <div className="p-5 border-t border-slate-100 space-y-3">{daAssegnareItems.map((item, idx) => renderRigaAttivita(item, 'amber', idx))}</div>}
+
+              {cartelleAperte['Da Assegnare'] && (
+                <div className="p-5 border-t border-amber-200 bg-white space-y-3">
+                  {daAssegnareItems.length === 0 ? (
+                    <p className="text-xs text-amber-700 font-semibold py-2 text-center">✅ Nessuna attività in attesa di assegnazione!</p>
+                  ) : (
+                    daAssegnareItems.map((item, idx) => renderRigaAttivita(item, 'amber', idx))
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Cartelle Dipendenti */}
+            {/* CARTELLE E SOTTOCARTELLE DIPENDENTI */}
             <div className="space-y-4">
               {dipendentiVisibili.map(dipNome => {
+                const eventiDip = safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, dipNome));
+                const interventiLavoro = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) === 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
+                const backofficeProgetti = eventiDip.filter(e => !isAssenza(e) && Number(e.ore_backoffice || 0) > 0 && e.stato !== 'consuntivo' && e.stato !== 'annullato');
+                const assenzeGiustificativi = eventiDip.filter(e => isAssenza(e) && e.stato !== 'consuntivo' && e.stato !== 'annullato');
+                const concluseConsuntivate = eventiDip.filter(e => e.stato === 'consuntivo');
+
                 const isAperta = !!cartelleAperte[dipNome];
+
                 return (
                   <div key={dipNome} className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-                    <div onClick={() => toggleCartella(dipNome)} className="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition-colors">
-                      <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center font-bold">{dipNome[0]}</div><h3 className="font-bold text-slate-800">{dipNome}</h3></div>
-                      <span className="text-slate-400 text-xs font-bold">{isAperta ? '▼ Chiudi' : '▶ Apri'}</span>
+                    <div onClick={() => toggleCartella(dipNome)} className="bg-slate-900 hover:bg-slate-800 text-white p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-sky-500 text-slate-950 font-extrabold rounded-2xl flex items-center justify-center text-lg">{isAperta ? '📂' : '📁'}</div>
+                        <div>
+                          <h3 className="font-bold text-lg leading-tight">{dipNome}</h3>
+                          <span className="text-xs text-slate-400 font-medium">Cartella Personale Attività</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2 text-xs font-bold">
+                          <span className="bg-sky-500/20 text-sky-300 px-2.5 py-1 rounded-xl border border-sky-500/30">💼 {interventiLavoro.length + backofficeProgetti.length} Attivi</span>
+                          <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-xl border border-emerald-500/30">✅ {concluseConsuntivate.length} Conclusi</span>
+                        </div>
+                        <span className="text-sky-400 font-bold text-xs bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">{isAperta ? '▲ Chiudi' : '▼ Apri'}</span>
+                      </div>
                     </div>
+
                     {isAperta && (
-                      <div className="p-5 bg-slate-50/50 border-t border-slate-100 space-y-3">
-                        {safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, dipNome)).length === 0 ? (
-                          <p className="text-xs text-slate-400 text-center py-4">Nessuna attività registrata per questo dipendente.</p>
-                        ) : (
-                          safeStorico.filter(e => e && matchNomeDipendente(e.dipendente, dipNome)).map((item, idx) => renderRigaAttivita(item, 'slate', idx))
-                        )}
+                      <div className="p-5 space-y-4 bg-slate-50/50">
+                        {/* Sottocartella 1: Cantiere */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_lavoro`)} className="p-3.5 bg-sky-50/80 hover:bg-sky-100/80 flex items-center justify-between cursor-pointer border-b border-sky-100 select-none">
+                            <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>💼</span> Interventi Lavoro &amp; Cantiere</span>
+                            <span className="bg-sky-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{interventiLavoro.length}</span>
+                          </div>
+                          {sottoCartelleAperte[`${dipNome}_lavoro`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {interventiLavoro.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun intervento in programma.</p> : interventiLavoro.map((item, idx) => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky', idx))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sottocartella 2: Backoffice */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_backoffice`)} className="p-3.5 bg-indigo-50/80 hover:bg-indigo-100/80 flex items-center justify-between cursor-pointer border-b border-indigo-100 select-none">
+                            <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>🖥️</span> Backoffice &amp; Progetti Interni</span>
+                            <span className="bg-indigo-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{backofficeProgetti.length}</span>
+                          </div>
+                          {sottoCartelleAperte[`${dipNome}_backoffice`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {backofficeProgetti.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun backoffice programmato.</p> : backofficeProgetti.map((item, idx) => renderRigaAttivita(item, 'indigo', idx))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sottocartella 3: Assenze */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_assenze`)} className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 flex items-center justify-between cursor-pointer border-b border-purple-100 select-none">
+                            <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>🏖️</span> Ferie, Permessi &amp; Malattie</span>
+                            <span className="bg-purple-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{assenzeGiustificativi.length}</span>
+                          </div>
+                          {sottoCartelleAperte[`${dipNome}_assenze`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {assenzeGiustificativi.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna assenza programmata.</p> : assenzeGiustificativi.map((item, idx) => renderRigaAttivita(item, 'purple', idx))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sottocartella 4: Concluse */}
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                          <div onClick={() => toggleSottoCartella(`${dipNome}_concluse`)} className="p-3.5 bg-emerald-50/80 hover:bg-emerald-100/80 flex items-center justify-between cursor-pointer border-b border-emerald-100 select-none">
+                            <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>✅</span> Storico Attività Concluse</span>
+                            <span className="bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full">{concluseConsuntivate.length}</span>
+                          </div>
+                          {sottoCartelleAperte[`${dipNome}_concluse`] && (
+                            <div className="p-4 space-y-2 bg-white">
+                              {concluseConsuntivate.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna attività conclusa.</p> : [...concluseConsuntivate].sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => renderRigaAttivita(item, 'emerald', idx))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
