@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { google } from 'googleapis';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -12,7 +11,7 @@ export default async function handler(req, res) {
 
     if (!supabaseUrl || !supabaseKey) {
       return res.status(500).json({ 
-        message: 'Variabili Supabase mancanti su Vercel (SUPABASE_URL / SUPABASE_KEY).' 
+        message: 'Variabili Supabase non trovate. Verificare SUPABASE_URL e SUPABASE_KEY su Vercel.' 
       });
     }
 
@@ -37,7 +36,54 @@ export default async function handler(req, res) {
 
     const startDateStr = String(data).split('T')[0];
 
-    // Google Calendar Sync
+    // 1. TENTATIVO DI SALVATAGGIO IN SUPABASE (COMPLETO)
+    const payloadCompleto = {
+      dipendente,
+      cliente: cliente || '',
+      progetto: progetto || '',
+      data: startDateStr,
+      ore: Number(ore) || 0,
+      ore_backoffice: Number(ore_backoffice) || 0,
+      ore_trasferta: Number(ore_trasferta) || 0,
+      ore_straordinario: Number(ore_straordinario) || 0,
+      note: note || '',
+      stato
+    };
+
+    let { data: dbResult, error: dbError } = await supabase
+      .from('registrazioni_ore')
+      .insert([payloadCompleto])
+      .select();
+
+    // 2. FALLBACK (Se mancano colonne come ore_trasferta o ore_backoffice nel DB)
+    if (dbError) {
+      console.error("Errore Supabase tentato inserimento completo:", dbError);
+
+      const payloadBase = {
+        dipendente,
+        cliente: cliente || '',
+        progetto: progetto || '',
+        data: startDateStr,
+        ore: Number(ore) || 0,
+        note: note || '',
+        stato
+      };
+
+      const fallbackRes = await supabase
+        .from('registrazioni_ore')
+        .insert([payloadBase])
+        .select();
+
+      if (fallbackRes.error) {
+        console.error("Errore Supabase fallback:", fallbackRes.error);
+        const dettagli = dbError.message || dbError.details || JSON.stringify(dbError);
+        return res.status(500).json({ message: `Errore Supabase: ${dettagli}` });
+      }
+
+      dbResult = fallbackRes.data;
+    }
+
+    // 3. TENTATIVO GOOGLE CALENDAR ISOLATO (Non blocca mai il salvataggio)
     let calendarEventId = null;
     try {
       const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
@@ -45,6 +91,7 @@ export default async function handler(req, res) {
       const calendarId = process.env.GOOGLE_CALENDAR_ID;
 
       if (clientEmail && privateKey && calendarId) {
+        const { google } = require('googleapis');
         const auth = new google.auth.JWT({
           email: clientEmail,
           key: privateKey,
@@ -83,55 +130,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (gErr) {
-      console.error("Avviso Google Calendar:", gErr?.message || gErr);
-    }
-
-    // Inserimento Supabase
-    const payloadDb = {
-      dipendente,
-      cliente: cliente || '',
-      progetto: progetto || '',
-      data: startDateStr,
-      ore: Number(ore) || 0,
-      ore_backoffice: Number(ore_backoffice) || 0,
-      ore_trasferta: Number(ore_trasferta) || 0,
-      ore_straordinario: Number(ore_straordinario) || 0,
-      note: note || '',
-      stato
-    };
-
-    if (calendarEventId) {
-      payloadDb.calendar_event_id = calendarEventId;
-    }
-
-    let { data: dbResult, error: dbError } = await supabase
-      .from('registrazioni_ore')
-      .insert([payloadDb])
-      .select();
-
-    if (dbError) {
-      // Tentativo di inserimento base se mancano colonne recenti
-      const fallbackPayload = {
-        dipendente,
-        cliente: cliente || '',
-        progetto: progetto || '',
-        data: startDateStr,
-        ore: Number(ore) || 0,
-        note: note || '',
-        stato
-      };
-
-      const fallbackRes = await supabase
-        .from('registrazioni_ore')
-        .insert([fallbackPayload])
-        .select();
-
-      if (fallbackRes.error) {
-        const msgErr = dbError.message || dbError.details || JSON.stringify(dbError);
-        return res.status(500).json({ message: `Errore Database Supabase: ${msgErr}` });
-      }
-
-      dbResult = fallbackRes.data;
+      console.warn("Sincronizzazione Google Calendar saltata o fallita:", gErr?.message || gErr);
     }
 
     return res.status(200).json({
@@ -141,6 +140,7 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    return res.status(500).json({ message: `Eccezione Server: ${err?.message || err}` });
+    console.error("Errore server imprevisto:", err);
+    return res.status(500).json({ message: `Errore Server: ${err?.message || err}` });
   }
 }
