@@ -2,10 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// AUTENTICAZIONE GOOGLE CALENDAR
 function getGoogleAuth() {
   const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
   const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -46,14 +45,13 @@ export default async function handler(req, res) {
 
     let calendarEventId = null;
 
-    // CALCOLO DATE RIGOROSO PER GOOGLE CALENDAR (start = data, end = giorno dopo)
+    // 1. CALCOLO DATE E CREAZIONE EVENTO GOOGLE CALENDAR
     const startDateStr = String(data).split('T')[0];
     const startDateObj = new Date(startDateStr);
     const endDateObj = new Date(startDateObj);
     endDateObj.setDate(endDateObj.getDate() + 1);
     const endDateStr = endDateObj.toISOString().split('T')[0];
 
-    // 1. CREAZIONE EVENTO SU GOOGLE CALENDAR (PER CONSUNTIVO E PIANIFICATO)
     try {
       const auth = getGoogleAuth();
       const calendarId = process.env.GOOGLE_CALENDAR_ID;
@@ -88,11 +86,9 @@ export default async function handler(req, res) {
         if (calRes && calRes.data && calRes.data.id) {
           calendarEventId = calRes.data.id;
         }
-      } else {
-        console.warn("Google Calendar non configurato: verificare le variabili d'ambiente su Vercel.");
       }
     } catch (calErr) {
-      console.error("Errore creazione evento Google Calendar:", calErr?.response?.data || calErr?.message || calErr);
+      console.error("Avviso Google Calendar:", calErr?.response?.data || calErr?.message || calErr);
     }
 
     // 2. SALVATAGGIO NEL DATABASE SUPABASE
@@ -106,19 +102,47 @@ export default async function handler(req, res) {
       ore_trasferta: Number(ore_trasferta) || 0,
       ore_straordinario: Number(ore_straordinario) || 0,
       note: note || '',
-      stato,
-      calendar_event_id: calendarEventId,
-      created_at: new Date().toISOString()
+      stato
     };
 
-    const { data: dbResult, error: dbError } = await supabase
+    if (calendarEventId) {
+      payloadDb.calendar_event_id = calendarEventId;
+    }
+
+    let { data: dbResult, error: dbError } = await supabase
       .from('registrazioni_ore')
       .insert([payloadDb])
       .select();
 
+    // FALLBACK IN CASO DI COLONNE MANCANTI NEL DATABASE
     if (dbError) {
-      console.error("Errore Supabase insert:", dbError);
-      return res.status(500).json({ message: 'Errore nel salvataggio nel database.', error: dbError });
+      console.error("Errore primo inserimento Supabase:", dbError);
+
+      const fallbackPayload = {
+        dipendente,
+        cliente: cliente || '',
+        progetto: progetto || '',
+        data: startDateStr,
+        ore: Number(ore) || 0,
+        note: note || '',
+        stato
+      };
+
+      const fallbackRes = await supabase
+        .from('registrazioni_ore')
+        .insert([fallbackPayload])
+        .select();
+
+      if (fallbackRes.error) {
+        console.error("Errore fallback Supabase:", fallbackRes.error);
+        const errMsg = dbError.message || dbError.details || JSON.stringify(dbError);
+        return res.status(500).json({ 
+          message: `Errore Supabase DB: ${errMsg}`, 
+          error: dbError 
+        });
+      } else {
+        dbResult = fallbackRes.data;
+      }
     }
 
     return res.status(200).json({
@@ -129,6 +153,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("Errore generale API salva:", error);
-    return res.status(500).json({ message: 'Errore interno del server.', error: error?.message });
+    return res.status(500).json({ message: `Errore Server API: ${error?.message || error}` });
   }
 }
