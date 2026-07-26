@@ -39,21 +39,29 @@ const LISTA_CLIENTI_BASE = [
   'CDR ITALIA S.P.A', 'CHERCHISYSTEM', 'CIEMMEBI', 'COGORNO SERGIO', 'COLMAR Technik Spa', 'COMET', 'COMETAL s.r.l', 'COMETTO', 'COSPAL COMPOSITES S.P.A', 'COSTA RODOLFO s.r.l'
 ];
 
+// LISTA AFORISMI DINAMICI
+const AFORISMI = [
+  "“L'unico modo di fare un ottimo lavoro è amare quello che fai.” – Steve Jobs",
+  "“Nessun grande risultato è mai stato raggiunto senza entusiasmo.” – Ralph Waldo Emerson",
+  "“La qualità non è mai un fatto casuale; è sempre il risultato di uno sforzo intelligente.” – John Ruskin",
+  "“Non contare i giorni, fai in modo che i giorni contino.” – Muhammad Ali",
+  "“Il segreto per andare avanti è iniziare.” – Mark Twain",
+  "“L'eccellenza non è un atto, ma un'abitudine.” – Aristotele",
+  "“Ciò che facciamo ogni giorno plasma ciò che diventiamo.” – Eraclito",
+  "“L'ingegneria è l'arte di dirigere le grandi fonti di energia della natura per l'uso dell'uomo.” – Thomas Tredgold",
+  "“Il lavoro di squadra divide i compiti e moltiplica il successo.”",
+  "“La precisione e la passione trasformano un’idea in un capolavoro.”"
+];
+
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 function getCurrentMonthStr() { return new Date().toISOString().slice(0, 7); }
 function getFirstDayOfCurrentMonthStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
 function getNextMonthStr() { const d = new Date(); let year = d.getFullYear(); let month = d.getMonth() + 2; if (month > 12) { month = 1; year += 1; } return `${year}-${String(month).padStart(2, '0')}`; }
 
-// FUNZIONE RIPRISTINATA (Risolve il ReferenceError)
 function getNomeMeseText(annoMeseStr) {
   if (!annoMeseStr) return '';
-  try {
-    const [year, month] = annoMeseStr.split('-').map(Number);
-    const date = new Date(year, month - 1, 1);
-    return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
-  } catch (e) {
-    return String(annoMeseStr);
-  }
+  try { const [year, month] = annoMeseStr.split('-').map(Number); const date = new Date(year, month - 1, 1); return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }); } 
+  catch (e) { return String(annoMeseStr); }
 }
 
 function getNormalizedDate(d) {
@@ -137,6 +145,9 @@ function HomeContent() {
   const [pathNC, setPathNC] = useState('');
   const [navHistory, setNavHistory] = useState([]);
 
+  // AFORISMA CASUALE
+  const [aforismaGiorno, setAforismaGiorno] = useState('');
+
   // AI Assistant State
   const [aiInput, setAiInput] = useState('');
   const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
@@ -193,7 +204,6 @@ function HomeContent() {
   const [searchQueryNC, setSearchQueryNC] = useState('');
   const [risultatiNC, setRisultatiNC] = useState([]);
   const [loadingNC, setLoadingNC] = useState(false);
-  const [errorNC, setErrorNC] = useState(null);
 
   const [modalDocumento, setModalDocumento] = useState(null);
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
@@ -256,6 +266,11 @@ function HomeContent() {
   useEffect(() => {
     setIsMounted(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    
+    // Cambia aforisma
+    const randIndex = Math.floor(Math.random() * AFORISMI.length);
+    setAforismaGiorno(AFORISMI[randIndex]);
+
     try { const saved = localStorage.getItem('bw_user'); if (saved) setCurrentUser(JSON.parse(saved)); } catch (e) {}
     return () => clearInterval(timer);
   }, []);
@@ -278,12 +293,14 @@ function HomeContent() {
 
   const fetchProgrammati = async () => {
     setLoadingProgrammati(true);
-    try { const res = await fetch(`/api/gestisci?mode=all&_t=${Date.now()}`); if (res.ok) { const dati = await res.json(); setStoricoCompleto(Array.isArray(dati) ? dati : []); } } catch (e) {} finally { setLoadingProgrammati(false); }
+    try { const res = await fetch(`/api/gestisci?mode=all&_t=${Date.now()}`); if (res.ok) { const dati = await res.json(); setStoricoCompleto(Array.isArray(dati) ? dati : []); } } catch (e) { console.error("Errore fetch:", e); } 
+    finally { setLoadingProgrammati(false); }
   };
 
   const fetchFeedback = async () => {
     setLoadingFeedback(true);
-    try { const isInclude = currentUser?.ruolo === 'admin' && filtroArchivioAdmin; const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}&_t=${Date.now()}`); if (res.ok) { const data = await res.json(); setFeedbackList(Array.isArray(data) ? data : []); } } catch (e) {} finally { setLoadingFeedback(false); }
+    try { const isInclude = currentUser?.ruolo === 'admin' && filtroArchivioAdmin; const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}&_t=${Date.now()}`); if (res.ok) { const data = await res.json(); setFeedbackList(Array.isArray(data) ? data : []); } } catch (e) { console.error("Errore feedback:", e); }
+    finally { setLoadingFeedback(false); }
   };
 
   const handleSilentSync = async () => { if (currentUser?.ruolo !== 'admin') return; try { const res = await fetch('/api/sync', { method: 'POST' }); if (res.ok) fetchProgrammati(); } catch (e) {} };
@@ -428,7 +445,8 @@ function HomeContent() {
       }
 
       if (salvatiOk > 0) {
-        setStatusMessage({ type: 'success', text: `Registrazione salvata per ${salvatiOk} giornate!` });
+        const msgOk = statoDaImpostare === 'in_approvazione' ? `Richiesta inviata in approvazione all'amministratore per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!` : `Registrazione effettuata per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!`;
+        setStatusMessage({ type: 'success', text: msgOk });
         setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, usaIntervallo: false }));
         setCategoriaForm('lavoro'); fetchProgrammati();
       } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore }); }
@@ -440,7 +458,8 @@ function HomeContent() {
     if (!clienteEffettivo || !clienteEffettivo.trim()) { alert("⚠️ Campo Cliente obbligatorio!"); return; }
     if (!progettoEffettivo || !progettoEffettivo.trim()) { alert("⚠️ Campo Progetto obbligatorio!"); return; }
 
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese Passato Consolidato: Impossibile modificare.");
+    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < primoGiornoMeseCorrente) { alert("🔒 Mese Passato Consolidato: Impossibile modificare."); return; }
 
     setLoading(true);
     try {
@@ -459,7 +478,8 @@ function HomeContent() {
 
   const handleElimina = async (item) => {
     if (!item || !canEditItem(item)) return alert("Operazione non permessa.");
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese chiuso.");
+    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < primoGiornoMeseCorrente) { return alert("🔒 Mese chiuso."); }
     if (!confirm(`Annullare l'attività "${toText(item.cliente)}"?`)) return;
 
     setLoading(true);
@@ -471,7 +491,7 @@ function HomeContent() {
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item)) return alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`);
+    if (!canEditItem(item)) { alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`); return; }
     setModalItem(item);
     setOreEffettive(item.ore || 0); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); setOreStraordinarioEffettive(item.ore_straordinario || 0);
     setDipendenteEffettivo(isItemDaAssegnare(item) ? currentUser?.nome : item.dipendente);
@@ -750,7 +770,16 @@ function HomeContent() {
               </a>
             </div>
 
-            <div className="bg-white rounded-[2rem] p-8 shadow-xs border border-slate-200/60 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden mt-2">
+            {/* AFORISMA MOTIVAZIONALE DEL GIORNO */}
+            <div className="bg-gradient-to-r from-sky-50 via-indigo-50 to-purple-50 border border-sky-100 rounded-[2rem] p-5 shadow-xs flex items-center gap-4">
+              <span className="text-3xl">💬</span>
+              <div>
+                <span className="text-[10px] font-black uppercase text-sky-600 tracking-widest block">Ispirazione del giorno</span>
+                <p className="text-xs md:text-sm font-bold italic text-slate-800 mt-0.5">{aforismaGiorno}</p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[2rem] p-8 shadow-xs border border-slate-200/60 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-sky-50 rounded-full blur-3xl -mr-20 -mt-20 opacity-60"></div>
               <div className="relative z-10 space-y-2 text-center md:text-left">
                 <span className="text-xs font-bold uppercase tracking-widest text-sky-500 bg-sky-50 px-3 py-1 rounded-full border border-sky-100">BW Solutions Hub</span>
@@ -803,22 +832,23 @@ function HomeContent() {
                 </form>
               </div>
 
+              {/* STATISTICHE RAPIDE INTERATTIVE E CLICCABILI */}
               <div className="space-y-4">
                 <div className="bg-white p-5 rounded-[2rem] border border-slate-200/80 shadow-xs">
                   <h4 className="font-bold text-slate-800 text-sm mb-3">Statistiche Rapide</h4>
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <span className="text-xs font-semibold text-slate-600">Da Consuntivare (Tu)</span>
-                      <span className="font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-lg">{mieAttivitaArretrato.length}</span>
+                    <div onClick={() => navigateTo('programmati')} className="flex justify-between items-center bg-slate-50 hover:bg-rose-50/50 p-3 rounded-xl border border-slate-100 hover:border-rose-200 cursor-pointer transition-colors group">
+                      <span className="text-xs font-semibold text-slate-600 group-hover:text-rose-900">Da Consuntivare (Tu)</span>
+                      <span className="font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-lg group-hover:scale-105 transition-transform">{mieAttivitaArretrato.length}</span>
                     </div>
-                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <span className="text-xs font-semibold text-slate-600">In Programma (Tu)</span>
-                      <span className="font-black text-sky-600 bg-sky-100 px-2 py-0.5 rounded-lg">{mieAttivitaProssime.length}</span>
+                    <div onClick={() => navigateTo('programmati')} className="flex justify-between items-center bg-slate-50 hover:bg-sky-50/50 p-3 rounded-xl border border-slate-100 hover:border-sky-200 cursor-pointer transition-colors group">
+                      <span className="text-xs font-semibold text-slate-600 group-hover:text-sky-900">In Programma (Tu)</span>
+                      <span className="font-black text-sky-600 bg-sky-100 px-2 py-0.5 rounded-lg group-hover:scale-105 transition-transform">{mieAttivitaProssime.length}</span>
                     </div>
                     {currentUser?.ruolo === 'admin' && (
-                      <div className="flex justify-between items-center bg-amber-50 p-3 rounded-xl border border-amber-100">
+                      <div onClick={() => { navigateTo('cruscotto'); setSubTabReport('ferie'); }} className="flex justify-between items-center bg-amber-50 hover:bg-amber-100/60 p-3 rounded-xl border border-amber-100 hover:border-amber-300 cursor-pointer transition-colors group">
                         <span className="text-xs font-semibold text-amber-800">Assenze in Attesa</span>
-                        <span className="font-black text-amber-600 bg-white px-2 py-0.5 rounded-lg shadow-xs">{assenzeDaApprovareAdmin.length}</span>
+                        <span className="font-black text-amber-600 bg-white px-2 py-0.5 rounded-lg shadow-xs group-hover:scale-105 transition-transform">{assenzeDaApprovareAdmin.length}</span>
                       </div>
                     )}
                   </div>
@@ -890,7 +920,6 @@ function HomeContent() {
             </div>
 
             <div className="flex flex-col md:flex-row gap-6">
-              {/* Sidebar sinistra PDM */}
               <div className="w-full md:w-1/3 bg-white rounded-3xl border border-slate-200 p-4 shadow-sm h-[600px] overflow-y-auto">
                 <h3 className="font-bold text-slate-800 text-sm mb-4 border-b pb-2">Seleziona Commessa</h3>
                 <div className="space-y-2">
@@ -920,7 +949,6 @@ function HomeContent() {
                 </div>
               </div>
 
-              {/* Area destra Editor PDM */}
               <div className="w-full md:w-2/3 bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col h-[600px] overflow-hidden">
                 {appuntiClienteSel && appuntiProgettoSel ? (
                   <>
@@ -988,7 +1016,6 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* LEGENDA CROMATICA MIGLIORATA E CON ICONE */}
             <div className="flex flex-wrap items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 text-xs font-bold shadow-sm">
               <span className="text-slate-400 uppercase font-black text-[10px]">Legenda Colori &amp; Icone:</span>
               <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 Pianificato (⏳)</span>
@@ -1018,7 +1045,6 @@ function HomeContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {/* Riga Da Assegnare */}
                     <tr className="bg-amber-50/50 hover:bg-amber-100/30">
                       <td onClick={() => togglePlannerRow('Da Assegnare')} className="p-4 font-bold text-amber-900 sticky left-0 bg-amber-50 z-10 border-r border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
                         <div className="flex items-center justify-between">
@@ -1051,7 +1077,6 @@ function HomeContent() {
                       })}
                     </tr>
 
-                    {/* Righe Utenti */}
                     {listaDipendenti.map(nomeDip => {
                       const isExpanded = plannerEspansi[nomeDip];
                       return (
@@ -1073,9 +1098,7 @@ function HomeContent() {
                                   <div className="space-y-1.5">
                                     {eventiCella.map((ev, evIdx) => {
                                       const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
-                                      
-                                      let stC = 'bg-amber-50 text-amber-800 border-amber-200';
-                                      let cellIcon = '⏳';
+                                      let stC = 'bg-amber-50 text-amber-800 border-amber-200'; let cellIcon = '⏳';
                                       if (isCons) { stC = 'bg-emerald-50 text-emerald-800 border-emerald-200'; cellIcon = '✅'; }
                                       else if (isAss) { stC = 'bg-purple-50 text-purple-800 border-purple-200'; cellIcon = isFerie(ev)?'🏖️':'🏥'; }
                                       else if (isScaduto) { stC = 'bg-rose-50 text-rose-800 border-rose-200'; cellIcon = '🔴'; }
@@ -1083,7 +1106,7 @@ function HomeContent() {
                                       const typeIcon = Number(ev.ore_backoffice || 0) > 0 ? '🖥️' : '💼';
 
                                       return (
-                                        <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-2 rounded-xl border shadow-sm hover:scale-102 transition-all ${stC}`}>
+                                        <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-2 rounded-xl border shadow-xs hover:scale-102 transition-all ${stC}`}>
                                           <div className="truncate font-bold text-xs flex items-center gap-1">
                                             <span>{isAss ? cellIcon : typeIcon}</span> 
                                             {isAss ? toText(ev.progetto) : toText(ev.cliente)}
@@ -1100,7 +1123,7 @@ function HomeContent() {
                                     {eventiCella.map((ev, evIdx) => {
                                       const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
                                       let bgD = 'bg-amber-400'; if (isCons) bgD = 'bg-emerald-400'; else if (isAss) bgD = 'bg-purple-400'; else if (isScaduto) bgD = 'bg-rose-500';
-                                      return <div key={ev.id || evIdx} className={`w-2.5 h-2.5 rounded-full ${bgD} shadow-sm`}></div>;
+                                      return <div key={ev.id || evIdx} className={`w-2.5 h-2.5 rounded-full ${bgD} shadow-xs`}></div>;
                                     })}
                                   </div>
                                 )}
@@ -1208,7 +1231,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB GESTIONE ATTIVITÀ CON SELEZIONA TUTTO NELLE CARTELLE */}
+        {/* TAB GESTIONE ATTIVITÀ CON SELEZIONA TUTTO */}
         {activeTab === 'programmati' && (
           <div className="space-y-6 pb-20">
             <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
