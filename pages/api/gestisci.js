@@ -47,17 +47,24 @@ export default async function handler(req, res) {
 
         if (clientEmail && privateKey && calendarId) {
           const auth = new google.auth.JWT({
-            email: clientEmail,
-            key: privateKey,
-            scopes: ['https://www.googleapis.com/auth/calendar']
+            email: clientEmail, key: privateKey, scopes: ['https://www.googleapis.com/auth/calendar']
           });
           const calendar = google.calendar({ version: 'v3', auth });
 
           const record = updated[0];
           const isDaAssegnare = !record.dipendente || record.dipendente.toLowerCase() === 'da assegnare';
+          const projLower = (record.progetto || '').toLowerCase();
+
+          // GESTIONE INTELLIGENTE DEI TAG
           let tag = '⏳ [PIANIFICATO]';
           if (record.stato === 'consuntivo') tag = '✅ [SVOLTO]';
+          if (record.stato === 'in_approvazione') tag = '⏳ [IN APPROVAZIONE]';
           if (isDaAssegnare) tag = '❓ [DA ASSEGNARE]';
+
+          // OVERRIDE PER ASSENZE (Sole, Orologio o Ospedale)
+          if (projLower.includes('ferie')) tag = '🏖️ [FERIE]';
+          else if (projLower.includes('permesso') || projLower.includes('rol')) tag = '⏱️ [PERMESSO]';
+          else if (projLower.includes('malattia')) tag = '🏥 [MALATTIA]';
 
           const newSummary = `${tag} ${record.dipendente} - ${record.cliente || 'Attività'} (${record.progetto || 'Dettagli'})`;
           let descriptionText = `Svolto da: ${record.dipendente}\nCliente: ${record.cliente || '-'}\nProgetto: ${record.progetto || '-'}\nOre Cantiere: ${record.ore || 0}h`;
@@ -67,17 +74,11 @@ export default async function handler(req, res) {
           if (record.note) descriptionText += `\n\nNote: ${record.note}`;
 
           await calendar.events.patch({
-            calendarId,
-            eventId: calendar_event_id,
-            resource: { 
-              summary: newSummary,
-              description: descriptionText
-            }
+            calendarId, eventId: calendar_event_id,
+            resource: { summary: newSummary, description: descriptionText }
           });
         }
-      } catch (gErr) {
-        console.warn("Aggiornamento Google Calendar fallito:", gErr);
-      }
+      } catch (gErr) { console.warn("Aggiornamento Google Calendar fallito:", gErr); }
     }
 
     return res.status(200).json({ message: 'Aggiornato con successo', data: updated ? updated[0] : null });
@@ -85,11 +86,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'DELETE') {
     const { id, calendar_event_id } = req.body;
-    const { error } = await supabase
-      .from('registrazioni_ore')
-      .update({ stato: 'annullato' })
-      .eq('id', id);
-
+    const { error } = await supabase.from('registrazioni_ore').update({ stato: 'annullato' }).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
 
     if (calendar_event_id) {
@@ -98,17 +95,12 @@ export default async function handler(req, res) {
         const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
         const calendarId = process.env.GOOGLE_CALENDAR_ID;
         if (clientEmail && privateKey && calendarId) {
-          const auth = new google.auth.JWT({
-            email: clientEmail,
-            key: privateKey,
-            scopes: ['https://www.googleapis.com/auth/calendar']
-          });
+          const auth = new google.auth.JWT({ email: clientEmail, key: privateKey, scopes: ['https://www.googleapis.com/auth/calendar'] });
           const calendar = google.calendar({ version: 'v3', auth });
           await calendar.events.delete({ calendarId, eventId: calendar_event_id });
         }
       } catch (e) {}
     }
-
     return res.status(200).json({ message: 'Annullato' });
   }
 
