@@ -17,10 +17,13 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, calendar_event_id, dipendente, ore_effettive, ore_backoffice, ore_trasferta, ore_straordinario, chiudi_consuntivo, stato } = req.body;
+    const { id, calendar_event_id, dipendente, cliente, progetto, note, ore_effettive, ore_backoffice, ore_trasferta, ore_straordinario, chiudi_consuntivo, stato } = req.body;
 
     let updatePayload = {};
     if (dipendente) updatePayload.dipendente = dipendente;
+    if (cliente !== undefined) updatePayload.cliente = cliente;
+    if (progetto !== undefined) updatePayload.progetto = progetto;
+    if (note !== undefined) updatePayload.note = note;
     if (stato) updatePayload.stato = stato;
     if (chiudi_consuntivo) updatePayload.stato = 'consuntivo';
     if (ore_effettive !== undefined) updatePayload.ore = ore_effettive;
@@ -36,7 +39,7 @@ export default async function handler(req, res) {
 
     if (error) return res.status(500).json({ error: error.message });
 
-    if (calendar_event_id) {
+    if (calendar_event_id && updated && updated[0]) {
       try {
         const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
         const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -57,11 +60,19 @@ export default async function handler(req, res) {
           if (isDaAssegnare) tag = '❓ [DA ASSEGNARE]';
 
           const newSummary = `${tag} ${record.dipendente} - ${record.cliente || 'Attività'} (${record.progetto || 'Dettagli'})`;
+          let descriptionText = `Svolto da: ${record.dipendente}\nCliente: ${record.cliente || '-'}\nProgetto: ${record.progetto || '-'}\nOre Cantiere: ${record.ore || 0}h`;
+          if (Number(record.ore_backoffice) > 0) descriptionText += `\nBackoffice: ${record.ore_backoffice}h`;
+          if (Number(record.ore_trasferta) > 0) descriptionText += `\nTrasferta: ${record.ore_trasferta}h`;
+          if (Number(record.ore_straordinario) > 0) descriptionText += `\nStraordinario: ${record.ore_straordinario}h`;
+          if (record.note) descriptionText += `\n\nNote: ${record.note}`;
 
           await calendar.events.patch({
             calendarId,
             eventId: calendar_event_id,
-            resource: { summary: newSummary }
+            resource: { 
+              summary: newSummary,
+              description: descriptionText
+            }
           });
         }
       } catch (gErr) {
