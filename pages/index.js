@@ -4,21 +4,26 @@ import Head from 'next/head';
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React:", error, errorInfo); }
+  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React intercettato:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-100 p-8 flex flex-col items-center justify-center font-sans">
+        <div className="min-h-screen bg-slate-50 p-8 flex flex-col items-center justify-center font-sans">
           <div className="max-w-3xl w-full bg-white p-8 rounded-3xl border border-rose-200 shadow-2xl text-center space-y-4">
             <div className="text-5xl">⚠️</div>
-            <h2 className="text-2xl font-black text-rose-600">Errore nell'interfaccia</h2>
+            <h2 className="text-2xl font-black text-rose-600">Si è verificato un errore nell'interfaccia</h2>
+            <p className="text-sm text-slate-500">Dettaglio dell'eccezione intercettata:</p>
+            
             <div className="bg-slate-900 text-left p-4 rounded-xl overflow-x-auto">
               <p className="text-rose-400 font-mono text-sm font-bold">{this.state.error && this.state.error.toString()}</p>
               <pre className="text-slate-400 font-mono text-[10px] mt-2 whitespace-pre-wrap">
                 {this.state.errorInfo && this.state.errorInfo.componentStack}
               </pre>
             </div>
-            <button onClick={() => window.location.reload()} className="px-6 py-3 bg-sky-600 text-white font-bold rounded-xl shadow-md hover:bg-sky-500 transition-all">🔄 Ricarica l'App</button>
+
+            <button onClick={() => window.location.reload()} className="px-6 py-3 bg-sky-600 text-white font-bold rounded-xl shadow-md hover:bg-sky-500 transition-all cursor-pointer">
+              🔄 Ricarica l'Applicazione
+            </button>
           </div>
         </div>
       );
@@ -159,6 +164,9 @@ function HomeContent() {
   const [pathNC, setPathNC] = useState('');
   const [navHistory, setNavHistory] = useState([]);
 
+  // OROLOGIO IN TEMPO REALE
+  const [currentTime, setCurrentTime] = useState(new Date());
+
   // AI Assistant State
   const [aiInput, setAiInput] = useState('');
   const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
@@ -179,7 +187,7 @@ function HomeContent() {
 
   const togglePlannerRow = (dipNome) => setPlannerEspansi(prev => ({ ...prev, [dipNome]: !prev[dipNome] }));
 
-  // Selezione Multipla
+  // SELEZIONE MULTIPLA E "SELEZIONA TUTTO"
   const [selectedItems, setSelectedItems] = useState([]);
 
   const [loading, setLoading] = useState(false);
@@ -196,7 +204,6 @@ function HomeContent() {
   const [rispostaApertaId, setRispostaApertaId] = useState(null);
   const [testoRispostaAdmin, setTestoRispostaAdmin] = useState('');
 
-  // STATO PER REPOSITORY SOTTOCARTELLE RIPRISTINATO
   const [cartelleAperte, setCartelleAperte] = useState({ 'Da Assegnare': true });
   const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
 
@@ -268,7 +275,7 @@ function HomeContent() {
           return (
             <React.Fragment key={idx}>
               <span className="text-slate-400">/</span>
-              <button onClick={() => !isLast && navigateTo('documenti', currentPartPath)} className={`transition-colors ${isLast ? 'text-slate-900 font-extrabold cursor-default' : 'underline hover:text-sky-600 text-slate-600 cursor-pointer'}`}>📁 {part}</button>
+              <button onClick={() => !isLast && navigateTo('documenti', currentPartPath)} className={`transition-colors cursor-pointer ${isLast ? 'text-slate-900 font-extrabold cursor-default' : 'underline hover:text-sky-600 text-slate-600'}`}>📁 {part}</button>
             </React.Fragment>
           );
         })}
@@ -278,8 +285,12 @@ function HomeContent() {
 
   useEffect(() => {
     setIsMounted(true);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    
     try { const saved = localStorage.getItem('bw_user'); if (saved) setCurrentUser(JSON.parse(saved)); } catch (e) { localStorage.removeItem('bw_user'); }
     try { const savedRead = localStorage.getItem('bw_read_feedbacks'); if (savedRead) { const parsed = JSON.parse(savedRead); if (Array.isArray(parsed)) setReadFeedbackIds(parsed); } } catch (e) {}
+
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => { if (currentUser) { setFormData(prev => ({ ...prev, dipendente: currentUser.nome })); } }, [currentUser]);
@@ -336,6 +347,28 @@ function HomeContent() {
       if (prev.some(i => i.id === item.id)) return prev.filter(i => i.id !== item.id);
       return [...prev, item];
     });
+  };
+
+  // FUNZIONE SELEZIONA TUTTO
+  const handleSelectAll = (itemsToSelect) => {
+    const editableItems = itemsToSelect.filter(item => canEditItem(item));
+    if (editableItems.length === 0) return alert("Non hai i permessi per modificare queste attività o sono di sola lettura.");
+    
+    const allSelected = editableItems.every(item => selectedItems.some(sel => sel.id === item.id));
+    
+    if (allSelected) {
+      setSelectedItems(prev => prev.filter(sel => !editableItems.some(item => item.id === sel.id)));
+    } else {
+      setSelectedItems(prev => {
+        const newSelection = [...prev];
+        editableItems.forEach(item => {
+          if (!newSelection.some(sel => sel.id === item.id)) {
+            newSelection.push(item);
+          }
+        });
+        return newSelection;
+      });
+    }
   };
 
   const handleBulkDelete = async () => {
@@ -403,6 +436,25 @@ function HomeContent() {
     finally { setLoading(false); }
   };
 
+  const handleInviaRispostaAdmin = async (id) => {
+    if (!testoRispostaAdmin.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/feedback', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, risposta: testoRispostaAdmin.trim() }) });
+      if (res.ok) { setRispostaApertaId(null); setTestoRispostaAdmin(''); fetchFeedback(); }
+    } catch (e) {} finally { setLoading(false); }
+  };
+
+  const handleToggleSoftDelete = async (id, statoAttuale) => {
+    const nuovaAzione = !statoAttuale;
+    if (!confirm(nuovaAzione ? "Rimuovere dalla bacheca?" : "Ripristinare?")) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/feedback', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, is_deleted: nuovaAzione }) });
+      if (res.ok) fetchFeedback();
+    } catch (e) {} finally { setLoading(false); }
+  };
+
   const handleApprovaAssenza = async (item) => {
     if (!item) return; setLoading(true);
     try {
@@ -412,7 +464,8 @@ function HomeContent() {
   };
 
   const handleRifiutaAssenza = async (item) => {
-    if (!item) return; if (!confirm(`Rifiutare la richiesta?`)) return; setLoading(true);
+    if (!item) return; if (!confirm(`Rifiutare la richiesta di ${toText(item.progetto)}?`)) return;
+    setLoading(true);
     try {
       const res = await fetch('/api/gestisci', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, calendar_event_id: item.calendar_event_id }) });
       if (res.ok) fetchProgrammati();
@@ -467,21 +520,24 @@ function HomeContent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setStatusMessage(null);
+
     if (!formData.cliente || !formData.cliente.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci il Cliente!' }); return; }
     if (!formData.progetto || !formData.progetto.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci il Progetto/Dettaglio!' }); return; }
 
     const totOreForm = Number(formData.ore || 0) + Number(formData.ore_backoffice || 0) + Number(formData.ore_straordinario || 0);
     if (totOreForm <= 0) { setStatusMessage({ type: 'error', text: '⚠️ Inserisci almeno 0.5 ore.' }); return; }
-    if (totOreForm > 12) { if (!confirm(`⚠️ Stai registrando ${totOreForm} ore in una sola giornata. Confermi?`)) return; }
+    if (totOreForm > 12) { if (!confirm(`⚠️ Stai registrando un totale di ${totOreForm} ore in una singola giornata. Confermi?`)) { return; } }
 
     const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
     if (currentUser?.ruolo !== 'admin' && formData.data < primoGiornoMeseCorrente) {
-      setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Impossibile inserire dati nei mesi passati.' }); return;
+      setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Impossibile inserire/modificare i mesi scorsi.' }); return;
     }
 
-    const diffGiorni = (new Date() - new Date(formData.data)) / (1000 * 60 * 60 * 24);
+    const oggi = new Date(); const dataSelezionata = new Date(formData.data);
+    const diffGiorni = (oggi - dataSelezionata) / (1000 * 60 * 60 * 24);
+
     if (diffGiorni > 2.5 && (!formData.note || !formData.note.trim())) {
-      setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Le Note sono obbligatorie.' }); return;
+      setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Le Note sono obbligatorie per registrazioni tardive.' }); return;
     }
 
     setLoading(true);
@@ -490,7 +546,8 @@ function HomeContent() {
       if (formData.usaIntervallo && formData.data_fine > formData.data) {
         dateDaSalvare = []; let curr = new Date(formData.data); const end = new Date(formData.data_fine);
         while (curr <= end) {
-          const dayOfWeek = curr.getDay(); if (dayOfWeek !== 0 && dayOfWeek !== 6) { dateDaSalvare.push(curr.toISOString().split('T')[0]); }
+          const dayOfWeek = curr.getDay();
+          if (dayOfWeek !== 0 && dayOfWeek !== 6) { dateDaSalvare.push(curr.toISOString().split('T')[0]); }
           curr.setDate(curr.getDate() + 1);
         }
       }
@@ -504,27 +561,37 @@ function HomeContent() {
       if (eRichiestaAssenza && currentUser?.ruolo !== 'admin') { statoDaImpostare = 'in_approvazione'; }
 
       let salvatiOk = 0; let ultimoMessaggioErrore = '';
+
       for (const d of dateDaSalvare) {
         const payload = { ...formData, data: d, stato: statoDaImpostare, ore_straordinario: formData.stato === 'consuntivo' ? (formData.ore_straordinario || 0) : 0 };
         const res = await fetch('/api/salva', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) { salvatiOk++; } else { const errData = await res.json().catch(()=>({})); ultimoMessaggioErrore = errData.message || 'Errore Server'; }
+
+        if (res.ok) { salvatiOk++; } 
+        else {
+          let errText = '';
+          try { const errData = await res.json(); errText = errData.message || errData.error || `Errore HTTP ${res.status}`; } 
+          catch (pErr) { const rawBody = await res.text().catch(() => ''); errText = `Errore Server (${res.status}): ${rawBody.slice(0, 120) || 'Risposta non valida'}`; }
+          ultimoMessaggioErrore = errText;
+        }
       }
 
       if (salvatiOk > 0) {
-        setStatusMessage({ type: 'success', text: `Registrazione salvata per ${salvatiOk} giornate!` });
+        const msgOk = statoDaImpostare === 'in_approvazione' ? `Richiesta inviata in approvazione all'amministratore per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!` : `Registrazione effettuata per ${salvatiOk} giornat${salvatiOk > 1 ? 'e' : 'a'}!`;
+        setStatusMessage({ type: 'success', text: msgOk });
         setFormData(prev => ({ ...prev, cliente: '', progetto: '', note: '', ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, usaIntervallo: false }));
         setCategoriaForm('lavoro'); fetchProgrammati();
-      } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore }); }
-    } catch (err) { setStatusMessage({ type: 'error', text: `Errore Rete` }); } 
+      } else { setStatusMessage({ type: 'error', text: ultimoMessaggioErrore || 'Errore di salvataggio sconosciuto.' }); }
+    } catch (err) { setStatusMessage({ type: 'error', text: `Errore Rete Client: ${err?.message || err}` }); } 
     finally { setLoading(false); }
   };
 
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
-    if (!clienteEffettivo || !clienteEffettivo.trim()) return alert("⚠️ Campo Cliente obbligatorio!");
-    if (!progettoEffettivo || !progettoEffettivo.trim()) return alert("⚠️ Campo Progetto obbligatorio!");
+    if (!clienteEffettivo || !clienteEffettivo.trim()) { alert("⚠️ Campo Cliente obbligatorio!"); return; }
+    if (!progettoEffettivo || !progettoEffettivo.trim()) { alert("⚠️ Campo Progetto obbligatorio!"); return; }
 
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese Passato Consolidato: Impossibile modificare.");
+    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(modalItem.data) < primoGiornoMeseCorrente) { alert("🔒 Mese Passato Consolidato: Impossibile modificare."); return; }
 
     setLoading(true);
     try {
@@ -543,7 +610,8 @@ function HomeContent() {
 
   const handleElimina = async (item) => {
     if (!item || !canEditItem(item)) return alert("Operazione non permessa.");
-    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < getFirstDayOfCurrentMonthStr()) return alert("🔒 Mese chiuso.");
+    const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
+    if (currentUser?.ruolo !== 'admin' && getNormalizedDate(item.data) < primoGiornoMeseCorrente) { return alert("🔒 Mese chiuso."); }
     if (!confirm(`Annullare l'attività "${toText(item.cliente)}"?`)) return;
 
     setLoading(true);
@@ -555,7 +623,7 @@ function HomeContent() {
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item)) return alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`);
+    if (!canEditItem(item)) { alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`); return; }
     setModalItem(item);
     setOreEffettive(item.ore || 0); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); setOreStraordinarioEffettive(item.ore_straordinario || 0);
     setDipendenteEffettivo(isItemDaAssegnare(item) ? currentUser?.nome : item.dipendente);
@@ -565,7 +633,11 @@ function HomeContent() {
   const exportCSVPaghe = () => {
     let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore Impegnate\n";
     listaDipendenti.forEach(nomeDip => {
-      const eventi = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo');
+      const eventi = safeStorico.filter(item => {
+        if (!item) return false;
+        const dNorm = getNormalizedDate(item.data);
+        return dNorm && dNorm.startsWith(filtroMeseReport) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato === 'consuntivo';
+      });
       const oreCantiere = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore || 0), 0);
       const oreBackoffice = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_backoffice || 0), 0);
       const oreTrasferta = eventi.filter(i => !isAssenza(i)).reduce((a, b) => a + Number(b.ore_trasferta || 0), 0);
@@ -584,7 +656,13 @@ function HomeContent() {
 
   const exportCSVFatturazione = () => {
     let csv = "Cliente;Commessa / Progetto;Dipendente;Data;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Note\n";
-    const consuntivi = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(filtroMeseReport) && (filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione) && item.stato === 'consuntivo' && !isAssenza(item));
+    const consuntivi = safeStorico.filter(item => {
+      if (!item) return false;
+      const dNorm = getNormalizedDate(item.data);
+      const inMese = dNorm && dNorm.startsWith(filtroMeseReport);
+      const matchCliente = filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione;
+      return inMese && matchCliente && item.stato === 'consuntivo' && !isAssenza(item);
+    });
 
     [...consuntivi].sort((a, b) => toText(a.cliente).localeCompare(toText(b.cliente))).forEach(row => {
       csv += `"${toText(row.cliente)}";"${toText(row.progetto)}";"${toText(row.dipendente)}";"${getNormalizedDate(row.data)}";"${row.ore || 0}";"${row.ore_backoffice || 0}";"${row.ore_trasferta || 0}";"${row.ore_straordinario || 0}";"${toText(row.note).replace(/"/g, '""')}"\n`;
@@ -613,7 +691,11 @@ function HomeContent() {
   const oreLavorativeTotaliProssimoMese = giorniLavorativiProssimoMese * 8;
 
   const riepilogoDisponibilitaProssimoMese = listaDipendenti.map(nomeDip => {
-    const eventiDipMese = safeStorico.filter(item => item && getNormalizedDate(item.data).startsWith(nextMonthStr) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato');
+    const eventiDipMese = safeStorico.filter(item => {
+      if (!item) return false;
+      const dNorm = getNormalizedDate(item.data);
+      return dNorm && dNorm.startsWith(nextMonthStr) && matchNomeDipendente(item.dipendente, nomeDip) && item.stato !== 'annullato';
+    });
     const oreImpegnateTotali = eventiDipMese.reduce((acc, curr) => acc + Number(curr.ore || 0) + Number(curr.ore_backoffice || 0) + Number(curr.ore_trasferta || 0), 0);
     const oreDisponibiliResidue = Math.max(0, oreLavorativeTotaliProssimoMese - oreImpegnateTotali);
     const giorniDisponibiliResidui = (oreDisponibiliResidue / 8).toFixed(1);
@@ -624,8 +706,7 @@ function HomeContent() {
   const giorniSettimanaPlanner = get7DaysOfWeek(plannerWeekStart);
 
   const handleShiftWeek = (deltaDays) => {
-    const curr = new Date(plannerWeekStart);
-    curr.setDate(curr.getDate() + deltaDays);
+    const curr = new Date(plannerWeekStart); curr.setDate(curr.getDate() + deltaDays);
     setPlannerWeekStart(getMondayOfCurrentWeek(curr));
   };
 
@@ -655,7 +736,7 @@ function HomeContent() {
               type="checkbox" 
               checked={isSelected}
               onChange={() => toggleSelection(item)}
-              className="w-5 h-5 cursor-pointer accent-sky-500 rounded border-slate-300"
+              className={`w-5 h-5 cursor-pointer rounded border-slate-300 shadow-sm ${isSelected ? 'accent-sky-600' : ''}`}
             />
           </div>
         )}
@@ -697,9 +778,10 @@ function HomeContent() {
                 <button onClick={() => openEditModal(item)} className="px-4 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-600 hover:text-white text-xs font-bold rounded-xl transition-all border border-sky-100 cursor-pointer">
                   {item.stato === 'consuntivo' ? 'Modifica' : 'Conferma'}
                 </button>
-                <button onClick={() => handleElimina(item)} className="px-3 py-1.5 bg-white text-rose-600 border border-rose-200 text-xs font-bold rounded-xl hover:bg-rose-50 transition-colors cursor-pointer">🗑️</button>
               </>
-            ) : <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">Sola Lettura</span>}
+            ) : (
+              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">Sola Lettura</span>
+            )}
           </div>
         </div>
       </div>
@@ -730,7 +812,7 @@ function HomeContent() {
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Password</label>
               <div className="relative">
                 <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg hover:text-slate-600 transition-colors">{showPassword ? '👁️' : '🙈'}</button>
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg hover:text-slate-600 transition-colors cursor-pointer">{showPassword ? '👁️' : '🙈'}</button>
               </div>
             </div>
             <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-xl shadow-slate-900/20 transition-all text-sm mt-2 cursor-pointer">Accedi alla Piattaforma</button>
@@ -798,8 +880,10 @@ function HomeContent() {
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-full shadow-2xl z-50 flex items-center gap-6 border border-slate-700 animate-pulse">
             <span className="font-bold text-sm">Hai selezionato <span className="text-sky-400">{selectedItems.length}</span> attività</span>
             <div className="flex gap-3">
-              <button onClick={() => setSelectedItems([])} className="text-xs font-bold text-slate-400 hover:text-white cursor-pointer">Annulla</button>
-              <button onClick={handleBulkDelete} disabled={loading} className="bg-rose-500 hover:bg-rose-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md cursor-pointer">Elimina Selezionate</button>
+              <button onClick={() => setSelectedItems([])} className="text-xs font-bold text-slate-400 hover:text-white cursor-pointer transition-colors">Annulla</button>
+              <button onClick={handleBulkDelete} disabled={loading} className="bg-rose-500 hover:bg-rose-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md cursor-pointer transition-colors flex items-center gap-2">
+                {loading ? <span className="animate-spin">⏳</span> : '🗑️'} <span>Elimina Selezionate</span>
+              </button>
             </div>
           </div>
         )}
@@ -812,8 +896,31 @@ function HomeContent() {
 
         {/* TAB HOME */}
         {activeTab === 'home' && (
-          <div className="space-y-8">
-            <div className="bg-white rounded-[2rem] p-8 shadow-xs border border-slate-200/60 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+          <div className="space-y-8 animate-fade-in">
+            
+            {/* OROLOGIO E NOTIZIE WIDGET */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/60 flex items-center gap-5 relative overflow-hidden">
+                <div className="absolute -right-6 -top-6 w-32 h-32 bg-sky-50 rounded-full blur-2xl"></div>
+                <div className="bg-sky-500 text-white w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-sky-500/30 relative z-10">🕒</div>
+                <div className="relative z-10">
+                  <div className="text-3xl font-black text-slate-900 tracking-tight">{currentTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">
+                    {currentTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                </div>
+              </div>
+              
+              <a href="https://news.google.it" target="_blank" rel="noreferrer" className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-[2rem] p-6 shadow-xl border border-slate-700 flex items-center gap-5 hover:scale-[1.02] transition-transform cursor-pointer group">
+                <div className="bg-white/10 text-white w-14 h-14 rounded-2xl flex items-center justify-center text-2xl border border-white/20 group-hover:bg-white/20 transition-colors">📰</div>
+                <div>
+                  <div className="text-xl font-black text-white tracking-tight">Notizie del Giorno</div>
+                  <div className="text-xs font-semibold text-slate-300 mt-1 flex items-center gap-1">Esplora le ultime news su Google <span className="text-sky-400">➔</span></div>
+                </div>
+              </a>
+            </div>
+
+            <div className="bg-white rounded-[2rem] p-8 shadow-xs border border-slate-200/60 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden mt-2">
               <div className="absolute top-0 right-0 w-64 h-64 bg-sky-50 rounded-full blur-3xl -mr-20 -mt-20 opacity-60"></div>
               <div className="relative z-10 space-y-2 text-center md:text-left">
                 <span className="text-xs font-bold uppercase tracking-widest text-sky-500 bg-sky-50 px-3 py-1 rounded-full border border-sky-100">BW Solutions Hub</span>
@@ -841,7 +948,7 @@ function HomeContent() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* ASSISTENTE AI */}
-              <div className="lg:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 shadow-xl border border-slate-700 text-white flex flex-col relative overflow-hidden">
+              <div className="lg:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 rounded-[2rem] p-6 shadow-xl border border-slate-700 text-white flex flex-col relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl"></div>
                 <div className="relative z-10 flex items-center gap-3 mb-4">
                   <div className="bg-sky-500/20 p-2 rounded-xl border border-sky-500/30"><span className="text-xl">🤖</span></div>
@@ -867,7 +974,7 @@ function HomeContent() {
               </div>
 
               <div className="space-y-4">
-                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs">
+                <div className="bg-white p-5 rounded-[2rem] border border-slate-200/80 shadow-xs">
                   <h4 className="font-bold text-slate-800 text-sm mb-3">Statistiche Rapide</h4>
                   <div className="space-y-3">
                     <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -887,7 +994,7 @@ function HomeContent() {
                   </div>
                 </div>
 
-                <a href="https://calendar.google.com/" target="_blank" rel="noreferrer" className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-slate-200 hover:border-sky-300 transition-colors cursor-pointer group shadow-xs">
+                <a href="https://calendar.google.com/" target="_blank" rel="noreferrer" className="flex items-center gap-3 bg-white p-4 rounded-[2rem] border border-slate-200 hover:border-sky-300 transition-colors cursor-pointer group shadow-xs">
                   <div className="bg-sky-50 p-2.5 rounded-xl group-hover:bg-sky-500 group-hover:text-white transition-colors text-sky-600">📅</div>
                   <div><h4 className="font-bold text-slate-800 text-sm">Google Calendar</h4><p className="text-[10px] text-slate-500">Apri l'app ufficiale.</p></div>
                 </a>
@@ -929,6 +1036,7 @@ function HomeContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
+                    {/* Riga Da Assegnare */}
                     <tr className="bg-amber-50/50 hover:bg-amber-100/30">
                       <td onClick={() => togglePlannerRow('Da Assegnare')} className="p-4 font-bold text-amber-900 sticky left-0 bg-amber-50 z-10 border-r border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
                         <div className="flex items-center justify-between">
@@ -961,6 +1069,7 @@ function HomeContent() {
                       })}
                     </tr>
 
+                    {/* Righe Utenti */}
                     {listaDipendenti.map(nomeDip => {
                       const isExpanded = plannerEspansi[nomeDip];
                       return (
@@ -977,7 +1086,7 @@ function HomeContent() {
                           {giorniSettimanaPlanner.map(gStr => {
                             const eventiCella = safeStorico.filter(item => matchNomeDipendente(item.dipendente, nomeDip) && getNormalizedDate(item.data) === gStr && item.stato !== 'annullato');
                             return (
-                              <td key={`${nomeDip}_${gStr}`} onClick={() => isExpanded && nuovaAttivitaDaPlanner(nomeDip, gStr)} className={`p-2 border-r border-slate-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-sky-50/40 cursor-pointer group' : 'h-12'}`}>
+                              <td key={`${nomeDip}_${gStr}`} onClick={() => { if(isExpanded) { setFormData(prev => ({...prev, dipendente: nomeDip, data: gStr, data_fine: gStr, usaIntervallo: false})); navigateTo('nuovo'); } }} className={`p-2 border-r border-slate-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-sky-50/40 cursor-pointer group' : 'h-12'}`}>
                                 {isExpanded ? (
                                   <div className="space-y-1.5">
                                     {eventiCella.map((ev, evIdx) => {
@@ -1030,10 +1139,10 @@ function HomeContent() {
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-2 tracking-wide">Tipologia</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <button type="button" onClick={() => setCategoriaForm('lavoro')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'lavoro' ? 'bg-sky-600 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>💼 Lavoro</button>
-                  <button type="button" onClick={() => setCategoriaForm('ferie')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'ferie' ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏖️ Ferie</button>
-                  <button type="button" onClick={() => setCategoriaForm('permesso')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'permesso' ? 'bg-indigo-500 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>⏱️ Permesso</button>
-                  <button type="button" onClick={() => setCategoriaForm('malattia')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'malattia' ? 'bg-rose-500 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏥 Malattia</button>
+                  <button type="button" onClick={() => setCategoriaForm('lavoro')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'lavoro' ? 'bg-sky-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>💼 Lavoro</button>
+                  <button type="button" onClick={() => setCategoriaForm('ferie')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'ferie' ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏖️ Ferie</button>
+                  <button type="button" onClick={() => setCategoriaForm('permesso')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'permesso' ? 'bg-indigo-500 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>⏱️ Permesso</button>
+                  <button type="button" onClick={() => setCategoriaForm('malattia')} className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${categoriaForm === 'malattia' ? 'bg-rose-500 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>🏥 Malattia</button>
                 </div>
               </div>
 
@@ -1108,7 +1217,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB GESTIONE ATTIVITÀ - REPOSITORY SOTTOCARTELLE RIPRISTINATO COMPLETO */}
+        {/* TAB GESTIONE ATTIVITÀ CON CHECKBOX "SELEZIONA TUTTO" */}
         {activeTab === 'programmati' && (
           <div className="space-y-6 pb-20">
             <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
@@ -1140,6 +1249,14 @@ function HomeContent() {
 
               {cartelleAperte['Da Assegnare'] && (
                 <div className="p-5 border-t border-amber-200 bg-white space-y-3">
+                  {daAssegnareItems.length > 0 && currentUser?.ruolo === 'admin' && (
+                    <div className="flex justify-between items-center mb-2 px-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Totale: {daAssegnareItems.length}</span>
+                      <button onClick={(e) => { e.stopPropagation(); handleSelectAll(daAssegnareItems); }} className="text-[10px] font-extrabold bg-amber-100 text-amber-800 px-3 py-1.5 rounded-lg hover:bg-amber-200 transition-colors shadow-xs cursor-pointer border border-amber-200 flex items-center gap-1">
+                        ☑️ <span className="hidden sm:inline">Seleziona Tutto</span>
+                      </button>
+                    </div>
+                  )}
                   {daAssegnareItems.length === 0 ? (
                     <p className="text-xs text-amber-700 font-semibold py-2 text-center">✅ Nessuna attività in attesa di assegnazione!</p>
                   ) : (
@@ -1172,7 +1289,7 @@ function HomeContent() {
                       </div>
 
                       <div className="flex items-center space-x-3">
-                        <div className="flex items-center space-x-2 text-xs font-bold">
+                        <div className="flex items-center space-x-2 text-xs font-bold hidden sm:flex">
                           <span className="bg-sky-500/20 text-sky-300 px-2.5 py-1 rounded-xl border border-sky-500/30">💼 {interventiLavoro.length + backofficeProgetti.length} Attivi</span>
                           <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-xl border border-emerald-500/30">✅ {concluseConsuntivate.length} Conclusi</span>
                         </div>
@@ -1190,6 +1307,14 @@ function HomeContent() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_lavoro`] && (
                             <div className="p-4 space-y-2 bg-white">
+                              {interventiLavoro.length > 0 && canEditItem(interventiLavoro[0]) && (
+                                <div className="flex justify-between items-center mb-2 px-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Totale: {interventiLavoro.length}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); handleSelectAll(interventiLavoro); }} className="text-[10px] font-extrabold bg-sky-100 text-sky-800 px-3 py-1.5 rounded-lg hover:bg-sky-200 transition-colors shadow-xs cursor-pointer border border-sky-200 flex items-center gap-1">
+                                    ☑️ <span className="hidden sm:inline">Seleziona Tutto</span>
+                                  </button>
+                                </div>
+                              )}
                               {interventiLavoro.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun intervento in programma.</p> : interventiLavoro.map((item, idx) => renderRigaAttivita(item, getNormalizedDate(item.data) < todayStr ? 'rose' : 'sky', idx))}
                             </div>
                           )}
@@ -1203,6 +1328,14 @@ function HomeContent() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_backoffice`] && (
                             <div className="p-4 space-y-2 bg-white">
+                              {backofficeProgetti.length > 0 && canEditItem(backofficeProgetti[0]) && (
+                                <div className="flex justify-between items-center mb-2 px-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Totale: {backofficeProgetti.length}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); handleSelectAll(backofficeProgetti); }} className="text-[10px] font-extrabold bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-lg hover:bg-indigo-200 transition-colors shadow-xs cursor-pointer border border-indigo-200 flex items-center gap-1">
+                                    ☑️ <span className="hidden sm:inline">Seleziona Tutto</span>
+                                  </button>
+                                </div>
+                              )}
                               {backofficeProgetti.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessun backoffice programmato.</p> : backofficeProgetti.map((item, idx) => renderRigaAttivita(item, 'indigo', idx))}
                             </div>
                           )}
@@ -1216,6 +1349,14 @@ function HomeContent() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_assenze`] && (
                             <div className="p-4 space-y-2 bg-white">
+                              {assenzeGiustificativi.length > 0 && canEditItem(assenzeGiustificativi[0]) && (
+                                <div className="flex justify-between items-center mb-2 px-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Totale: {assenzeGiustificativi.length}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); handleSelectAll(assenzeGiustificativi); }} className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-3 py-1.5 rounded-lg hover:bg-purple-200 transition-colors shadow-xs cursor-pointer border border-purple-200 flex items-center gap-1">
+                                    ☑️ <span className="hidden sm:inline">Seleziona Tutto</span>
+                                  </button>
+                                </div>
+                              )}
                               {assenzeGiustificativi.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna assenza programmata.</p> : assenzeGiustificativi.map((item, idx) => renderRigaAttivita(item, 'purple', idx))}
                             </div>
                           )}
@@ -1229,6 +1370,14 @@ function HomeContent() {
                           </div>
                           {sottoCartelleAperte[`${dipNome}_concluse`] && (
                             <div className="p-4 space-y-2 bg-white">
+                              {concluseConsuntivate.length > 0 && canEditItem(concluseConsuntivate[0]) && (
+                                <div className="flex justify-between items-center mb-2 px-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Totale: {concluseConsuntivate.length}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); handleSelectAll(concluseConsuntivate); }} className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-200 transition-colors shadow-xs cursor-pointer border border-emerald-200 flex items-center gap-1">
+                                    ☑️ <span className="hidden sm:inline">Seleziona Tutto</span>
+                                  </button>
+                                </div>
+                              )}
                               {concluseConsuntivate.length === 0 ? <p className="text-xs text-slate-400 py-2 text-center">Nessuna attività conclusa.</p> : [...concluseConsuntivate].sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data))).map((item, idx) => renderRigaAttivita(item, 'emerald', idx))}
                             </div>
                           )}
