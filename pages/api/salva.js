@@ -7,13 +7,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Inizializzazione Client Supabase con chiavi di fallback
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
       return res.status(500).json({ 
-        message: 'Configurazione mancante: verificare le chiavi Supabase nelle variabili d\'ambiente di Vercel.' 
+        message: 'Variabili Supabase mancanti su Vercel (SUPABASE_URL / SUPABASE_KEY).' 
       });
     }
 
@@ -33,12 +32,12 @@ export default async function handler(req, res) {
     } = req.body;
 
     if (!dipendente || !data) {
-      return res.status(400).json({ message: 'Campi obbligatori mancanti (dipendente, data).' });
+      return res.status(400).json({ message: 'Campi obbligatori mancanti: dipendente e data.' });
     }
 
     const startDateStr = String(data).split('T')[0];
 
-    // 2. Creazione Evento Google Calendar (Isolato in Try-Catch)
+    // Google Calendar Sync
     let calendarEventId = null;
     try {
       const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
@@ -84,11 +83,11 @@ export default async function handler(req, res) {
         }
       }
     } catch (gErr) {
-      console.error("Google Calendar Error (non-bloccante):", gErr?.message || gErr);
+      console.error("Avviso Google Calendar:", gErr?.message || gErr);
     }
 
-    // 3. TENTATIVO 1: Inserimento Completo nel DB Supabase
-    const fullPayload = {
+    // Inserimento Supabase
+    const payloadDb = {
       dipendente,
       cliente: cliente || '',
       progetto: progetto || '',
@@ -102,19 +101,17 @@ export default async function handler(req, res) {
     };
 
     if (calendarEventId) {
-      fullPayload.calendar_event_id = calendarEventId;
+      payloadDb.calendar_event_id = calendarEventId;
     }
 
     let { data: dbResult, error: dbError } = await supabase
       .from('registrazioni_ore')
-      .insert([fullPayload])
+      .insert([payloadDb])
       .select();
 
-    // 4. TENTATIVO 2 (FALLBACK): Se il tentativo 1 fallisce per colonne mancano sul DB
     if (dbError) {
-      console.error("Errore Inserimento Completo Supabase:", dbError);
-
-      const minimalPayload = {
+      // Tentativo di inserimento base se mancano colonne recenti
+      const fallbackPayload = {
         dipendente,
         cliente: cliente || '',
         progetto: progetto || '',
@@ -126,15 +123,12 @@ export default async function handler(req, res) {
 
       const fallbackRes = await supabase
         .from('registrazioni_ore')
-        .insert([minimalPayload])
+        .insert([fallbackPayload])
         .select();
 
       if (fallbackRes.error) {
-        console.error("Errore Inserimento Fallback Supabase:", fallbackRes.error);
-        const msgDettagliato = dbError.message || dbError.details || JSON.stringify(dbError);
-        return res.status(500).json({ 
-          message: `Errore Supabase DB: ${msgDettagliato}` 
-        });
+        const msgErr = dbError.message || dbError.details || JSON.stringify(dbError);
+        return res.status(500).json({ message: `Errore Database Supabase: ${msgErr}` });
       }
 
       dbResult = fallbackRes.data;
@@ -147,9 +141,6 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error("Errore Imprevisto Server API salva:", err);
-    return res.status(500).json({ 
-      message: `Errore Server: ${err?.message || 'Eccezione sconosciuta'}` 
-    });
+    return res.status(500).json({ message: `Eccezione Server: ${err?.message || err}` });
   }
 }
