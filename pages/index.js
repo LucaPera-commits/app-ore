@@ -196,7 +196,25 @@ function getGiorniLavorativiMese(annoMeseStr) {
   }
 }
 
-// CALCOLO GIORNATE INCOMPLETE NEGLI ULTIMI 14 GIORNI
+function getMondayOfCurrentWeek(dateInput = new Date()) {
+  const d = new Date(dateInput);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d.setDate(diff));
+  return monday.toISOString().split('T')[0];
+}
+
+function get7DaysOfWeek(mondayStr) {
+  const days = [];
+  const curr = new Date(mondayStr);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(curr);
+    d.setDate(curr.getDate() + i);
+    days.push(d.toISOString().split('T')[0]);
+  }
+  return days;
+}
+
 function getGiorniLavorativiMancanti(storico, nomeDip) {
   if (!nomeDip) return [];
   const oggi = new Date();
@@ -238,6 +256,8 @@ function HomeContent() {
     dipendente: 'Da Assegnare', cliente: '', progetto: '', data: getTodayStr(), data_fine: getTodayStr(),
     usaIntervallo: false, ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, note: '', stato: 'pianificato'
   });
+
+  const [plannerWeekStart, setPlannerWeekStart] = useState(getMondayOfCurrentWeek());
 
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
@@ -586,12 +606,22 @@ function HomeContent() {
     } catch (e) {}
   };
 
+  const nuovaAttivitaDaPlanner = (dip, dataStr) => {
+    setFormData(prev => ({
+      ...prev,
+      dipendente: dip,
+      data: dataStr,
+      data_fine: dataStr,
+      usaIntervallo: false
+    }));
+    navigateTo('nuovo');
+  };
+
   // SUBMIT CON CONTROLLI E ALERT DI SICUREZZA
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMessage(null);
 
-    // 1. VALIDAZIONE CAMPI OBBLIGATORI
     if (!formData.cliente || !formData.cliente.trim()) {
       setStatusMessage({ type: 'error', text: '⚠️ Errore: Inserisci o seleziona il Cliente! È un campo obbligatorio.' });
       return;
@@ -608,21 +638,18 @@ function HomeContent() {
       return;
     }
 
-    // 2. ALERT SFORAMENTO ORE (>12 ORE NELLA STESSA GIORNATA)
     if (totOreForm > 12) {
       if (!confirm(`⚠️ Attenzione: stai registrando un totale di ${totOreForm} ore in una singola giornata. Confermi che la cifra è corretta?`)) {
         return;
       }
     }
 
-    // 3. FREEZE CONTABILE (BLOCCO MESE PASSATO PER UTENTI NON ADMIN)
     const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
     if (currentUser?.ruolo !== 'admin' && formData.data < primoGiornoMeseCorrente) {
       setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Non puoi inserire o modificare dati dei mesi scorsi. Contatta un amministratore.' });
       return;
     }
 
-    // 4. INSERIMENTO RETRODATATO (>48 ORE) -> OBBLIGO DI NOTE
     const oggi = new Date();
     const dataSelezionata = new Date(formData.data);
     const diffGiorni = (oggi - dataSelezionata) / (1000 * 60 * 60 * 24);
@@ -849,7 +876,6 @@ function HomeContent() {
   const daAssegnareItems = safeStorico.filter(isItemDaAssegnare);
   const dipendentiVisibili = listaDipendenti;
 
-  // GIORNATE MANCANTI PER L'UTENTE LOGGATO
   const giorniMancantiUtente = currentUser?.nome ? getGiorniLavorativiMancanti(safeStorico, currentUser.nome) : [];
 
   const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
@@ -877,6 +903,15 @@ function HomeContent() {
   });
 
   const safeRisultatiNC = Array.isArray(risultatiNC) ? risultatiNC : [];
+
+  // GIORNI PER IL PLANNER SETTIMANALE
+  const giorniSettimanaPlanner = get7DaysOfWeek(plannerWeekStart);
+
+  const handleShiftWeek = (deltaDays) => {
+    const curr = new Date(plannerWeekStart);
+    curr.setDate(curr.getDate() + deltaDays);
+    setPlannerWeekStart(getMondayOfCurrentWeek(curr));
+  };
 
   const renderRigaAttivita = (item, colorTheme, idx = 0) => {
     if (!item) return null;
@@ -1076,6 +1111,10 @@ function HomeContent() {
               <span className="flex items-center gap-2"><span>🏠</span> Home</span>
             </button>
 
+            <button onClick={() => navigateTo('planner')} className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${activeTab === 'planner' ? 'bg-sky-400 text-slate-950 font-black shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
+              <span className="flex items-center gap-2"><span>📅</span> Planner Team</span>
+            </button>
+
             <button onClick={() => navigateTo('nuovo')} className={`w-full px-3.5 py-3 rounded-xl transition-all text-left flex items-center justify-between whitespace-nowrap ${activeTab === 'nuovo' ? 'bg-white text-slate-950 font-bold shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
               <span className="flex items-center gap-2"><span>📝</span> Inserimento Ore</span>
             </button>
@@ -1128,7 +1167,7 @@ function HomeContent() {
       </aside>
 
       {/* CONTENUTO PRINCIPALE */}
-      <main className="flex-1 p-4 md:p-8 w-full max-w-5xl mx-auto space-y-6">
+      <main className="flex-1 p-4 md:p-8 w-full max-w-6xl mx-auto space-y-6">
 
         {navHistory.length > 0 && activeTab !== 'home' && (
           <div className="md:hidden mb-4">
@@ -1142,7 +1181,6 @@ function HomeContent() {
         {activeTab === 'home' && (
           <div className="space-y-8">
             
-            {/* ALERT GIORNATE INCOMPLETE NELLA HOME */}
             {giorniMancantiUtente.length > 0 && (
               <div className="bg-gradient-to-r from-rose-600 to-rose-800 text-white p-5 rounded-3xl shadow-xl border-2 border-rose-400 flex flex-wrap items-center justify-between gap-4 animate-pulse">
                 <div className="flex items-center space-x-3">
@@ -1179,7 +1217,7 @@ function HomeContent() {
               <div className="relative z-10 space-y-3 max-w-2xl">
                 <span className="bg-sky-500/20 text-sky-300 text-xs font-extrabold uppercase px-3 py-1 rounded-full border border-sky-500/30">Pannello Operativo Aziendale</span>
                 <h1 className="text-3xl font-extrabold tracking-tight">Bentornato, <span className="text-sky-400">{currentUser?.nome}</span>! 👋</h1>
-                <p className="text-slate-300 text-sm leading-relaxed">Accedi a tutte le risorse aziendali: registra le ore, verifica i giorni liberi dei colleghi o apri Google Calendar.</p>
+                <p className="text-slate-300 text-sm leading-relaxed">Accedi a tutte le risorse aziendali: controlla il Planner visuale, registra le ore o apri Google Calendar.</p>
               </div>
             </div>
 
@@ -1254,6 +1292,13 @@ function HomeContent() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div onClick={() => navigateTo('planner')} className="bg-gradient-to-br from-sky-500 to-sky-700 text-white p-6 rounded-3xl shadow-md border border-sky-400 cursor-pointer group">
+                <div className="w-12 h-12 bg-white/20 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mb-4">📅</div>
+                <h3 className="font-bold text-white text-base mb-1">Planner Team</h3>
+                <p className="text-xs text-sky-100 leading-relaxed mb-4">Vista visuale a matrice settimanale della pianificazione.</p>
+                <span className="text-xs font-black text-white flex items-center gap-1">Apri Planner ➔</span>
+              </div>
+
               <div onClick={() => navigateTo('nuovo')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md cursor-pointer group">
                 <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4">📝</div>
                 <h3 className="font-bold text-slate-900 text-base mb-1">Inserimento Ore</h3>
@@ -1268,16 +1313,6 @@ function HomeContent() {
                 <span className="text-xs font-bold text-amber-600 flex items-center gap-1">Apri Cartelle ➔</span>
               </div>
 
-              <div onClick={() => navigateTo('feedback')} className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md cursor-pointer group relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold">💡</div>
-                  {unreadFeedbackCount > 0 && <span className="bg-purple-100 text-purple-800 font-extrabold text-xs px-2.5 py-1 rounded-full">{unreadFeedbackCount} nuovi</span>}
-                </div>
-                <h3 className="font-bold text-slate-900 text-base mb-1">Suggerimenti App</h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">Lascia idee, segnala bug o esprimi la tua opinione sull'app.</p>
-                <span className="text-xs font-bold text-purple-600 flex items-center gap-1">Lascia un'idea ➔</span>
-              </div>
-
               <a href="https://calendar.google.com/" target="_blank" rel="noreferrer" className="bg-gradient-to-br from-amber-500 to-amber-700 text-slate-950 p-6 rounded-3xl shadow-md border border-amber-400 block">
                 <div className="w-12 h-12 bg-white/20 text-slate-950 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4">📅</div>
                 <h3 className="font-bold text-slate-950 text-base mb-1">Google Calendar</h3>
@@ -1288,7 +1323,128 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB 1: INSERIMENTO ORE CON CONTROLLI E ALERT */}
+        {/* TAB PLANNER SETTIMANALE VISUALE (GANTT DEL TEAM) */}
+        {activeTab === 'planner' && (
+          <div className="space-y-6">
+            <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-wrap items-center justify-between gap-4 border border-slate-800">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight flex items-center gap-2"><span>📅</span> Planner Team Settimanale</h2>
+                <p className="text-xs text-slate-300 mt-0.5">Matrice di pianificazione a colpo d'occhio. Clicca su una cella vuota per assegnare o su una pillola per modificare.</p>
+              </div>
+
+              <div className="flex items-center space-x-2 bg-slate-800 p-1.5 rounded-2xl border border-slate-700">
+                <button onClick={() => handleShiftWeek(-7)} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold cursor-pointer">◀ Settimana Prec.</button>
+                <button onClick={() => setPlannerWeekStart(getMondayOfCurrentWeek())} className="px-3 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black cursor-pointer">Oggi / Questa Settimana</button>
+                <button onClick={() => handleShiftWeek(7)} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold cursor-pointer">Settimana Succ. ▶</button>
+              </div>
+            </div>
+
+            {/* LEGENDA CROMATICA PLANNER */}
+            <div className="flex flex-wrap items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 text-xs font-bold">
+              <span className="text-slate-400 uppercase font-black text-[10px]">Legenda:</span>
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 Pianificato</span>
+              <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-xl">🟢 Svolto (Consuntivo)</span>
+              <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-xl">🟣 Assenza / Ferie</span>
+              <span className="bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-1 rounded-xl">🔴 Scaduto / Da Consuntivare</span>
+              <span className="bg-indigo-100 text-indigo-900 border border-indigo-300 px-2.5 py-1 rounded-xl">❓ Da Assegnare</span>
+            </div>
+
+            {/* TABELLA MATRICE PLANNER */}
+            <div className="bg-white rounded-3xl shadow-lg border border-slate-200/90 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900 text-white font-bold uppercase border-b border-slate-800">
+                      <th className="p-3 w-44 min-w-[160px] sticky left-0 bg-slate-900 z-10 border-r border-slate-800">Tecnico / Risorsa</th>
+                      {giorniSettimanaPlanner.map((gStr, idx) => {
+                        const isToday = gStr === todayStr;
+                        const dateObj = new Date(gStr);
+                        const giornoNome = dateObj.toLocaleDateString('it-IT', { weekday: 'short' });
+                        const giornoNum = dateObj.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+
+                        return (
+                          <th key={gStr} className={`p-3 text-center min-w-[130px] border-r border-slate-800 ${isToday ? 'bg-sky-600 text-white' : ''}`}>
+                            <div className="uppercase font-black text-[11px]">{giornoNome}</div>
+                            <div className="text-[10px] font-normal opacity-80">{giornoNum}</div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium">
+                    {/* RIGA SPECIALE DA ASSEGNARE */}
+                    <tr className="bg-amber-50/50 hover:bg-amber-100/30">
+                      <td className="p-3 font-bold text-amber-950 sticky left-0 bg-amber-50 z-10 border-r border-amber-200 flex items-center space-x-1.5 shadow-2xs">
+                        <span>❓</span><span>Da Assegnare</span>
+                      </td>
+                      {giorniSettimanaPlanner.map(gStr => {
+                        const eventiCella = safeStorico.filter(item => isItemDaAssegnare(item) && getNormalizedDate(item.data) === gStr);
+
+                        return (
+                          <td key={`da_ass_${gStr}`} onClick={() => nuovaAttivitaDaPlanner('Da Assegnare', gStr)} className="p-2 border-r border-amber-200/60 vertical-top h-24 hover:bg-amber-100/60 cursor-pointer transition-all relative group">
+                            <div className="space-y-1.5">
+                              {eventiCella.map((ev, evIdx) => (
+                                <div key={ev.id || `da_ass_ev_${evIdx}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className="p-2 bg-amber-200 text-amber-950 font-bold text-[11px] rounded-xl border border-amber-300 shadow-2xs hover:scale-102 transition-all">
+                                  <div className="truncate font-black">{toText(ev.cliente) || "Senza Cliente"}</div>
+                                  <div className="truncate text-[10px] font-semibold opacity-90">{toText(ev.progetto)}</div>
+                                </div>
+                              ))}
+                            </div>
+                            {eventiCella.length === 0 && <span className="opacity-0 group-hover:opacity-100 text-[10px] font-bold text-amber-700 block text-center mt-6">+ Assegna</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+
+                    {/* RIGHE DIPENDENTI */}
+                    {listaDipendenti.map(nomeDip => (
+                      <tr key={nomeDip} className="hover:bg-slate-50/80">
+                        <td className="p-3 font-bold text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-2xs">
+                          <div className="flex items-center space-x-2">
+                            <span>👤</span>
+                            <span className="truncate">{nomeDip}</span>
+                          </div>
+                        </td>
+
+                        {giorniSettimanaPlanner.map(gStr => {
+                          const eventiCella = safeStorico.filter(item => matchNomeDipendente(item.dipendente, nomeDip) && getNormalizedDate(item.data) === gStr && item.stato !== 'annullato');
+
+                          return (
+                            <td key={`${nomeDip}_${gStr}`} onClick={() => nuovaAttivitaDaPlanner(nomeDip, gStr)} className={`p-2 border-r border-slate-200 h-24 vertical-top hover:bg-sky-50/60 cursor-pointer transition-all relative group ${gStr === todayStr ? 'bg-sky-50/20' : ''}`}>
+                              <div className="space-y-1.5">
+                                {eventiCella.map((ev, evIdx) => {
+                                  const isAss = isAssenza(ev);
+                                  const isConsuntivo = ev.stato === 'consuntivo';
+                                  const isScaduto = !isConsuntivo && gStr <= todayStr && !isAss;
+
+                                  let styleClass = 'bg-amber-100 text-amber-950 border-amber-300';
+                                  if (isConsuntivo) styleClass = 'bg-emerald-100 text-emerald-950 border-emerald-300';
+                                  else if (isAss) styleClass = 'bg-purple-100 text-purple-950 border-purple-300';
+                                  else if (isScaduto) styleClass = 'bg-rose-100 text-rose-950 border-rose-300 animate-pulse';
+
+                                  return (
+                                    <div key={ev.id || `cell_ev_${evIdx}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-2 font-bold text-[11px] rounded-xl border shadow-2xs hover:scale-102 transition-all ${styleClass}`}>
+                                      <div className="truncate font-black">{isAss ? toText(ev.progetto) : (toText(ev.cliente) || "Senza Cliente")}</div>
+                                      {!isAss && <div className="truncate text-[10px] font-medium opacity-80">{toText(ev.progetto)}</div>}
+                                      <div className="text-[9px] mt-0.5 opacity-70 font-bold">{ev.ore || 8}h {isConsuntivo ? '✅' : '⏳'}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {eventiCella.length === 0 && <span className="opacity-0 group-hover:opacity-100 text-[10px] font-bold text-sky-600 block text-center mt-6">+ Aggiungi</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 1: INSERIMENTO ORE */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-lg border border-slate-200/80 overflow-hidden">
             <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
