@@ -10,15 +10,13 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ 
-        message: 'Variabili Supabase non trovate. Verificare SUPABASE_URL e SUPABASE_KEY su Vercel.' 
-      });
+      return res.status(500).json({ message: 'Variabili Supabase non trovate.' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const {
-      dipendente,
+      dipendente = 'Da Assegnare',
       cliente,
       progetto,
       data,
@@ -27,16 +25,15 @@ export default async function handler(req, res) {
       ore_trasferta = 0,
       ore_straordinario = 0,
       note = '',
-      stato = 'consuntivo'
+      stato = 'pianificato'
     } = req.body;
 
-    if (!dipendente || !data) {
-      return res.status(400).json({ message: 'Campi obbligatori mancanti: dipendente e data.' });
+    if (!data) {
+      return res.status(400).json({ message: 'Data obbligatoria.' });
     }
 
     const startDateStr = String(data).split('T')[0];
 
-    // 1. TENTATIVO DI SALVATAGGIO IN SUPABASE (COMPLETO)
     const payloadCompleto = {
       dipendente,
       cliente: cliente || '',
@@ -55,35 +52,11 @@ export default async function handler(req, res) {
       .insert([payloadCompleto])
       .select();
 
-    // 2. FALLBACK (Se mancano colonne come ore_trasferta o ore_backoffice nel DB)
     if (dbError) {
-      console.error("Errore Supabase tentato inserimento completo:", dbError);
-
-      const payloadBase = {
-        dipendente,
-        cliente: cliente || '',
-        progetto: progetto || '',
-        data: startDateStr,
-        ore: Number(ore) || 0,
-        note: note || '',
-        stato
-      };
-
-      const fallbackRes = await supabase
-        .from('registrazioni_ore')
-        .insert([payloadBase])
-        .select();
-
-      if (fallbackRes.error) {
-        console.error("Errore Supabase fallback:", fallbackRes.error);
-        const dettagli = dbError.message || dbError.details || JSON.stringify(dbError);
-        return res.status(500).json({ message: `Errore Supabase: ${dettagli}` });
-      }
-
-      dbResult = fallbackRes.data;
+      console.error("Errore Supabase:", dbError);
+      return res.status(500).json({ message: `Errore Supabase: ${dbError.message}` });
     }
 
-    // 3. TENTATIVO GOOGLE CALENDAR ISOLATO (Non blocca mai il salvataggio)
     let calendarEventId = null;
     try {
       const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
@@ -103,9 +76,10 @@ export default async function handler(req, res) {
         endDateObj.setDate(endDateObj.getDate() + 1);
         const endDateStr = endDateObj.toISOString().split('T')[0];
 
-        let etichettaStato = '✅ [SVOLTO]';
-        if (stato === 'pianificato') etichettaStato = '⏳ [PIANIFICATO]';
+        let etichettaStato = '⏳ [PIANIFICATO]';
+        if (stato === 'consuntivo') etichettaStato = '✅ [SVOLTO]';
         if (stato === 'in_approvazione') etichettaStato = '⏳ [IN APPROVAZIONE]';
+        if (dipendente.toLowerCase() === 'da assegnare') etichettaStato = '❓ [DA ASSEGNARE]';
 
         const summaryText = `${etichettaStato} ${dipendente} - ${cliente || 'Attività'} (${progetto || 'Senza Dettaglio'})`;
         let descriptionText = `Svolto da: ${dipendente}\nCliente: ${cliente || '-'}\nProgetto: ${progetto || '-'}\nOre Cantiere: ${ore}h`;
@@ -127,20 +101,23 @@ export default async function handler(req, res) {
 
         if (calRes?.data?.id) {
           calendarEventId = calRes.data.id;
+          await supabase
+            .from('registrazioni_ore')
+            .update({ calendar_event_id: calendarEventId })
+            .eq('id', dbResult[0].id);
         }
       }
     } catch (gErr) {
-      console.warn("Sincronizzazione Google Calendar saltata o fallita:", gErr?.message || gErr);
+      console.warn("Google Calendar non aggiornato:", gErr?.message || gErr);
     }
 
     return res.status(200).json({
-      message: 'Registrazione salvata con successo!',
+      message: 'Registrazione salvata!',
       data: dbResult ? dbResult[0] : null,
       calendar_event_id: calendarEventId
     });
 
   } catch (err) {
-    console.error("Errore server imprevisto:", err);
     return res.status(500).json({ message: `Errore Server: ${err?.message || err}` });
   }
 }
