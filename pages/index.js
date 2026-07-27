@@ -252,14 +252,14 @@ function HomeContent() {
     setActiveTab(lastState.tab); setPathNC(lastState.pathNC || ''); setSearchQueryNC('');
   }
 
-  function handleApriCartella(percorso) { setSearchQueryNC(''); navigateTo('documenti', percorso); }
-
   const handleGeneraRapportino = (item) => {
     setModalRapportino(item);
   };
 
   const handleStampaRapportino = () => {
-    window.print();
+    if (typeof window !== 'undefined') {
+      window.print();
+    }
   };
 
   const fetchClienti = async () => {
@@ -385,17 +385,6 @@ function HomeContent() {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  const openEditModal = (item) => {
-    if (!item) return;
-    if (!canEditItem(item)) { setStatusMessage({ type: 'error', text: `Sola lettura per l'attività di ${toText(item.dipendente)}.` }); return; }
-    setModalItem(item);
-    setOreEffettive(item.ore || 0); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); setOreStraordinarioEffettive(item.ore_straordinario || 0);
-    setDipendenteEffettivo(isItemDaAssegnare(item) ? (currentUser?.ruolo === 'admin' ? 'Da Assegnare' : currentUser?.nome) : item.dipendente);
-    setClienteEffettivo(item.cliente || ''); setProgettoEffettivo(item.progetto || ''); setNoteEffettive(item.note || '');
-  };
-
-  const todayStr = getTodayStr();
-
   if (!isMounted) return null;
 
   if (!currentUser) {
@@ -477,18 +466,21 @@ function HomeContent() {
         </div>
       </aside>
 
-      {/* CONTENUTO SCHERMATE */}
+      {}
       <main className="flex-1 p-4 md:p-8 w-full max-w-6xl mx-auto space-y-6 relative">
         {activeTab === 'home' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-8 shadow-xs border border-slate-200">
               <h1 className="text-3xl font-black text-slate-900">Ciao, {currentUser?.nome.split(' ')[0]} 👋</h1>
               <p className="text-slate-500 text-sm mt-1">Pannello di controllo enterprise BW Solutions ERP.</p>
+              <div className="mt-4 p-4 bg-sky-50 border border-sky-100 rounded-2xl text-xs font-semibold text-sky-900 italic">
+                {aforismaGiorno}
+              </div>
             </div>
           </div>
         )}
 
-        {/* SUBTAB FATTURAZIONE E RAPPROTINO PDF */}
+        {/* SUBTAB FATTURAZIONE E RAPPORTINO PDF */}
         {activeTab === 'cruscotto' && (
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200 p-6 space-y-4">
             <h3 className="font-bold text-slate-900 text-base">🧾 Report Ore da Fatturare</h3>
@@ -524,7 +516,7 @@ function HomeContent() {
         )}
       </main>
 
-      {/* MODALE EDITING ATTIVITÀ CON RAPPROTINO PDF */}
+      {}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -554,7 +546,7 @@ function HomeContent() {
         </div>
       )}
 
-      {/* MODALE ANTEPRIMA E STAMPA RAPPROTINO PDF */}
+      {}
       {modalRapportino && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 text-slate-900 my-auto printable-area">
