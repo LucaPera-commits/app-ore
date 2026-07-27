@@ -446,7 +446,6 @@ function HomeContent() {
         </div>
       </aside>
 
-      {}
       <main className="flex-1 p-4 md:p-8 w-full max-w-6xl mx-auto space-y-6 relative">
         {activeTab === 'home' && (
           <div className="space-y-6">
@@ -460,7 +459,6 @@ function HomeContent() {
           </div>
         )}
 
-        {/* SUBTAB FATTURAZIONE E RAPPORTINO PDF */}
         {activeTab === 'cruscotto' && (
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200 p-6 space-y-4">
             <h3 className="font-bold text-slate-900 text-base">🧾 Report Ore da Fatturare</h3>
@@ -496,7 +494,6 @@ function HomeContent() {
         )}
       </main>
 
-      {}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -526,7 +523,6 @@ function HomeContent() {
         </div>
       )}
 
-      {}
       {modalRapportino && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 text-slate-900 my-auto printable-area">
