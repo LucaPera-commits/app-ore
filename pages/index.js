@@ -1,10 +1,257 @@
-// ... existing code ...
-  // MODALE ITEM ED EDITING ATTIVITÀ
+import React, { useState, useEffect, Component } from 'react';
+import Head from 'next/head';
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-50 p-8 flex flex-col items-center justify-center font-sans">
+          <div className="max-w-3xl w-full bg-white p-8 rounded-3xl border border-rose-200 shadow-2xl text-center space-y-4">
+            <div className="text-5xl">⚠️</div>
+            <h2 className="text-2xl font-black text-rose-600">Errore nell'interfaccia</h2>
+            <div className="bg-slate-900 text-left p-4 rounded-xl overflow-x-auto">
+              <p className="text-rose-400 font-mono text-sm font-bold">{this.state.error && this.state.error.toString()}</p>
+              <pre className="text-slate-400 font-mono text-[10px] mt-2 whitespace-pre-wrap">{this.state.errorInfo && this.state.errorInfo.componentStack}</pre>
+            </div>
+            <button onClick={() => window.location.reload()} className="px-6 py-3 bg-sky-600 text-white font-bold rounded-xl shadow-md cursor-pointer">🔄 Ricarica l'App</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const UTENTI = {
+  'luca': { nome: 'Luca Pera', pass: '!luca123?', ruolo: 'admin' },
+  'giampaolo': { nome: 'Giampaolo Lauro', pass: '!giampaolo123?', ruolo: 'user' },
+  'federico': { nome: 'Federico Boagno', pass: '!federico123?', ruolo: 'user' },
+  'alessandro': { nome: 'Alessandro Ciule', pass: '!alessandro123?', ruolo: 'user' },
+  'davide': { nome: 'Davide Procopio', pass: '!davide123?', ruolo: 'user' }
+};
+
+const LISTA_CLIENTI_BASE = [
+  '3S s.r.l.', 'a2a', 'ALSTOM', 'ALSTOM BOLOGNA', 'API Torino', 'ARNALDI CENTINATURE', 'AROL', 'AT SYSTEM SERVICES', 'ATE ELECTRONICS', "ATTIVITA' IN PARTNERSHIP IIS", 
+  'BARBERO ROBERTO IMPIANTI TERMOSANITARI', 'BORELLI', 'BOSCO ITALIA S.P.A', 'BUCHER MUNICIPAL', 'C.T.L. s.r.l.', 'CAGLIERO S.R.L', 'CAGNAZZO s.n.c', 'CAMA 1 s.p.a', 'CASTIM 2000', 
+  'CDR ITALIA S.P.A', 'CHERCHISYSTEM', 'CIEMMEBI', 'COGORNO SERGIO', 'COLMAR Technik Spa', 'COMET', 'COMETAL s.r.l', 'COMETTO', 'COSPAL COMPOSITES S.P.A', 'COSTA RODOLFO s.r.l'
+];
+
+const AFORISMI = [
+  "“L'unico modo di fare un ottimo lavoro è amare quello che fai.” – Steve Jobs",
+  "“Nessun grande risultato è mai stato raggiunto senza entusiasmo.” – Ralph Waldo Emerson",
+  "“La qualità non è mai un fatto casuale; è sempre il risultato di uno sforzo intelligente.” – John Ruskin",
+  "“Non contare i giorni, fai in modo che i giorni contino.” – Muhammad Ali",
+  "“Il segreto per andare avanti è iniziare.” – Mark Twain",
+  "“L'eccellenza non è un atto, ma un'abitudine.” – Aristotele",
+  "“Ciò che facciamo ogni giorno plasma ciò che diventiamo.” – Eraclito",
+  "“L'ingegneria è l'arte di dirigere le grandi fonti di energia della natura per l'uso dell'uomo.” – Thomas Tredgold",
+  "“Il lavoro di squadra divide i compiti e moltiplica il successo.”",
+  "“La precisione e la passione trasformano un’idea in un capolavoro.”"
+];
+
+function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+function getCurrentMonthStr() { return new Date().toISOString().slice(0, 7); }
+function getFirstDayOfCurrentMonthStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
+function getNextMonthStr() { const d = new Date(); let year = d.getFullYear(); let month = d.getMonth() + 2; if (month > 12) { month = 1; year += 1; } return `${year}-${String(month).padStart(2, '0')}`; }
+
+function getNomeMeseText(annoMeseStr) {
+  if (!annoMeseStr) return '';
+  try { const [year, month] = annoMeseStr.split('-').map(Number); const date = new Date(year, month - 1, 1); return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }); } 
+  catch (e) { return String(annoMeseStr); }
+}
+
+function getNormalizedDate(d) {
+  if (!d) return getTodayStr();
+  if (typeof d !== 'string' && typeof d !== 'number') return getTodayStr();
+  return String(d).split('T')[0].split(' ')[0];
+}
+
+function formatDateSafely(dateVal) {
+  if (!dateVal) return '-';
+  try { const d = new Date(dateVal); if (isNaN(d.getTime())) return String(dateVal).split('T')[0]; return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } 
+  catch (e) { return String(dateVal); }
+}
+
+function toText(val) { if (val === null || val === undefined) return ''; if (typeof val === 'object') return JSON.stringify(val); return String(val); }
+
+function matchNomeDipendente(nomeDb, filtro) {
+  if (!filtro || filtro === 'Tutti') return true; 
+  if (!nomeDb) return false;
+  const db = String(nomeDb).toLowerCase().trim(); const flt = String(filtro).toLowerCase().trim();
+  if (db === flt) return true;
+  const pF = flt.split(' ').filter(Boolean); const pD = db.split(' ').filter(Boolean);
+  return pF[0] && pD[0] && pF[0] === pD[0];
+}
+
+function isItemDaAssegnare(item) {
+  if (!item) return false; if (item.stato === 'annullato') return false;
+  const dip = toText(item.dipendente).toLowerCase().trim();
+  return !dip || dip === 'da assegnare' || dip === 'da_assegnare' || dip === 'nessuno' || dip === 'null' || dip === 'undefined';
+}
+
+function isFerie(item) { return toText(item?.progetto).toLowerCase().includes('ferie'); }
+function isPermesso(item) { return toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol'); }
+function isMalattia(item) { return toText(item?.progetto).toLowerCase().includes('malattia'); }
+function isAssenza(item) { return isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze'); }
+function getFeedbackKey(fb) { if (!fb || !fb.id) return null; return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`; }
+function getParentPath(path) { if (!path) return ''; const cleanPath = String(path).replace(/^\/+|\/+$/g, ''); const parts = cleanPath.split('/').filter(Boolean); if (parts.length <= 1) return ''; parts.pop(); return parts.join('/'); }
+
+function getGiorniLavorativiMese(annoMeseStr) {
+  if (!annoMeseStr) return 22;
+  try {
+    const [year, month] = annoMeseStr.split('-').map(Number); let count = 0; const date = new Date(year, month - 1, 1);
+    while (date.getMonth() === month - 1) { const day = date.getDay(); if (day !== 0 && day !== 6) count++; date.setDate(date.getDate() + 1); }
+    return count;
+  } catch (e) { return 22; }
+}
+
+function getMondayOfCurrentWeek(dateInput = new Date()) {
+  const d = new Date(dateInput); const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff)).toISOString().split('T')[0];
+}
+
+function get7DaysOfWeek(mondayStr) {
+  const days = []; const curr = new Date(mondayStr);
+  for (let i = 0; i < 7; i++) { const d = new Date(curr); d.setDate(curr.getDate() + i); days.push(d.toISOString().split('T')[0]); }
+  return days;
+}
+
+function getGiorniLavorativiMancanti(storico, nomeDip) {
+  if (!nomeDip) return []; const oggi = new Date(); const giorniMancanti = [];
+  for (let i = 1; i <= 14; i++) {
+    const d = new Date(); d.setDate(oggi.getDate() - i); const dayOfWeek = d.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const dStr = d.toISOString().split('T')[0];
+      const haReg = storico.some(item => item && matchNomeDipendente(item.dipendente, nomeDip) && getNormalizedDate(item.data) === dStr && item.stato !== 'annullato');
+      if (!haReg) giorniMancanti.push(dStr);
+    }
+  }
+  return giorniMancanti.sort();
+}
+
+function HomeContent() {
+  const [isMounted, setIsMounted] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  const [activeTab, setActiveTab] = useState('home');
+  const [pathNC, setPathNC] = useState('');
+  const [navHistory, setNavHistory] = useState([]);
+
+  // DIAGNOSTICA DI SISTEMA IN TEMPO REALE
+  const [diagnosticaStato, setDiagnosticaStato] = useState({ ok: true, anomalie: [] });
+
+  const [aforismaGiorno, setAforismaGiorno] = useState('');
+
+  const [aiInput, setAiInput] = useState('');
+  const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
+  const [isAiTyping, setIsAiTyping] = useState(false);
+
+  // ANAGRAFICA CLIENTI REALE DA SUPABASE
+  const [dbClienti, setDbClienti] = useState([]);
+  const [loadingClienti, setLoadingClienti] = useState(false);
+  const [modalCliente, setModalCliente] = useState(null);
+  const [searchCliente, setSearchCliente] = useState('');
+
+  // COMMESSE & BUDGET REALI DA SUPABASE
+  const [dbCommesse, setDbCommesse] = useState([]);
+  const [loadingCommesse, setLoadingCommesse] = useState(false);
+  const [modalCommessa, setModalCommessa] = useState(null);
+
+  // APPUNTI / PDM REALI DA SUPABASE
+  const [dbAppunti, setDbAppunti] = useState([]);
+  const [loadingAppunti, setLoadingAppunti] = useState(false);
+  const [appuntiClienteSel, setAppuntiClienteSel] = useState('');
+  const [appuntiProgettoSel, setAppuntiProgettoSel] = useState('');
+  const [nuovoAppuntoTesto, setNuovoAppuntoTesto] = useState('');
+  const [ricercaAppunti, setSearchAppunti] = useState('');
+  const [modalNuovaNota, setModalNuovaNota] = useState(false);
+
+  const [categoriaForm, setCategoriaForm] = useState('lavoro');
+  const [formData, setFormData] = useState({
+    dipendente: 'Da Assegnare', cliente: '', progetto: '', data: getTodayStr(), data_fine: getTodayStr(),
+    usaIntervallo: false, ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, note: '', stato: 'pianificato'
+  });
+
+  const [plannerWeekStart, setPlannerWeekStart] = useState(getMondayOfCurrentWeek());
+  const [plannerEspansi, setPlannerEspansi] = useState(() => {
+    const init = { 'Da Assegnare': true };
+    Object.values(UTENTI).forEach(u => init[u.nome] = true);
+    return init;
+  });
+  const togglePlannerRow = (dipNome) => setPlannerEspansi(prev => ({ ...prev, [dipNome]: !prev[dipNome] }));
+
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState(null);
+  const [storicoCompleto, setStoricoCompleto] = useState([]);
+  const [loadingProgrammati, setLoadingProgrammati] = useState(false);
+
+  const [feedbackList, setFeedbackList] = useState([]);
+  const [readFeedbackIds, setReadFeedbackIds] = useState([]);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [filtroArchivioAdmin, setFiltroArchivioAdmin] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' });
+  const [feedbackStatus, setFeedbackStatus] = useState(null);
+
+  const [cartelleAperte, setCartelleAperte] = useState({ 'Da Assegnare': true });
+  const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
+  const toggleCartella = (nome) => setCartelleAperte(prev => ({ ...prev, [nome]: !prev[nome] }));
+  const toggleSottoCartella = (key) => setSottoCartelleAperte(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const [searchQueryNC, setSearchQueryNC] = useState('');
+  const [risultatiNC, setRisultatiNC] = useState([]);
+  const [loadingNC, setLoadingNC] = useState(false);
+
+  const [modalDocumento, setModalDocumento] = useState(null);
+  const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
+  const [subTabReport, setSubTabReport] = useState('paghe');
+  const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
+
   const [modalItem, setModalItem] = useState(null);
-  const [modalRapportino, setModalRapportino] = useState(null); // MODALE PER PREVIEW E STAMPA RAPPROTINO PDF
+  const [modalRapportino, setModalRapportino] = useState(null);
   const [oreEffettive, setOreEffettive] = useState(8);
-// ... existing code ...
-  // APRI RAPPROTINO PDF
+  const [oreBackofficeEffettive, setOreBackofficeEffettive] = useState(0);
+  const [oreTrasfertaEffettive, setOreTrasfertaEffettive] = useState(0);
+  const [oreStraordinarioEffettive, setOreStraordinarioEffettive] = useState(0);
+  const [dipendenteEffettivo, setDipendenteEffettivo] = useState('');
+  const [clienteEffettivo, setClienteEffettivo] = useState('');
+  const [progettoEffettivo, setProgettoEffettivo] = useState('');
+  const [noteEffettive, setNoteEffettive] = useState('');
+
+  const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
+  const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
+  const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
+
+  const listaClientiCompleta = Array.from(new Set([...LISTA_CLIENTI_BASE, ...dbClienti.map(c => c.ragione_sociale)])).sort();
+
+  const dipendentiVisibili = currentUser?.ruolo === 'admin' ? listaDipendenti : (currentUser ? [currentUser.nome] : []);
+  const mostraDaAssegnare = currentUser?.ruolo === 'admin';
+
+  function canEditItem(item) { if (!currentUser) return false; if (currentUser.ruolo === 'admin') return true; return matchNomeDipendente(item?.dipendente, currentUser.nome); }
+
+  function navigateTo(targetTab, targetPathNC = '') {
+    const cleanTargetFolder = targetPathNC ? String(targetPathNC).replace(/^\/+|\/+$/g, '') : '';
+    if (targetTab === activeTab && cleanTargetFolder === pathNC) return;
+    setNavHistory(prev => [...prev, { tab: activeTab, pathNC: pathNC }]);
+    setActiveTab(targetTab); setPathNC(cleanTargetFolder);
+  }
+
+  function handleGoBack() {
+    if (navHistory.length === 0) return;
+    const lastState = navHistory[navHistory.length - 1];
+    setNavHistory(prev => prev.slice(0, prev.length - 1));
+    setActiveTab(lastState.tab); setPathNC(lastState.pathNC || ''); setSearchQueryNC('');
+  }
+
+  function handleApriCartella(percorso) { setSearchQueryNC(''); navigateTo('documenti', percorso); }
+
   const handleGeneraRapportino = (item) => {
     setModalRapportino(item);
   };
@@ -12,54 +259,277 @@
   const handleStampaRapportino = () => {
     window.print();
   };
-// ... existing code ...
-            {/* SUBTAB 2: FATTURAZIONE */}
-            {subTabReport === 'fatturazione' && (
-              <div className="bg-white rounded-3xl shadow-xs border border-slate-200/80 p-6 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
-                  <h3 className="font-bold text-slate-900 text-base">🧾 Report Ore da Fatturare ({filtroMeseReport})</h3>
-                  <select value={filtroClienteFatturazione} onChange={e => setFiltroClienteFatturazione(e.target.value)} className="text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 outline-none">
-                    <option value="Tutti">Tutti i Clienti</option>
-                    {listaClientiCompleta.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
-                        <th className="py-3 px-3">Data</th>
-                        <th className="py-3 px-3">Cliente</th>
-                        <th className="py-3 px-3">Commessa / Progetto</th>
-                        <th className="py-3 px-3">Eseguito da</th>
-                        <th className="py-3 px-3 text-center">Cantiere</th>
-                        <th className="py-3 px-3 text-center">Backoffice</th>
-                        <th className="py-3 px-3 text-center">Azione</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {[...safeStorico]
-                        .filter(item => item && getNormalizedDate(item.data).startsWith(filtroMeseReport) && (filtroClienteFatturazione === 'Tutti' || item.cliente === filtroClienteFatturazione) && item.stato === 'consuntivo' && !isAssenza(item))
-                        .sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)))
-                        .map((item, idx) => (
-                          <tr key={item.id || idx} className="hover:bg-sky-50/80 transition-colors">
-                            <td className="py-2.5 px-3 text-slate-500 font-bold">{getNormalizedDate(item.data)}</td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{toText(item.cliente)}</td>
-                            <td className="py-2.5 px-3 text-slate-700">{toText(item.progetto)}</td>
-                            <td className="py-2.5 px-3 font-semibold text-slate-800">{toText(item.dipendente)}</td>
-                            <td className="py-2.5 px-3 text-center font-bold text-slate-900">{item.ore || 0} h</td>
-                            <td className="py-2.5 px-3 text-center font-bold text-sky-700">{item.ore_backoffice || 0} h</td>
-                            <td className="py-2.5 px-3 text-center">
-                              <button onClick={() => handleGeneraRapportino(item)} className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg shadow-xs cursor-pointer">📄 Rapportino PDF</button>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+
+  const fetchClienti = async () => {
+    setLoadingClienti(true);
+    try {
+      const res = await fetch('/api/clienti');
+      if (res.ok) {
+        const data = await res.json();
+        setDbClienti(Array.isArray(data) ? data : []);
+      }
+    } catch (e) { console.error("Errore fetch clienti:", e); }
+    finally { setLoadingClienti(false); }
+  };
+
+  const fetchCommesse = async () => {
+    setLoadingCommesse(true);
+    try {
+      const res = await fetch('/api/commesse');
+      if (res.ok) {
+        const data = await res.json();
+        setDbCommesse(Array.isArray(data) ? data : []);
+      }
+    } catch (e) { console.error("Errore fetch commesse:", e); }
+    finally { setLoadingCommesse(false); }
+  };
+
+  const fetchAppunti = async () => {
+    setLoadingAppunti(true);
+    try {
+      const res = await fetch('/api/appunti');
+      if (res.ok) {
+        const data = await res.json();
+        const adattati = (Array.isArray(data) ? data : []).map(a => ({
+          ...a,
+          cliente: a.cliente_id ? (dbClienti.find(c => c.id === a.cliente_id)?.ragione_sociale || 'Generico') : 'Generico',
+          progetto: a.titolo,
+          data_ora: a.created_at
+        }));
+        setDbAppunti(adattati);
+      }
+    } catch (e) { console.error("Errore fetch appunti:", e); }
+    finally { setLoadingAppunti(false); }
+  };
+
+  useEffect(() => {
+    if (currentUser && isMounted) {
+      fetchClienti();
+      fetchCommesse();
+      fetchAppunti();
+    }
+  }, [currentUser, activeTab, isMounted]);
+
+  useEffect(() => {
+    setIsMounted(true);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const randIndex = Math.floor(Math.random() * AFORISMI.length);
+    setAforismaGiorno(AFORISMI[randIndex]);
+
+    try { const saved = localStorage.getItem('bw_user'); if (saved) setCurrentUser(JSON.parse(saved)); } catch (e) {}
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => { if (currentUser) { setFormData(prev => ({ ...prev, dipendente: currentUser.ruolo === 'admin' ? 'Da Assegnare' : currentUser.nome })); } }, [currentUser]);
+
+  const handleResetForm = () => {
+    setFormData({
+      dipendente: currentUser?.ruolo === 'admin' ? 'Da Assegnare' : (currentUser?.nome || 'Da Assegnare'),
+      cliente: '', progetto: '', data: getTodayStr(), data_fine: getTodayStr(),
+      usaIntervallo: false, ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, note: '', stato: 'consuntivo'
+    });
+    setCategoriaForm('lavoro');
+    setStatusMessage(null);
+  };
+
+  const fetchProgrammati = async () => {
+    setLoadingProgrammati(true);
+    try { const res = await fetch(`/api/gestisci?mode=all&_t=${Date.now()}`); if (res.ok) { const dati = await res.json(); setStoricoCompleto(Array.isArray(dati) ? dati : []); } } catch (e) { console.error("Errore fetch:", e); } 
+    finally { setLoadingProgrammati(false); }
+  };
+
+  const fetchFeedback = async () => {
+    setLoadingFeedback(true);
+    try { const isInclude = currentUser?.ruolo === 'admin' && filtroArchivioAdmin; const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}&_t=${Date.now()}`); if (res.ok) { const data = await res.json(); setFeedbackList(Array.isArray(data) ? data : []); } } catch (e) { console.error("Errore feedback:", e); }
+    finally { setLoadingFeedback(false); }
+  };
+
+  useEffect(() => {
+    if (currentUser && isMounted) {
+      fetchProgrammati(); fetchFeedback();
+    }
+  }, [currentUser, activeTab, filtroArchivioAdmin, isMounted]);
+
+  const handleLogin = (e) => {
+    e.preventDefault(); const user = UTENTI[loginForm.username.toLowerCase().trim()];
+    if (user && user.pass === loginForm.password) { setCurrentUser(user); localStorage.setItem('bw_user', JSON.stringify(user)); setFormData(prev => ({ ...prev, dipendente: user.ruolo === 'admin' ? 'Da Assegnare' : user.nome })); navigateTo('home'); } 
+    else { alert("Credenziali non valide."); }
+  };
+
+  const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('bw_user'); setLoginForm({ username: '', password: '' }); setShowPassword(false); };
+
+  const handleConfermaChiudi = async () => {
+    if (!modalItem) return;
+    if (!clienteEffettivo || !clienteEffettivo.trim()) { alert("⚠️ Campo Cliente obbligatorio!"); return; }
+    if (!progettoEffettivo || !progettoEffettivo.trim()) { alert("⚠️ Campo Progetto obbligatorio!"); return; }
+
+    if (isAssenza(modalItem) && currentUser?.ruolo !== 'admin') {
+      alert("⚠️ Solo l'amministratore può approvare e validare le ferie o i permessi.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/gestisci', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: modalItem.id, calendar_event_id: modalItem.calendar_event_id,
+          cliente: clienteEffettivo.trim(), progetto: progettoEffettivo.trim(), note: noteEffettive.trim(),
+          ore_effettive: oreEffettive, ore_backoffice: oreBackofficeEffettive, ore_trasferta: oreTrasfertaEffettive, ore_straordinario: oreStraordinarioEffettive,
+          dipendente: dipendenteEffettivo || modalItem.dipendente, chiudi_consuntivo: true
+        })
+      });
+      if (res.ok) { setModalItem(null); fetchProgrammati(); }
+    } catch (e) { alert("Errore"); } finally { setLoading(false); }
+  };
+
+  const openEditModal = (item) => {
+    if (!item) return;
+    if (!canEditItem(item)) { alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`); return; }
+    setModalItem(item);
+    setOreEffettive(item.ore || 0); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); setOreStraordinarioEffettive(item.ore_straordinario || 0);
+    setDipendenteEffettivo(isItemDaAssegnare(item) ? (currentUser?.ruolo === 'admin' ? 'Da Assegnare' : currentUser?.nome) : item.dipendente);
+    setClienteEffettivo(item.cliente || ''); setProgettoEffettivo(item.progetto || ''); setNoteEffettive(item.note || '');
+  };
+
+  const isAlessandro = formData.dipendente === 'Alessandro Ciule';
+  const todayStr = getTodayStr();
+
+  const daAssegnareItems = safeStorico.filter(isItemDaAssegnare);
+  const giorniMancantiUtente = currentUser?.nome ? getGiorniLavorativiMancanti(safeStorico, currentUser.nome) : [];
+  const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
+  const mieAttivitaArretrato = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
+  const mieAttivitaProssime = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
+
+  if (!isMounted) return null;
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans">
+        <Head>
+          <title>BW Solutions | ERP</title>
+          <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230ea5e9'/><text x='50' y='55' font-family='Arial, sans-serif' font-size='50' fill='white' font-weight='bold' text-anchor='middle' alignment-baseline='middle'>bw</text></svg>" />
+        </Head>
+        <div className="w-full max-w-md bg-white rounded-[2rem] p-8 shadow-2xl border border-slate-100">
+          <div className="flex flex-col items-center text-center space-y-2 pb-6 border-b border-slate-100 mb-6">
+            <div className="bg-sky-500 text-white font-black text-3xl w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/30 mb-2">bw</div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">BW Solutions</h1>
+            <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">Enterprise Hub</span>
+          </div>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Nome Utente</label>
+              <input type="text" required value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Password</label>
+              <div className="relative">
+                <input type={showPassword ? 'text' : 'password'} required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg hover:text-slate-600 transition-colors cursor-pointer">{showPassword ? '👁️' : '🙈'}</button>
               </div>
+            </div>
+            <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-xl shadow-slate-900/20 transition-all text-sm mt-2 cursor-pointer">Accedi alla Piattaforma</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50/50 text-slate-800 font-sans flex flex-col md:flex-row pb-24 md:pb-0">
+      <Head>
+        <title>BW Solutions | Hub ERP</title>
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230ea5e9'/><text x='50' y='55' font-family='Arial, sans-serif' font-size='50' fill='white' font-weight='bold' text-anchor='middle' alignment-baseline='middle'>bw</text></svg>" />
+      </Head>
+
+      {/* SIDEBAR NAVIGATION */}
+      <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex-shrink-0 flex flex-col justify-between p-5 md:h-screen sticky top-0 z-40 border-r border-slate-800 shadow-2xl">
+        <div className="space-y-6">
+          <div className="flex items-center space-x-3 cursor-pointer pb-6 border-b border-slate-800" onClick={() => navigateTo('home')}>
+            <div className="bg-sky-500 text-white font-black text-xl w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/20">bw</div>
+            <div>
+              <span className="font-bold text-lg text-white block leading-none">BW Solutions</span>
+              <span className="text-[10px] text-sky-400 font-bold uppercase tracking-widest block mt-1">Enterprise ERP</span>
+            </div>
+          </div>
+
+          <nav className="flex md:flex-col space-x-2 md:space-x-0 md:space-y-1.5 overflow-x-auto md:overflow-x-visible text-sm font-semibold">
+            <button onClick={() => navigateTo('home')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'home' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏠 Home</button>
+            <button onClick={() => navigateTo('planner')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'planner' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📅 Planner Team</button>
+            <button onClick={() => navigateTo('nuovo')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'nuovo' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📝 Inserisci Ore</button>
+            <button onClick={() => navigateTo('programmati')} className={`w-full px-4 py-3 rounded-xl flex items-center justify-between transition-all cursor-pointer ${activeTab === 'programmati' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
+              <div className="flex gap-3">⏳ Attività</div>
+              {(mostraDaAssegnare && daAssegnareItems.length > 0) && <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
+            </button>
+            <button onClick={() => navigateTo('anagrafiche')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'anagrafiche' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏢 Anagrafiche</button>
+            <button onClick={() => navigateTo('appunti')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'appunti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📓 Appunti/PDM</button>
+            <button onClick={() => navigateTo('documenti', pathNC)} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'documenti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📂 Cloud Aruba</button>
+            {currentUser?.ruolo === 'admin' && (
+              <button onClick={() => navigateTo('cruscotto')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'cruscotto' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📊 Reportistica</button>
             )}
-// ... existing code ...
-      {/* MODALE EDITING ATTIVITÀ CON PROTEZIONE FERIE */}
+          </nav>
+        </div>
+
+        <div className="pt-4 border-t border-slate-800 space-y-3">
+          <div className="px-3 py-2 bg-slate-800/80 rounded-xl text-[10px] font-bold flex items-center justify-between border border-slate-700">
+            <span className="text-slate-400">Diagnostica App:</span>
+            <span className={diagnosticaStato.ok ? "text-emerald-400" : "text-amber-400 animate-pulse"}>{diagnosticaStato.ok ? "🟢 Sistema OK" : "⚠️ Check In Corso"}</span>
+          </div>
+          <div className="hidden md:flex bg-slate-800 p-3 rounded-2xl items-center justify-between">
+            <span className="text-white font-bold text-xs truncate">{currentUser?.nome}</span>
+            <button onClick={handleLogout} className="text-slate-400 hover:text-rose-400 transition-colors cursor-pointer">🚪</button>
+          </div>
+        </div>
+      </aside>
+
+      {/* CONTENUTO SCHERMATE */}
+      <main className="flex-1 p-4 md:p-8 w-full max-w-6xl mx-auto space-y-6 relative">
+        {activeTab === 'home' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl p-8 shadow-xs border border-slate-200">
+              <h1 className="text-3xl font-black text-slate-900">Ciao, {currentUser?.nome.split(' ')[0]} 👋</h1>
+              <p className="text-slate-500 text-sm mt-1">Pannello di controllo enterprise BW Solutions ERP.</p>
+            </div>
+          </div>
+        )}
+
+        {/* SUBTAB FATTURAZIONE E RAPPROTINO PDF */}
+        {activeTab === 'cruscotto' && subTabReport === 'fatturazione' && (
+          <div className="bg-white rounded-3xl shadow-xs border border-slate-200 p-6 space-y-4">
+            <h3 className="font-bold text-slate-900 text-base">🧾 Report Ore da Fatturare</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
+                    <th className="py-3 px-3">Data</th>
+                    <th className="py-3 px-3">Cliente</th>
+                    <th className="py-3 px-3">Progetto</th>
+                    <th className="py-3 px-3">Eseguito da</th>
+                    <th className="py-3 px-3 text-center">Ore</th>
+                    <th className="py-3 px-3 text-center">Azione</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {safeStorico.filter(item => item.stato === 'consuntivo').map((item, idx) => (
+                    <tr key={item.id || idx} className="hover:bg-sky-50">
+                      <td className="py-2.5 px-3 font-bold text-slate-500">{getNormalizedDate(item.data)}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900">{toText(item.cliente)}</td>
+                      <td className="py-2.5 px-3 text-slate-700">{toText(item.progetto)}</td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">{toText(item.dipendente)}</td>
+                      <td className="py-2.5 px-3 text-center font-bold text-slate-900">{item.ore || 0} h</td>
+                      <td className="py-2.5 px-3 text-center">
+                        <button onClick={() => handleGeneraRapportino(item)} className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg cursor-pointer">📄 Rapportino PDF</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* MODALE EDITING ATTIVITÀ CON RAPPROTINO PDF */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -69,7 +539,7 @@
             </div>
             
             <div className="space-y-4 pt-2">
-              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Cliente</label><input type="text" list="lista-aziende" value={clienteEffettivo} onChange={e=>setClienteEffettivo(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-sky-500" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Cliente</label><input type="text" value={clienteEffettivo} onChange={e=>setClienteEffettivo(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-sky-500" /></div>
               <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Progetto</label><input type="text" value={progettoEffettivo} onChange={e=>setProgettoEffettivo(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-sky-500" /></div>
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Ore Cantiere</label><input type="number" step="0.5" value={oreEffettive} onChange={e=>setOreEffettive(parseFloat(e.target.value))} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none" /></div>
@@ -83,15 +553,7 @@
                 📄 Genera Rapportino PDF
               </button>
               <button onClick={() => setModalItem(null)} className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors cursor-pointer">Annulla</button>
-              
-              {/* BLOCCO VALIDAZIONE FERIE SE NON ADMIN */}
-              {isAssenza(modalItem) && currentUser?.ruolo !== 'admin' ? (
-                <div className="w-2/3 py-3 bg-amber-50 text-amber-800 text-xs font-bold rounded-xl border border-amber-200 text-center flex items-center justify-center">
-                  🔒 In attesa di validazione Admin
-                </div>
-              ) : (
-                <button onClick={handleConfermaChiudi} disabled={loading} className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors cursor-pointer">{loading ? '...' : 'Salva Modifiche'}</button>
-              )}
+              <button onClick={handleConfermaChiudi} disabled={loading} className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors cursor-pointer">{loading ? '...' : 'Salva Modifiche'}</button>
             </div>
           </div>
         </div>
@@ -101,8 +563,6 @@
       {modalRapportino && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 text-slate-900 my-auto printable-area">
-            
-            {/* INTESTAZIONE RAPPROTINO */}
             <div className="flex justify-between items-start border-b-2 border-slate-900 pb-6">
               <div className="flex items-center gap-3">
                 <div className="bg-sky-500 text-white font-black text-2xl w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg">bw</div>
@@ -112,12 +572,11 @@
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-xs font-mono font-bold text-slate-400 block">N. Intervento: #{modalRapportino.id || Date.now().toString().slice(-5)}</span>
+                <span className="text-xs font-mono font-bold text-slate-400 block">N. Intervento: #{modalRapportino.id || '1001'}</span>
                 <span className="text-xs font-bold text-slate-700 block">Data: {getNormalizedDate(modalRapportino.data)}</span>
               </div>
             </div>
 
-            {/* TABELLA DATI CLIENTE E TECNICO */}
             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Cliente / Committente</span>
@@ -131,7 +590,6 @@
               </div>
             </div>
 
-            {/* RIEPILOGO ORE */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-900 text-white uppercase font-bold text-[10px]">
@@ -139,7 +597,6 @@
                     <th className="p-3">Descrizione Prestazione</th>
                     <th className="p-3 text-center">Ore Cantiere</th>
                     <th className="p-3 text-center">Ore Backoffice</th>
-                    <th className="p-3 text-center">Trasferta</th>
                     <th className="p-3 text-center">Totale Ore</th>
                   </tr>
                 </thead>
@@ -148,16 +605,12 @@
                     <td className="p-3 font-bold text-slate-800">{toText(modalRapportino.progetto)}</td>
                     <td className="p-3 text-center">{modalRapportino.ore || 0} h</td>
                     <td className="p-3 text-center">{modalRapportino.ore_backoffice || 0} h</td>
-                    <td className="p-3 text-center">{modalRapportino.ore_trasferta || 0} h</td>
-                    <td className="p-3 text-center font-black text-sky-600">
-                      {(Number(modalRapportino.ore || 0) + Number(modalRapportino.ore_backoffice || 0) + Number(modalRapportino.ore_trasferta || 0))} h
-                    </td>
+                    <td className="p-3 text-center font-black text-sky-600">{(Number(modalRapportino.ore || 0) + Number(modalRapportino.ore_backoffice || 0))} h</td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
-            {/* NOTE INTERVENTO */}
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Note e Dettaglio Lavori Svolti</span>
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-700 min-h-[100px] whitespace-pre-wrap">
@@ -165,7 +618,6 @@
               </div>
             </div>
 
-            {/* SEZIONE FIRMA CLIENTE */}
             <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-200">
               <div className="text-center space-y-8">
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Firma Tecnico BW Solutions</span>
@@ -177,7 +629,6 @@
               </div>
             </div>
 
-            {/* TASTI AZIONE (Nascosti in fase di stampa) */}
             <div className="flex gap-3 pt-4 border-t border-slate-100 no-print">
               <button onClick={() => setModalRapportino(null)} className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl cursor-pointer">
                 Chiudi
@@ -186,7 +637,6 @@
                 🖨️ Stampa / Salva in PDF
               </button>
             </div>
-
           </div>
         </div>
       )}
