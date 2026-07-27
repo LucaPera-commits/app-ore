@@ -485,6 +485,41 @@ function HomeContent() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
+  const toggleSelection = (item) => {
+    if (!canEditItem(item)) return;
+    setSelectedItems(prev => { if (prev.some(i => i.id === item.id)) return prev.filter(i => i.id !== item.id); return [...prev, item]; });
+  };
+
+  const handleSelectAll = (itemsToSelect) => {
+    const editableItems = itemsToSelect.filter(item => canEditItem(item));
+    if (editableItems.length === 0) return;
+    const allSelected = editableItems.every(item => selectedItems.some(sel => sel.id === item.id));
+    if (allSelected) { setSelectedItems(prev => prev.filter(sel => !editableItems.some(item => item.id === sel.id))); } 
+    else {
+      setSelectedItems(prev => {
+        const newSelection = [...prev];
+        editableItems.forEach(item => { if (!newSelection.some(sel => sel.id === item.id)) newSelection.push(item); });
+        return newSelection;
+      });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedItems.length === 0) return;
+    setConfirmModal({
+      title: 'Conferma Eliminazione Multipla',
+      message: `Vuoi davvero eliminare definitivamente ${selectedItems.length} attività selezionate?`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setLoading(true);
+        try {
+          const res = await fetch('/api/gestisci', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: selectedItems.map(i => ({ id: i.id, calendar_event_id: i.calendar_event_id })) }) });
+          if (res.ok) { setSelectedItems([]); fetchProgrammati(); }
+        } catch (e) { console.error(e); } finally { setLoading(false); }
+      }
+    });
+  };
+
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
   const daAssegnareItems = safeStorico.filter(isItemDaAssegnare);
@@ -748,6 +783,77 @@ function HomeContent() {
           </div>
         )}
 
+        {activeTab === 'programmati' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">⏳ Repository Attività &amp; Interventi</h2>
+                <p className="text-xs text-slate-500 mt-1">Sfoglia il registro attività diviso per cartelle collaboratore.</p>
+              </div>
+              <button onClick={fetchProgrammati} className="bg-sky-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow cursor-pointer hover:bg-sky-500">🔄 Aggiorna Dati</button>
+            </div>
+
+            {/* CARTELLA DA ASSEGNARE */}
+            {mostraDaAssegnare && daAssegnareItems.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-3">
+                <div className="flex justify-between items-center font-bold text-amber-900 text-sm">
+                  <span>❓ Attività In Attesa di Assegnazione ({daAssegnareItems.length})</span>
+                </div>
+                <div className="space-y-2">
+                  {daAssegnareItems.map(item => (
+                    <div key={item.id} onClick={() => openEditModal(item)} className="p-3 bg-white rounded-xl border border-amber-200 flex justify-between items-center cursor-pointer hover:border-amber-400">
+                      <div>
+                        <div className="font-bold text-xs text-slate-900">{item.cliente} - {item.progetto}</div>
+                        <div className="text-[10px] text-slate-500">{getNormalizedDate(item.data)} ({item.ore}h)</div>
+                      </div>
+                      <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-lg">Assegna ➔</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* CARTELLE DIPENDENTI */}
+            <div className="space-y-4">
+              {dipendentiVisibili.map(nomeDip => {
+                const attivitaDip = safeStorico.filter(e => matchNomeDipendente(e.dipendente, nomeDip));
+                const isAperta = !!cartelleAperte[nomeDip];
+                return (
+                  <div key={nomeDip} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+                    <div onClick={() => toggleCartella(nomeDip)} className="p-5 bg-slate-50 hover:bg-slate-100 flex justify-between items-center cursor-pointer select-none">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-2xl">{isAperta ? '📂' : '📁'}</span>
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-sm">{nomeDip}</h3>
+                          <span className="text-[10px] text-slate-500">{attivitaDip.length} attività registrate</span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-slate-400">{isAperta ? '▲' : '▼'}</span>
+                    </div>
+
+                    {isAperta && (
+                      <div className="p-4 divide-y divide-slate-100 space-y-2">
+                        {attivitaDip.map(item => (
+                          <div key={item.id} onClick={() => openEditModal(item)} className="pt-2 flex justify-between items-center cursor-pointer hover:bg-slate-50 p-2 rounded-xl">
+                            <div>
+                              <div className="font-bold text-xs text-slate-900">{item.cliente}</div>
+                              <div className="text-[11px] text-slate-500">{item.progetto} ({getNormalizedDate(item.data)})</div>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.stato === 'consuntivo' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {item.stato === 'consuntivo' ? 'Consuntivato' : 'In Programma'}
+                            </span>
+                          </div>
+                        ))}
+                        {attivitaDip.length === 0 && <p className="text-xs text-slate-400 p-2">Nessuna attività registrata.</p>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* TAB COMMESSE */}
         {activeTab === 'commesse' && (
           <div className="space-y-6">
@@ -860,6 +966,20 @@ function HomeContent() {
         )}
       </main>
 
+      {/* MODALE DI CONFERMA GENERICO (Sostituto di confirm) */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 text-center">
+            <h3 className="text-lg font-bold text-slate-900">{confirmModal.title || 'Conferma Operazione'}</h3>
+            <p className="text-xs text-slate-600">{confirmModal.message}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmModal(null)} className="w-1/2 py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Annulla</button>
+              <button onClick={confirmModal.onConfirm} className="w-1/2 py-2.5 bg-rose-600 text-white font-bold text-xs rounded-xl cursor-pointer">Conferma</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODALE CLIENTE */}
       {modalCliente && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -892,6 +1012,22 @@ function HomeContent() {
                 <button type="submit" className="w-1/2 py-3 bg-sky-600 text-white font-bold rounded-xl cursor-pointer">Salva Commessa</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE NUOVO APPUNTO */}
+      {modalNuovaNota && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 text-xs">
+            <h3 className="text-lg font-bold text-slate-900">Nuovo Appunto PDM</h3>
+            <input type="text" list="lista-aziende" placeholder="Cliente *" value={appuntiClienteSel} onChange={e=>setAppuntiClienteSel(e.target.value)} className="w-full p-3 border rounded-xl outline-none" />
+            <input type="text" placeholder="Progetto / Titolo *" value={appuntiProgettoSel} onChange={e=>setAppuntiProgettoSel(e.target.value)} className="w-full p-3 border rounded-xl outline-none" />
+            <textarea rows={3} placeholder="Testo nota *" value={nuovoAppuntoTesto} onChange={e=>setNuovoAppuntoTesto(e.target.value)} className="w-full p-3 border rounded-xl outline-none"></textarea>
+            <div className="flex gap-2">
+              <button onClick={() => setModalNuovaNota(false)} className="w-1/2 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl cursor-pointer">Annulla</button>
+              <button onClick={handleSalvaAppunto} className="w-1/2 py-3 bg-sky-600 text-white font-bold rounded-xl cursor-pointer">Salva Note</button>
+            </div>
           </div>
         </div>
       )}
