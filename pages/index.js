@@ -154,6 +154,12 @@ function HomeContent() {
   const [ricercaAppunti, setSearchAppunti] = useState('');
   const [modalNuovaNota, setModalNuovaNota] = useState(false);
 
+  // RRAPPORTINI PDF SEZIONE DEDICATA
+  const [filtroRapportinoCliente, setFiltroRapportinoCliente] = useState('Tutti');
+  const [filtroRapportinoTecnico, setFiltroRapportinoTecnico] = useState('Tutti');
+  const [filtroRapportinoMese, setFiltroRapportinoMese] = useState(getCurrentMonthStr());
+  const [searchRapportinoText, setSearchRapportinoText] = useState('');
+
   // FORM INSERIMENTO
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
@@ -485,49 +491,33 @@ function HomeContent() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const toggleSelection = (item) => {
-    if (!canEditItem(item)) return;
-    setSelectedItems(prev => { if (prev.some(i => i.id === item.id)) return prev.filter(i => i.id !== item.id); return [...prev, item]; });
-  };
-
-  const handleSelectAll = (itemsToSelect) => {
-    const editableItems = itemsToSelect.filter(item => canEditItem(item));
-    if (editableItems.length === 0) return;
-    const allSelected = editableItems.every(item => selectedItems.some(sel => sel.id === item.id));
-    if (allSelected) { setSelectedItems(prev => prev.filter(sel => !editableItems.some(item => item.id === sel.id))); } 
-    else {
-      setSelectedItems(prev => {
-        const newSelection = [...prev];
-        editableItems.forEach(item => { if (!newSelection.some(sel => sel.id === item.id)) newSelection.push(item); });
-        return newSelection;
-      });
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedItems.length === 0) return;
-    setConfirmModal({
-      title: 'Conferma Eliminazione Multipla',
-      message: `Vuoi davvero eliminare definitivamente ${selectedItems.length} attività selezionate?`,
-      onConfirm: async () => {
-        setConfirmModal(null);
-        setLoading(true);
-        try {
-          const res = await fetch('/api/gestisci', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: selectedItems.map(i => ({ id: i.id, calendar_event_id: i.calendar_event_id })) }) });
-          if (res.ok) { setSelectedItems([]); fetchProgrammati(); }
-        } catch (e) { console.error(e); } finally { setLoading(false); }
-      }
-    });
-  };
-
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
   const daAssegnareItems = safeStorico.filter(isItemDaAssegnare);
   const giorniMancantiUtente = currentUser?.nome ? getGiorniLavorativiMancanti(safeStorico, currentUser.nome) : [];
-  const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
   const mieAttivitaArretrato = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
   const mieAttivitaProssime = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
   const giorniSettimanaPlanner = get7DaysOfWeek(plannerWeekStart);
+
+  // LISTA ATTIVITÀ FILTRATE PER RRAPPORTINI PDF
+  const attivitaPerRapportini = useMemo(() => {
+    return safeStorico.filter(item => {
+      if (!item || isAssenza(item)) return false;
+      if (currentUser?.ruolo !== 'admin' && !matchNomeDipendente(item.dipendente, currentUser?.nome)) return false;
+      const dataStr = getNormalizedDate(item.data);
+      if (filtroRapportinoMese && !dataStr.startsWith(filtroRapportinoMese)) return false;
+      if (filtroRapportinoCliente !== 'Tutti' && item.cliente !== filtroRapportinoCliente) return false;
+      if (filtroRapportinoTecnico !== 'Tutti' && !matchNomeDipendente(item.dipendente, filtroRapportinoTecnico)) return false;
+      if (searchRapportinoText.trim()) {
+        const query = searchRapportinoText.toLowerCase();
+        const cli = toText(item.cliente).toLowerCase();
+        const prog = toText(item.progetto).toLowerCase();
+        const tech = toText(item.dipendente).toLowerCase();
+        if (!cli.includes(query) && !prog.includes(query) && !tech.includes(query)) return false;
+      }
+      return true;
+    }).sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)));
+  }, [safeStorico, filtroRapportinoMese, filtroRapportinoCliente, filtroRapportinoTecnico, searchRapportinoText, currentUser]);
 
   if (!isMounted) return null;
 
@@ -589,6 +579,10 @@ function HomeContent() {
               <div className="flex gap-3">⏳ Attività</div>
               {(mostraDaAssegnare && daAssegnareItems.length > 0) && <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
+            
+            {/* NUOVA SEZIONE DEDICATA RRAPPORTINI PDF */}
+            <button onClick={() => navigateTo('rapportini')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'rapportini' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📄 Rapportini PDF</button>
+
             <button onClick={() => navigateTo('commesse')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'commesse' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📐 Commesse &amp; Budget</button>
             <button onClick={() => navigateTo('anagrafiche')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'anagrafiche' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏢 Anagrafiche</button>
             <button onClick={() => navigateTo('appunti')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'appunti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📓 Appunti/PDM</button>
@@ -659,7 +653,7 @@ function HomeContent() {
                 </div>
                 <div className="mt-4 flex gap-2">
                   <input type="text" value={aiInput} onChange={e=>setAiInput(e.target.value)} placeholder="Fai una domanda..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none" />
-                  <button onClick={() => { if(!aiInput.trim()) return; setAiMessages([...aiMessages, {role: 'user', text: aiInput}, {role: 'ai', text: 'Assistente AI attivo. In futuro potrò estrarre dati storici automaticamente.'}]); setAiInput(''); }} className="bg-sky-500 text-white font-bold text-xs px-4 py-2 rounded-xl cursor-pointer">Invia</button>
+                  <button onClick={() => { if(!aiInput.trim()) return; setAiMessages([...aiMessages, {role: 'user', text: aiInput}, {role: 'ai', text: 'Assistente AI attivo.'}]); setAiInput(''); }} className="bg-sky-500 text-white font-bold text-xs px-4 py-2 rounded-xl cursor-pointer">Invia</button>
                 </div>
               </div>
             </div>
@@ -783,6 +777,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB ATTIVITÀ */}
         {activeTab === 'programmati' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 flex justify-between items-center">
@@ -806,7 +801,10 @@ function HomeContent() {
                         <div className="font-bold text-xs text-slate-900">{item.cliente} - {item.progetto}</div>
                         <div className="text-[10px] text-slate-500">{getNormalizedDate(item.data)} ({item.ore}h)</div>
                       </div>
-                      <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-lg">Assegna ➔</span>
+                      <div className="flex items-center gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); setModalRapportino(item); }} className="px-2.5 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg cursor-pointer">📄 PDF</button>
+                        <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-lg">Assegna ➔</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -834,14 +832,19 @@ function HomeContent() {
                     {isAperta && (
                       <div className="p-4 divide-y divide-slate-100 space-y-2">
                         {attivitaDip.map(item => (
-                          <div key={item.id} onClick={() => openEditModal(item)} className="pt-2 flex justify-between items-center cursor-pointer hover:bg-slate-50 p-2 rounded-xl">
-                            <div>
+                          <div key={item.id} className="pt-2 flex justify-between items-center p-2 rounded-xl hover:bg-slate-50">
+                            <div onClick={() => openEditModal(item)} className="cursor-pointer flex-1">
                               <div className="font-bold text-xs text-slate-900">{item.cliente}</div>
                               <div className="text-[11px] text-slate-500">{item.progetto} ({getNormalizedDate(item.data)})</div>
                             </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.stato === 'consuntivo' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                              {item.stato === 'consuntivo' ? 'Consuntivato' : 'In Programma'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {!isAssenza(item) && (
+                                <button onClick={() => setModalRapportino(item)} className="bg-slate-900 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg hover:bg-slate-800 cursor-pointer">📄 Rapportino PDF</button>
+                              )}
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.stato === 'consuntivo' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {item.stato === 'consuntivo' ? 'Consuntivato' : 'In Programma'}
+                              </span>
+                            </div>
                           </div>
                         ))}
                         {attivitaDip.length === 0 && <p className="text-xs text-slate-400 p-2">Nessuna attività registrata.</p>}
@@ -850,6 +853,78 @@ function HomeContent() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB RRAPPORTINI PDF (SEZIONE DEDICATA) */}
+        {activeTab === 'rapportini' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">📄 Centro Stampa Rapportini di Lavoro (PDF)</h2>
+                  <p className="text-xs text-slate-500 mt-1">Genera, visualizza e stampa i rapportini tecnici ufficiali con la firma del cliente.</p>
+                </div>
+              </div>
+
+              {/* BARRA FILTRI DEDICATA */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border text-xs">
+                <div>
+                  <label className="font-bold text-slate-500 mb-1 block">Mese Intervento</label>
+                  <input type="month" value={filtroRapportinoMese} onChange={e => setFiltroRapportinoMese(e.target.value)} className="w-full p-2 bg-white border rounded-xl font-bold outline-none" />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-500 mb-1 block">Cliente</label>
+                  <select value={filtroRapportinoCliente} onChange={e => setFiltroRapportinoCliente(e.target.value)} className="w-full p-2 bg-white border rounded-xl font-semibold outline-none">
+                    <option value="Tutti">Tutti i Clienti</option>
+                    {listaClientiCompleta.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                {currentUser?.ruolo === 'admin' && (
+                  <div>
+                    <label className="font-bold text-slate-500 mb-1 block">Tecnico Esecutore</label>
+                    <select value={filtroRapportinoTecnico} onChange={e => setFiltroRapportinoTecnico(e.target.value)} className="w-full p-2 bg-white border rounded-xl font-semibold outline-none">
+                      <option value="Tutti">Tutti i Tecnici</option>
+                      {listaDipendenti.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="font-bold text-slate-500 mb-1 block">Cerca Testo</label>
+                  <input type="text" placeholder="Progetto o note..." value={searchRapportinoText} onChange={e => setSearchRapportinoText(e.target.value)} className="w-full p-2 bg-white border rounded-xl font-medium outline-none" />
+                </div>
+              </div>
+
+              {/* GRIGLIA INTERVENTI PRONTI PER RRAPPORTINO */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                {attivitaPerRapportini.map((item, idx) => (
+                  <div key={item.id || idx} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-sky-400 shadow-xs transition-all space-y-3 flex flex-col justify-between">
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-black uppercase text-sky-600 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100">{toText(item.cliente)}</span>
+                        <span className="text-[10px] font-mono font-bold text-slate-400">{getNormalizedDate(item.data)}</span>
+                      </div>
+                      <h3 className="font-bold text-slate-900 text-sm">{toText(item.progetto)}</h3>
+                      <div className="text-xs text-slate-500 flex items-center gap-2">
+                        <span>👤 {toText(item.dipendente)}</span>
+                        <span>•</span>
+                        <span className="font-bold text-slate-800">⏱️ {(Number(item.ore || 0) + Number(item.ore_backoffice || 0))} Ore Totali</span>
+                      </div>
+                      {item.note && <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2 rounded-lg line-clamp-2">📝 {toText(item.note)}</p>}
+                    </div>
+                    
+                    <button onClick={() => setModalRapportino(item)} className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs">
+                      <span>📄 Genera &amp; Stampa Rapportino PDF</span>
+                    </button>
+                  </div>
+                ))}
+                {attivitaPerRapportini.length === 0 && (
+                  <div className="col-span-full p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-400">
+                    Nessun intervento lavorativo trovato con i filtri selezionati.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -966,20 +1041,6 @@ function HomeContent() {
         )}
       </main>
 
-      {/* MODALE DI CONFERMA GENERICO (Sostituto di confirm) */}
-      {confirmModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 text-center">
-            <h3 className="text-lg font-bold text-slate-900">{confirmModal.title || 'Conferma Operazione'}</h3>
-            <p className="text-xs text-slate-600">{confirmModal.message}</p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmModal(null)} className="w-1/2 py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Annulla</button>
-              <button onClick={confirmModal.onConfirm} className="w-1/2 py-2.5 bg-rose-600 text-white font-bold text-xs rounded-xl cursor-pointer">Conferma</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* MODALE CLIENTE */}
       {modalCliente && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1032,7 +1093,7 @@ function HomeContent() {
         </div>
       )}
 
-      {/* MODALE EDIT ATTIVITÀ & RAPPORTINO TRIGGER */}
+      {/* MODALE EDIT ATTIVITÀ */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4">
@@ -1055,29 +1116,109 @@ function HomeContent() {
         </div>
       )}
 
-      {/* RAPPORTINO STAMPABILE MODALE */}
+      {/* MODALE STAMPA RRAPPORTINO PDF A4 */}
       {modalRapportino && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 text-slate-900 my-auto">
-            <div className="flex justify-between items-start border-b pb-4">
-              <div>
-                <h2 className="text-xl font-black text-slate-900">BW SOLUTIONS S.R.L.</h2>
-                <span className="text-xs text-slate-500 uppercase font-bold">Rapportino Tecnico di Intervento</span>
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 text-slate-900 my-auto shadow-2xl border border-slate-200">
+            {/* INTESTAZIONE RRAPPORTINO */}
+            <div className="flex justify-between items-start border-b border-slate-200 pb-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="bg-sky-500 text-white font-black text-lg w-8 h-8 rounded-lg flex items-center justify-center">bw</div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">BW SOLUTIONS S.R.L.</h2>
+                </div>
+                <p className="text-[10px] text-slate-500 font-medium">Ingegneria &amp; Soluzioni Industriali Enterprise</p>
               </div>
-              <span className="text-xs font-mono font-bold text-slate-400">N. #{modalRapportino.id || '1001'}</span>
+              <div className="text-right">
+                <span className="text-xs font-mono font-bold text-sky-600 bg-sky-50 px-3 py-1 rounded-lg border border-sky-100 block">RAPPORTINO N. #{modalRapportino.id || '1001'}</span>
+                <span className="text-[10px] text-slate-400 font-bold mt-1 block">Data: {getNormalizedDate(modalRapportino.data)}</span>
+              </div>
             </div>
-            <div className="bg-slate-50 p-4 rounded-2xl border text-xs space-y-1">
-              <div><strong>Cliente:</strong> {toText(modalRapportino.cliente)}</div>
-              <div><strong>Commessa:</strong> {toText(modalRapportino.progetto)}</div>
-              <div><strong>Tecnico:</strong> {toText(modalRapportino.dipendente)}</div>
-              <div><strong>Data:</strong> {getNormalizedDate(modalRapportino.data)}</div>
+
+            {/* TABELLA DATI CLIENTE & TECNICO */}
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Cliente Committente</span>
+                <span className="font-bold text-slate-900 text-sm block mt-0.5">{toText(modalRapportino.cliente)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Tecnico Esecutore</span>
+                <span className="font-bold text-slate-900 text-sm block mt-0.5">{toText(modalRapportino.dipendente)}</span>
+              </div>
+              <div className="col-span-2 pt-2 border-t border-slate-200/60">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Commessa / Descrizione Progetto</span>
+                <span className="font-bold text-slate-800 text-xs block mt-0.5">{toText(modalRapportino.progetto)}</span>
+              </div>
             </div>
-            <div className="border rounded-xl p-4 text-xs font-semibold">
-              <strong>Totale Ore Lavorate:</strong> {(Number(modalRapportino.ore || 0) + Number(modalRapportino.ore_backoffice || 0))} h
+
+            {/* TABELLA ORE ED INTERVENTI */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden text-xs">
+              <table className="w-full text-left">
+                <thead className="bg-slate-100 font-bold text-slate-700 uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3">Voce Attività</th>
+                    <th className="p-3 text-right">Ore Lavorate</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr>
+                    <td className="p-3 font-semibold text-slate-800">Ore Intervento in Cantiere</td>
+                    <td className="p-3 text-right font-bold text-slate-900">{modalRapportino.ore || 0} h</td>
+                  </tr>
+                  {Number(modalRapportino.ore_backoffice || 0) > 0 && (
+                    <tr>
+                      <td className="p-3 font-semibold text-sky-800">Ore Attività Backoffice / Progettazione</td>
+                      <td className="p-3 text-right font-bold text-sky-800">{modalRapportino.ore_backoffice} h</td>
+                    </tr>
+                  )}
+                  {Number(modalRapportino.ore_trasferta || 0) > 0 && (
+                    <tr>
+                      <td className="p-3 font-semibold text-purple-800">Ore Viaggio / Trasferta</td>
+                      <td className="p-3 text-right font-bold text-purple-800">{modalRapportino.ore_trasferta} h</td>
+                    </tr>
+                  )}
+                  {Number(modalRapportino.ore_straordinario || 0) > 0 && (
+                    <tr>
+                      <td className="p-3 font-semibold text-amber-900">Ore Straordinarie Saldate</td>
+                      <td className="p-3 text-right font-bold text-amber-900">{modalRapportino.ore_straordinario} h</td>
+                    </tr>
+                  )}
+                  <tr className="bg-slate-50 font-black text-slate-900">
+                    <td className="p-3 uppercase">TOTALE ORE INTERVENTO</td>
+                    <td className="p-3 text-right text-sm">{(Number(modalRapportino.ore || 0) + Number(modalRapportino.ore_backoffice || 0) + Number(modalRapportino.ore_straordinario || 0))} h</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div className="flex gap-2 no-print">
-              <button onClick={() => setModalRapportino(null)} className="w-1/3 py-3 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Chiudi</button>
-              <button onClick={() => { if(typeof window !== 'undefined') window.print(); }} className="w-2/3 py-3 bg-sky-600 text-white font-bold text-xs rounded-xl cursor-pointer">🖨️ Stampa / Salva in PDF</button>
+
+            {/* NOTE TECNICHE */}
+            {modalRapportino.note && (
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Note Tecniche di Cantiere</span>
+                <p className="text-slate-800 font-medium italic whitespace-pre-wrap">{toText(modalRapportino.note)}</p>
+              </div>
+            )}
+
+            {/* SEZIONE FIRME CLIENTE E TECNICO */}
+            <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-200 text-xs">
+              <div className="space-y-8">
+                <span className="font-bold text-slate-500 text-[10px] uppercase block">Firma del Tecnico Esecutore</span>
+                <div className="border-b-2 border-dashed border-slate-300 h-8 flex items-end">
+                  <span className="text-slate-400 font-serif italic text-xs">{toText(modalRapportino.dipendente)}</span>
+                </div>
+              </div>
+              <div className="space-y-8">
+                <span className="font-bold text-slate-500 text-[10px] uppercase block">Firma &amp; Timbro Cliente per Accettazione</span>
+                <div className="border-b-2 border-dashed border-slate-300 h-8"></div>
+              </div>
+            </div>
+
+            {/* BOTTONI D'AZIONE */}
+            <div className="flex gap-3 pt-4 no-print border-t border-slate-100">
+              <button onClick={() => setModalRapportino(null)} className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Chiudi</button>
+              <button onClick={() => { if(typeof window !== 'undefined') window.print(); }} className="w-2/3 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md flex items-center justify-center gap-2">
+                <span>🖨️ Stampa / Salva in PDF</span>
+              </button>
             </div>
           </div>
         </div>
