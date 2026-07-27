@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component, useMemo } from 'react';
+import React, { useState, useEffect, Component, useMemo, useRef } from 'react';
 import Head from 'next/head';
 
 class ErrorBoundary extends Component {
@@ -89,7 +89,6 @@ function isFerie(item) { return toText(item?.progetto).toLowerCase().includes('f
 function isPermesso(item) { return toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol'); }
 function isMalattia(item) { return toText(item?.progetto).toLowerCase().includes('malattia'); }
 function isAssenza(item) { return isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze'); }
-function getParentPath(path) { if (!path) return ''; const cleanPath = String(path).replace(/^\/+|\/+$/g, ''); const parts = cleanPath.split('/').filter(Boolean); if (parts.length <= 1) return ''; parts.pop(); return parts.join('/'); }
 
 function getMondayOfCurrentWeek(dateInput = new Date()) {
   const d = new Date(dateInput); const day = d.getDay();
@@ -132,13 +131,11 @@ function HomeContent() {
 
   const [aiInput, setAiInput] = useState('');
   const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
-  const [isAiTyping, setIsAiTyping] = useState(false);
 
   // ANAGRAFICA CLIENTI
   const [dbClienti, setDbClienti] = useState([]);
   const [loadingClienti, setLoadingClienti] = useState(false);
   const [modalCliente, setModalCliente] = useState(null);
-  const [searchCliente, setSearchCliente] = useState('');
 
   // COMMESSE & BUDGET
   const [dbCommesse, setDbCommesse] = useState([]);
@@ -151,7 +148,6 @@ function HomeContent() {
   const [appuntiClienteSel, setAppuntiClienteSel] = useState('');
   const [appuntiProgettoSel, setAppuntiProgettoSel] = useState('');
   const [nuovoAppuntoTesto, setNuovoAppuntoTesto] = useState('');
-  const [ricercaAppunti, setSearchAppunti] = useState('');
   const [modalNuovaNota, setModalNuovaNota] = useState(false);
 
   // RRAPPORTINI PDF SEZIONE DEDICATA
@@ -160,54 +156,32 @@ function HomeContent() {
   const [filtroRapportinoMese, setFiltroRapportinoMese] = useState(getCurrentMonthStr());
   const [searchRapportinoText, setSearchRapportinoText] = useState('');
 
-  // FORM INSERIMENTO
+  // FORM INSERIMENTO ORE
   const [categoriaForm, setCategoriaForm] = useState('lavoro');
   const [formData, setFormData] = useState({
     dipendente: 'Da Assegnare', cliente: '', progetto: '', data: getTodayStr(), data_fine: getTodayStr(),
-    usaIntervallo: false, ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, note: '', stato: 'pianificato'
+    usaIntervallo: false, ore: 8, ore_backoffice: 0, ore_trasferta: 0, ore_straordinario: 0, note: '', stato: 'consuntivo'
   });
 
   // PLANNER
   const [plannerWeekStart, setPlannerWeekStart] = useState(getMondayOfCurrentWeek());
-  const [plannerEspansi, setPlannerEspansi] = useState(() => {
-    const init = { 'Da Assegnare': true };
-    Object.values(UTENTI).forEach(u => init[u.nome] = true);
-    return init;
-  });
 
-  const [selectedItems, setSelectedItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
-  const [confirmModal, setConfirmModal] = useState(null);
 
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
 
   // FEEDBACK
   const [feedbackList, setFeedbackList] = useState([]);
-  const [loadingFeedback, setLoadingFeedback] = useState(false);
-  const [filtroArchivioAdmin, setFiltroArchivioAdmin] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' });
-  const [feedbackStatus, setFeedbackStatus] = useState(null);
 
-  // CARTELLE ATTIVITÀ
+  // CARTELLE ATTIVITÀ ACCORDION
   const [cartelleAperte, setCartelleAperte] = useState({ 'Da Assegnare': true });
-  const [sottoCartelleAperte, setSottoCartelleAperte] = useState({});
   const toggleCartella = (nome) => setCartelleAperte(prev => ({ ...prev, [nome]: !prev[nome] }));
-  const toggleSottoCartella = (key) => setSottoCartelleAperte(prev => ({ ...prev, [key]: !prev[key] }));
-
-  // NEXTCLOUD / ARUBA
-  const [searchQueryNC, setSearchQueryNC] = useState('');
-  const [risultatiNC, setRisultatiNC] = useState([]);
-  const [loadingNC, setLoadingNC] = useState(false);
-  const [errorNC, setErrorNC] = useState(null);
 
   // MODALI ED EDITING
-  const [modalDocumento, setModalDocumento] = useState(null);
   const [filtroMeseReport, setFiltroMeseReport] = useState(getCurrentMonthStr());
-  const [subTabReport, setSubTabReport] = useState('paghe');
-  const [filtroClienteFatturazione, setFiltroClienteFatturazione] = useState('Tutti');
-
   const [modalItem, setModalItem] = useState(null);
   const [modalRapportino, setModalRapportino] = useState(null);
 
@@ -220,9 +194,12 @@ function HomeContent() {
   const [progettoEffettivo, setProgettoEffettivo] = useState('');
   const [noteEffettive, setNoteEffettive] = useState('');
 
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+
   const listaDipendenti = Object.values(UTENTI).map(u => u.nome);
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
-  const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
 
   const listaClientiCompleta = useMemo(() => {
     return Array.from(new Set([...LISTA_CLIENTI_BASE, ...dbClienti.map(c => c.ragione_sociale)])).sort();
@@ -238,13 +215,6 @@ function HomeContent() {
     if (targetTab === activeTab && cleanTargetFolder === pathNC) return;
     setNavHistory(prev => [...prev, { tab: activeTab, pathNC: pathNC }]);
     setActiveTab(targetTab); setPathNC(cleanTargetFolder);
-  }
-
-  function handleGoBack() {
-    if (navHistory.length === 0) return;
-    const lastState = navHistory[navHistory.length - 1];
-    setNavHistory(prev => prev.slice(0, prev.length - 1));
-    setActiveTab(lastState.tab); setPathNC(lastState.pathNC || ''); setSearchQueryNC('');
   }
 
   const fetchClienti = async () => {
@@ -295,12 +265,6 @@ function HomeContent() {
     finally { setLoadingProgrammati(false); }
   };
 
-  const fetchFeedback = async () => {
-    setLoadingFeedback(true);
-    try { const isInclude = currentUser?.ruolo === 'admin' && filtroArchivioAdmin; const res = await fetch(`/api/feedback?includeDeleted=${isInclude ? 'true' : 'false'}&_t=${Date.now()}`); if (res.ok) { const data = await res.json(); setFeedbackList(Array.isArray(data) ? data : []); } } catch (e) { console.error("Errore feedback:", e); }
-    finally { setLoadingFeedback(false); }
-  };
-
   useEffect(() => {
     setIsMounted(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -317,7 +281,6 @@ function HomeContent() {
       fetchCommesse();
       fetchAppunti();
       fetchProgrammati();
-      fetchFeedback();
     }
   }, [currentUser, activeTab, isMounted]);
 
@@ -456,14 +419,6 @@ function HomeContent() {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  const handleInviaFeedback = async (e) => {
-    e.preventDefault(); if (!feedbackForm.messaggio.trim()) return; setLoading(true); setFeedbackStatus(null);
-    try {
-      const res = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autore: currentUser.nome, categoria: feedbackForm.categoria, valutazione: feedbackForm.valutazione, messaggio: feedbackForm.messaggio.trim() }) });
-      if (res.ok) { setFeedbackStatus({ type: 'success', text: 'Suggerimento inviato!' }); setFeedbackForm({ categoria: '💡 Nuova Funzionalità', valutazione: 5, messaggio: '' }); fetchFeedback(); }
-    } catch (e) { setFeedbackStatus({ type: 'error', text: 'Errore invio.' }); } finally { setLoading(false); }
-  };
-
   const openEditModal = (item) => {
     if (!item || !canEditItem(item)) return;
     setModalItem(item);
@@ -471,6 +426,69 @@ function HomeContent() {
     setDipendenteEffettivo(isItemDaAssegnare(item) ? (currentUser?.ruolo === 'admin' ? 'Da Assegnare' : currentUser?.nome) : item.dipendente);
     setClienteEffettivo(item.cliente || ''); setProgettoEffettivo(item.progetto || ''); setNoteEffettive(item.note || '');
   };
+
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    ctx.beginPath();
+    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    ctx.stroke();
+    setHasSignature(true);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+  };
+
+  const attivitaPerRapportiniConcluse = useMemo(() => {
+    return safeStorico.filter(item => {
+      if (!item || isAssenza(item)) return false;
+      // REGOLA ERP: Mostra solo le attività consuntivate/concluse
+      if (item.stato !== 'consuntivo') return false;
+      if (currentUser?.ruolo !== 'admin' && !matchNomeDipendente(item.dipendente, currentUser?.nome)) return false;
+      const dataStr = getNormalizedDate(item.data);
+      if (filtroRapportinoMese && !dataStr.startsWith(filtroRapportinoMese)) return false;
+      if (filtroRapportinoCliente !== 'Tutti' && item.cliente !== filtroRapportinoCliente) return false;
+      if (filtroRapportinoTecnico !== 'Tutti' && !matchNomeDipendente(item.dipendente, filtroRapportinoTecnico)) return false;
+      if (searchRapportinoText.trim()) {
+        const query = searchRapportinoText.toLowerCase();
+        const cli = toText(item.cliente).toLowerCase();
+        const prog = toText(item.progetto).toLowerCase();
+        const tech = toText(item.dipendente).toLowerCase();
+        if (!cli.includes(query) && !prog.includes(query) && !tech.includes(query)) return false;
+      }
+      return true;
+    }).sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)));
+  }, [safeStorico, filtroRapportinoMese, filtroRapportinoCliente, filtroRapportinoTecnico, searchRapportinoText, currentUser]);
 
   const exportCSVPaghe = () => {
     let csv = "Dipendente;Mese;Ore Cantiere;Ore Backoffice;Ore Trasferta;Ore Straordinario;Ore Ferie;Ore Permessi/ROL;Ore Malattia;Totale Ore\n";
@@ -498,26 +516,6 @@ function HomeContent() {
   const mieAttivitaArretrato = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
   const mieAttivitaProssime = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
   const giorniSettimanaPlanner = get7DaysOfWeek(plannerWeekStart);
-
-  // LISTA ATTIVITÀ FILTRATE PER RRAPPORTINI PDF
-  const attivitaPerRapportini = useMemo(() => {
-    return safeStorico.filter(item => {
-      if (!item || isAssenza(item)) return false;
-      if (currentUser?.ruolo !== 'admin' && !matchNomeDipendente(item.dipendente, currentUser?.nome)) return false;
-      const dataStr = getNormalizedDate(item.data);
-      if (filtroRapportinoMese && !dataStr.startsWith(filtroRapportinoMese)) return false;
-      if (filtroRapportinoCliente !== 'Tutti' && item.cliente !== filtroRapportinoCliente) return false;
-      if (filtroRapportinoTecnico !== 'Tutti' && !matchNomeDipendente(item.dipendente, filtroRapportinoTecnico)) return false;
-      if (searchRapportinoText.trim()) {
-        const query = searchRapportinoText.toLowerCase();
-        const cli = toText(item.cliente).toLowerCase();
-        const prog = toText(item.progetto).toLowerCase();
-        const tech = toText(item.dipendente).toLowerCase();
-        if (!cli.includes(query) && !prog.includes(query) && !tech.includes(query)) return false;
-      }
-      return true;
-    }).sort((a, b) => new Date(getNormalizedDate(b.data)) - new Date(getNormalizedDate(a.data)));
-  }, [safeStorico, filtroRapportinoMese, filtroRapportinoCliente, filtroRapportinoTecnico, searchRapportinoText, currentUser]);
 
   if (!isMounted) return null;
 
@@ -580,14 +578,13 @@ function HomeContent() {
               {(mostraDaAssegnare && daAssegnareItems.length > 0) && <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
             
-            {/* NUOVA SEZIONE DEDICATA RRAPPORTINI PDF */}
+            {/* SEZIONE DEDICATA RRAPPORTINI PDF */}
             <button onClick={() => navigateTo('rapportini')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'rapportini' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📄 Rapportini PDF</button>
 
             <button onClick={() => navigateTo('commesse')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'commesse' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📐 Commesse &amp; Budget</button>
             <button onClick={() => navigateTo('anagrafiche')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'anagrafiche' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏢 Anagrafiche</button>
             <button onClick={() => navigateTo('appunti')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'appunti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📓 Appunti/PDM</button>
             <button onClick={() => navigateTo('documenti', pathNC)} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'documenti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📂 Cloud Aruba</button>
-            <button onClick={() => navigateTo('feedback')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'feedback' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>💡 Feedback</button>
             {currentUser?.ruolo === 'admin' && (
               <button onClick={() => navigateTo('cruscotto')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'cruscotto' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📊 Reportistica</button>
             )}
@@ -802,7 +799,9 @@ function HomeContent() {
                         <div className="text-[10px] text-slate-500">{getNormalizedDate(item.data)} ({item.ore}h)</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); setModalRapportino(item); }} className="px-2.5 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg cursor-pointer">📄 PDF</button>
+                        {item.stato === 'consuntivo' && (
+                          <button onClick={(e) => { e.stopPropagation(); setModalRapportino(item); }} className="px-2.5 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg cursor-pointer">📄 PDF</button>
+                        )}
                         <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-lg">Assegna ➔</span>
                       </div>
                     </div>
@@ -838,7 +837,7 @@ function HomeContent() {
                               <div className="text-[11px] text-slate-500">{item.progetto} ({getNormalizedDate(item.data)})</div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {!isAssenza(item) && (
+                              {!isAssenza(item) && item.stato === 'consuntivo' && (
                                 <button onClick={() => setModalRapportino(item)} className="bg-slate-900 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg hover:bg-slate-800 cursor-pointer">📄 Rapportino PDF</button>
                               )}
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.stato === 'consuntivo' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
@@ -857,14 +856,14 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB RRAPPORTINI PDF (SEZIONE DEDICATA) */}
+        {/* TAB RRAPPORTINI PDF (SEZIONE DEDICATA CON FILTRO SOLO ATTIVITÀ CONCLUSE) */}
         {activeTab === 'rapportini' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">📄 Centro Stampa Rapportini di Lavoro (PDF)</h2>
-                  <p className="text-xs text-slate-500 mt-1">Genera, visualizza e stampa i rapportini tecnici ufficiali con la firma del cliente.</p>
+                  <p className="text-xs text-slate-500 mt-1">Genera e stampa i rapportini tecnici delle <strong>sole attività già svolte e consuntivate</strong> con firma digitale touch del cliente.</p>
                 </div>
               </div>
 
@@ -898,7 +897,7 @@ function HomeContent() {
 
               {/* GRIGLIA INTERVENTI PRONTI PER RRAPPORTINO */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {attivitaPerRapportini.map((item, idx) => (
+                {attivitaPerRapportiniConcluse.map((item, idx) => (
                   <div key={item.id || idx} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-sky-400 shadow-xs transition-all space-y-3 flex flex-col justify-between">
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-start">
@@ -909,19 +908,19 @@ function HomeContent() {
                       <div className="text-xs text-slate-500 flex items-center gap-2">
                         <span>👤 {toText(item.dipendente)}</span>
                         <span>•</span>
-                        <span className="font-bold text-slate-800">⏱️ {(Number(item.ore || 0) + Number(item.ore_backoffice || 0))} Ore Totali</span>
+                        <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">✅ Consuntivato ({(Number(item.ore || 0) + Number(item.ore_backoffice || 0))}h)</span>
                       </div>
                       {item.note && <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2 rounded-lg line-clamp-2">📝 {toText(item.note)}</p>}
                     </div>
                     
                     <button onClick={() => setModalRapportino(item)} className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs">
-                      <span>📄 Genera &amp; Stampa Rapportino PDF</span>
+                      <span>✍️ Apri e Firma Rapportino PDF</span>
                     </button>
                   </div>
                 ))}
-                {attivitaPerRapportini.length === 0 && (
+                {attivitaPerRapportiniConcluse.length === 0 && (
                   <div className="col-span-full p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-400">
-                    Nessun intervento lavorativo trovato con i filtri selezionati.
+                    Nessun intervento concluso (consuntivato) trovato con i filtri selezionati. Le attività "In programma" non possono generare rapportini ufficiali.
                   </div>
                 )}
               </div>
@@ -1019,17 +1018,6 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB FEEDBACK */}
-        {activeTab === 'feedback' && (
-          <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
-            <h2 className="text-xl font-bold text-slate-900">💡 Feedback &amp; Suggerimenti App</h2>
-            <form onSubmit={handleInviaFeedback} className="space-y-4">
-              <textarea rows={3} value={feedbackForm.messaggio} onChange={e => setFeedbackForm({ ...feedbackForm, messaggio: e.target.value })} placeholder="Scrivi un suggerimento..." className="w-full p-3 border border-slate-200 rounded-xl text-xs outline-none"></textarea>
-              <button type="submit" className="bg-sky-600 text-white font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer">Invia Messaggio</button>
-            </form>
-          </div>
-        )}
-
         {/* TAB REPORTISTICA */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
@@ -1108,7 +1096,9 @@ function HomeContent() {
               <div><label className="font-bold text-slate-500">Note Intervento</label><textarea rows={2} value={noteEffettive} onChange={e=>setNoteEffettive(e.target.value)} className="w-full p-3 border rounded-xl"></textarea></div>
             </div>
             <div className="flex gap-2 flex-wrap pt-2">
-              <button onClick={() => { setModalRapportino(modalItem); setModalItem(null); }} className="w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl cursor-pointer">📄 Genera Rapportino PDF</button>
+              {modalItem.stato === 'consuntivo' && (
+                <button onClick={() => { setModalRapportino(modalItem); setModalItem(null); }} className="w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl cursor-pointer">✍️ Apri e Firma Rapportino PDF</button>
+              )}
               <button onClick={() => setModalItem(null)} className="w-1/3 py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Chiudi</button>
               <button onClick={handleConfermaChiudi} className="w-2/3 py-2.5 bg-sky-600 text-white font-bold text-xs rounded-xl cursor-pointer">Salva Modifiche</button>
             </div>
@@ -1116,7 +1106,7 @@ function HomeContent() {
         </div>
       )}
 
-      {/* MODALE STAMPA RRAPPORTINO PDF A4 */}
+      {/* MODALE STAMPA RRAPPORTINO PDF A4 CON FIRMA DIGITALE TOUCH */}
       {modalRapportino && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 space-y-6 text-slate-900 my-auto shadow-2xl border border-slate-200">
@@ -1199,17 +1189,42 @@ function HomeContent() {
               </div>
             )}
 
-            {/* SEZIONE FIRME CLIENTE E TECNICO */}
-            <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-200 text-xs">
-              <div className="space-y-8">
+            {/* SEZIONE FIRME CLIENTE E TECNICO CON CANVAS TOUCH */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-slate-200 text-xs">
+              <div className="space-y-4">
                 <span className="font-bold text-slate-500 text-[10px] uppercase block">Firma del Tecnico Esecutore</span>
-                <div className="border-b-2 border-dashed border-slate-300 h-8 flex items-end">
-                  <span className="text-slate-400 font-serif italic text-xs">{toText(modalRapportino.dipendente)}</span>
+                <div className="border-b-2 border-dashed border-slate-300 h-16 flex items-end pb-1">
+                  <span className="text-slate-600 font-serif italic text-sm">{toText(modalRapportino.dipendente)}</span>
                 </div>
               </div>
-              <div className="space-y-8">
-                <span className="font-bold text-slate-500 text-[10px] uppercase block">Firma &amp; Timbro Cliente per Accettazione</span>
-                <div className="border-b-2 border-dashed border-slate-300 h-8"></div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-700 text-[10px] uppercase block">Firma &amp; Timbro Cliente (Touch / Pennino)</span>
+                  {hasSignature && (
+                    <button type="button" onClick={clearSignature} className="text-[10px] text-rose-600 font-bold hover:underline cursor-pointer">Cancella Firma</button>
+                  )}
+                </div>
+                <div className="border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 overflow-hidden relative">
+                  <canvas 
+                    ref={canvasRef} 
+                    width={280} 
+                    height={90} 
+                    onMouseDown={startDrawing} 
+                    onMouseMove={draw} 
+                    onMouseUp={stopDrawing} 
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing} 
+                    onTouchMove={draw} 
+                    onTouchEnd={stopDrawing}
+                    className="w-full h-20 bg-white cursor-crosshair touch-none"
+                  />
+                  {!hasSignature && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-[10px] text-slate-400 font-medium">
+                      Firma con il dito o mouse qui
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
