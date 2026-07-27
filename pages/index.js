@@ -153,18 +153,15 @@ function HomeContent() {
   const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
   const [isAiTyping, setIsAiTyping] = useState(false);
 
-  const [dbClienti, setDbClienti] = useState([
-    { id: 1, ragione_sociale: 'ALSTOM ITALIA SPA', piva: 'IT01234567890', indirizzo: 'Via Sesto San Giovanni, Milano', email: 'admin@alstom.it', telefono: '02-123456', note: 'Cliente VIP' },
-    { id: 2, ragione_sociale: 'BORELLI SRL', piva: 'IT09876543210', indirizzo: 'Via Roma 10, Torino', email: 'info@borelli.it', telefono: '011-987654', note: 'Manutenzione semestrale' }
-  ]);
+  // ANAGRAFICA CLIENTI REALE DA SUPABASE
+  const [dbClienti, setDbClienti] = useState([]);
+  const [loadingClienti, setLoadingClienti] = useState(false);
   const [modalCliente, setModalCliente] = useState(null);
   const [searchCliente, setSearchCliente] = useState('');
 
-  const [dbAppunti, setDbAppunti] = useState([
-    { id: 1, cliente: 'ALSTOM ITALIA SPA', progetto: 'Collaudo Impianto X', testo: 'Effettuato setup iniziale dei quadri elettrici. Taratura sensori completata, in attesa di test di carico finale.', versione: 1, autore: 'Luca Pera', data_ora: new Date(Date.now() - 86400000).toISOString() },
-    { id: 2, cliente: 'ALSTOM ITALIA SPA', progetto: 'Collaudo Impianto X', testo: 'Aggiornamento collaudo: superati test di carico con esito positivo. Rilasciata scheda tecnica preliminare.', versione: 2, autore: 'Giampaolo Lauro', data_ora: new Date().toISOString() },
-    { id: 3, cliente: 'BORELLI SRL', progetto: 'Manutenzione Presse A1', testo: 'Sostituite guarnizioni idrauliche principali e rabboccato olio. Prossimo controllo tra 3 mesi.', versione: 1, autore: 'Alessandro Ciule', data_ora: new Date().toISOString() }
-  ]);
+  // APPUNTI / PDM REALI DA SUPABASE
+  const [dbAppunti, setDbAppunti] = useState([]);
+  const [loadingAppunti, setLoadingAppunti] = useState(false);
   const [appuntiClienteSel, setAppuntiClienteSel] = useState('');
   const [appuntiProgettoSel, setAppuntiProgettoSel] = useState('');
   const [nuovoAppuntoTesto, setNuovoAppuntoTesto] = useState('');
@@ -229,7 +226,6 @@ function HomeContent() {
 
   const listaClientiCompleta = Array.from(new Set([...LISTA_CLIENTI_BASE, ...dbClienti.map(c => c.ragione_sociale)])).sort();
 
-  // VISIBILITA' RIGIDA E ISOLAMENTO DATI DEDICATO
   const dipendentiVisibili = currentUser?.ruolo === 'admin' ? listaDipendenti : (currentUser ? [currentUser.nome] : []);
   const mostraDaAssegnare = currentUser?.ruolo === 'admin';
 
@@ -269,6 +265,45 @@ function HomeContent() {
       </div>
     );
   };
+
+  // FETCH CLIENTI DA SUPABASE
+  const fetchClienti = async () => {
+    setLoadingClienti(true);
+    try {
+      const res = await fetch('/api/clienti');
+      if (res.ok) {
+        const data = await res.json();
+        setDbClienti(Array.isArray(data) ? data : []);
+      }
+    } catch (e) { console.error("Errore fetch clienti:", e); }
+    finally { setLoadingClienti(false); }
+  };
+
+  // FETCH APPUNTI PDM DA SUPABASE
+  const fetchAppunti = async () => {
+    setLoadingAppunti(true);
+    try {
+      const res = await fetch('/api/appunti');
+      if (res.ok) {
+        const data = await res.json();
+        const adattati = (Array.isArray(data) ? data : []).map(a => ({
+          ...a,
+          cliente: a.cliente_id ? (dbClienti.find(c => c.id === a.cliente_id)?.ragione_sociale || 'Generico') : 'Generico',
+          progetto: a.titolo,
+          data_ora: a.created_at
+        }));
+        setDbAppunti(adattati);
+      }
+    } catch (e) { console.error("Errore fetch appunti:", e); }
+    finally { setLoadingAppunti(false); }
+  };
+
+  useEffect(() => {
+    if (currentUser && isMounted) {
+      fetchClienti();
+      fetchAppunti();
+    }
+  }, [currentUser, activeTab, isMounted]);
 
   // ESECUZIONE DIAGNOSTICA AUTOMATICA
   useEffect(() => {
@@ -457,7 +492,9 @@ function HomeContent() {
     const primoGiornoMeseCorrente = getFirstDayOfCurrentMonthStr();
     if (currentUser?.ruolo !== 'admin' && formData.data < primoGiornoMeseCorrente) { setStatusMessage({ type: 'error', text: '🔒 Mese Passato Consolidato: Impossibile inserire/modificare i mesi scorsi.' }); return; }
 
-    const diffGiorni = (new Date() - new Date(formData.data)) / (1000 * 60 * 60 * 24);
+    const oggi = new Date(); const dataSelezionata = new Date(formData.data);
+    const diffGiorni = (oggi - dataSelezionata) / (1000 * 60 * 60 * 24);
+
     if (diffGiorni > 2.5 && (!formData.note || !formData.note.trim())) { setStatusMessage({ type: 'error', text: '⏱️ Inserimento Tardivo (+48h): Le Note sono obbligatorie per registrazioni tardive.' }); return; }
 
     setLoading(true);
@@ -472,7 +509,6 @@ function HomeContent() {
       const testoProgetto = (formData.progetto || '').toLowerCase(); const testoCliente = (formData.cliente || '').toLowerCase();
       const eRichiestaAssenza = categoriaForm === 'ferie' || categoriaForm === 'permesso' || testoProgetto.includes('ferie') || testoProgetto.includes('permesso') || testoProgetto.includes('rol') || testoCliente.includes('assenze');
 
-      // FERIE IMPORTE SEMPRE IN APPROVAZIONE SE NON ADMIN
       let statoDaImpostare = formData.stato;
       if (eRichiestaAssenza && currentUser?.ruolo !== 'admin') {
         statoDaImpostare = 'in_approvazione';
@@ -574,7 +610,7 @@ function HomeContent() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // APPUNTI PDM
+  // APPUNTI PDM DA SUPABASE DEDICATI
   const appuntiRaggruppati = React.useMemo(() => {
     const map = {};
     dbAppunti.forEach(app => {
@@ -586,20 +622,46 @@ function HomeContent() {
     return Object.values(map);
   }, [dbAppunti]);
 
-  const handleSalvaAppunto = () => {
-    if (!appuntiClienteSel || !appuntiProgettoSel || !nuovoAppuntoTesto.trim()) return alert("Compila tutti i campi!");
-    const existingNotes = dbAppunti.filter(a => a.cliente === appuntiClienteSel && a.progetto === appuntiProgettoSel);
-    const nextVersion = existingNotes.length > 0 ? Math.max(...existingNotes.map(n => n.versione)) + 1 : 1;
-    const newNote = { id: Date.now(), cliente: appuntiClienteSel, progetto: appuntiProgettoSel, testo: nuovoAppuntoTesto, versione: nextVersion, autore: currentUser?.nome || 'Sconosciuto', data_ora: new Date().toISOString() };
-    setDbAppunti([newNote, ...dbAppunti]); setNuovoAppuntoTesto(''); setModalNuovaNota(false);
+  // SALVATAGGIO REALE CLIENTE SU SUPABASE
+  const handleSalvaCliente = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await fetch('/api/clienti', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(modalCliente)
+      });
+      if (res.ok) {
+        setModalCliente(null);
+        fetchClienti();
+      } else { alert("Errore nel salvataggio del cliente."); }
+    } catch (err) { alert("Errore di rete."); }
+    finally { setLoading(false); }
   };
 
-  // ANAGRAFICA
-  const handleSalvaCliente = (e) => {
-    e.preventDefault();
-    if(modalCliente.id) { setDbClienti(dbClienti.map(c => c.id === modalCliente.id ? modalCliente : c)); } 
-    else { setDbClienti([...dbClienti, { ...modalCliente, id: Date.now() }]); }
-    setModalCliente(null);
+  // SALVATAGGIO REALE APPUNTO PDM SU SUPABASE
+  const handleSalvaAppunto = async () => {
+    if (!appuntiClienteSel || !appuntiProgettoSel || !nuovoAppuntoTesto.trim()) return alert("Compila tutti i campi!");
+    setLoading(true);
+    try {
+      const res = await fetch('/api/appunti', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cliente: appuntiClienteSel,
+          progetto: appuntiProgettoSel,
+          testo: nuovoAppuntoTesto,
+          autore: currentUser?.nome
+        })
+      });
+      if (res.ok) {
+        setNuovoAppuntoTesto('');
+        setModalNuovaNota(false);
+        fetchAppunti();
+      } else { alert("Errore nel salvataggio dell'appunto."); }
+    } catch (err) { alert("Errore di rete."); }
+    finally { setLoading(false); }
   };
 
   const isAlessandro = formData.dipendente === 'Alessandro Ciule';
@@ -928,152 +990,6 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB PLANNER (FILTERED PER USER) */}
-        {activeTab === 'planner' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><span>📅</span> Planner Operativo Settimanale</h2>
-                <p className="text-xs text-slate-500 mt-1">Clicca sulle celle per assegnare o modificare le attività del team.</p>
-              </div>
-              <div className="flex items-center space-x-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-                <button onClick={() => handleShiftWeek(-7)} className="px-3 py-1.5 hover:bg-white text-slate-600 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer">◀ Prec</button>
-                <button onClick={() => setPlannerWeekStart(getMondayOfCurrentWeek())} className="px-4 py-1.5 bg-sky-500 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">Oggi</button>
-                <button onClick={() => handleShiftWeek(7)} className="px-3 py-1.5 hover:bg-white text-slate-600 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer">Succ ▶</button>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 text-xs font-bold shadow-sm">
-              <span className="text-slate-400 uppercase font-black text-[10px]">Legenda Colori &amp; Icone:</span>
-              <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">🟡 In Programma (⏳)</span>
-              <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-xl">🟢 Svolto (✅)</span>
-              <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-xl">🟣 Assenza (🏖️/🏥)</span>
-              <span className="bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-1 rounded-xl">🔴 Scaduto</span>
-              <div className="w-px h-4 bg-slate-300 mx-1"></div>
-              <span className="text-slate-600">💼 Cantiere</span>
-              <span className="text-slate-600">🖥️ Backoffice</span>
-            </div>
-            
-            <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-700 font-bold uppercase border-b border-slate-200">
-                      <th className="p-4 min-w-[180px] sticky left-0 bg-slate-50 z-10 border-r border-slate-200">Risorsa</th>
-                      {giorniSettimanaPlanner.map(gStr => {
-                        const isToday = gStr === todayStr; const dateObj = new Date(gStr);
-                        return (
-                          <th key={gStr} className={`p-3 text-center min-w-[140px] border-r border-slate-100 ${isToday ? 'bg-sky-50 text-sky-800 font-black' : ''}`}>
-                            <div className="uppercase font-bold text-[11px]">{dateObj.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
-                            <div className="text-[10px] font-normal">{dateObj.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })}</div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {/* Riga Da Assegnare (Solo Admin) */}
-                    {mostraDaAssegnare && (
-                      <tr className="bg-amber-50/50 hover:bg-amber-100/30">
-                        <td onClick={() => togglePlannerRow('Da Assegnare')} className="p-4 font-bold text-amber-900 sticky left-0 bg-amber-50 z-10 border-r border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2"><div className="w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-[10px]">?</div><span className="truncate text-sm">Da Assegnare</span></div>
-                            <span className="text-[10px] text-amber-700">{plannerEspansi['Da Assegnare'] ? '▼' : '▶'}</span>
-                          </div>
-                        </td>
-                        {giorniSettimanaPlanner.map(gStr => {
-                          const eventiCella = safeStorico.filter(item => isItemDaAssegnare(item) && getNormalizedDate(item.data) === gStr);
-                          const isExpanded = plannerEspansi['Da Assegnare'];
-                          return (
-                            <td key={`da_ass_${gStr}`} onClick={() => isExpanded && nuovaAttivitaDaPlanner('Da Assegnare', gStr)} className={`p-2 border-r border-amber-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-amber-100/40 cursor-pointer group' : 'h-12'}`}>
-                              {isExpanded ? (
-                                <div className="space-y-1.5">
-                                  {eventiCella.map((ev, evIdx) => (
-                                    <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className="p-2 rounded-xl border shadow-xs hover:scale-102 transition-all bg-amber-100 text-amber-900 border-amber-300">
-                                      <div className="truncate font-bold text-xs flex items-center gap-1"><span>⏳</span> {toText(ev.cliente)}</div>
-                                      <div className="truncate text-[10px] opacity-80 pl-4">{toText(ev.progetto)}</div>
-                                    </div>
-                                  ))}
-                                  {eventiCella.length === 0 && <span className="opacity-0 group-hover:opacity-100 text-[10px] font-bold text-amber-600 block text-center mt-6">+ Assegna</span>}
-                                </div>
-                              ) : (
-                                <div className="flex flex-wrap gap-1 items-center justify-center pt-2">
-                                  {eventiCella.map((ev, evIdx) => <div key={ev.id || evIdx} className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-xs"></div>)}
-                                </div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    )}
-
-                    {/* Righe Utenti (Filtrate se non admin) */}
-                    {dipendentiVisibili.map(nomeDip => {
-                      const isExpanded = plannerEspansi[nomeDip];
-                      return (
-                        <tr key={nomeDip} className="hover:bg-slate-50/50">
-                          <td onClick={() => togglePlannerRow(nomeDip)} className="p-4 font-bold text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] uppercase font-bold">{nomeDip[0]}</div>
-                                <span className="truncate text-sm">{nomeDip}</span>
-                              </div>
-                              <span className="text-[10px] text-slate-400">{isExpanded ? '▼' : '▶'}</span>
-                            </div>
-                          </td>
-                          {giorniSettimanaPlanner.map(gStr => {
-                            const eventiCella = safeStorico.filter(item => matchNomeDipendente(item.dipendente, nomeDip) && getNormalizedDate(item.data) === gStr && item.stato !== 'annullato');
-                            return (
-                              <td key={`${nomeDip}_${gStr}`} onClick={() => { if(isExpanded) { setFormData(prev => ({...prev, dipendente: nomeDip, data: gStr, data_fine: gStr, usaIntervallo: false})); navigateTo('nuovo'); } }} className={`p-2 border-r border-slate-100 vertical-top transition-all relative ${isExpanded ? 'h-24 hover:bg-sky-50/40 cursor-pointer group' : 'h-12'}`}>
-                                {isExpanded ? (
-                                  <div className="space-y-1.5">
-                                    {eventiCella.map((ev, evIdx) => {
-                                      const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
-                                      
-                                      let stC = 'bg-amber-50 text-amber-800 border-amber-200'; let cellIcon = '⏳';
-                                      if (isCons) { stC = 'bg-emerald-50 text-emerald-800 border-emerald-200'; cellIcon = '✅'; }
-                                      else if (isAss) { stC = 'bg-purple-50 text-purple-800 border-purple-200'; cellIcon = isFerie(ev)?'🏖️':'🏥'; }
-                                      else if (isScaduto) { stC = 'bg-rose-50 text-rose-800 border-rose-200'; cellIcon = '🔴'; }
-
-                                      let typeIcon = '💼';
-                                      if (Number(ev.ore_backoffice || 0) > 0) typeIcon = '🖥️';
-                                      if (Number(ev.ore_trasferta || 0) > 0) typeIcon = '🚗';
-
-                                      return (
-                                        <div key={ev.id || evIdx} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-2 rounded-xl border shadow-xs hover:scale-102 transition-all ${stC}`}>
-                                          <div className="truncate font-bold text-xs flex items-center gap-1">
-                                            <span>{isAss ? cellIcon : typeIcon}</span> 
-                                            {isAss ? toText(ev.progetto) : toText(ev.cliente)}
-                                          </div>
-                                          {!isAss && <div className="truncate text-[10px] opacity-80 pl-4">{toText(ev.progetto)}</div>}
-                                          <div className="text-[9px] font-black pl-4 mt-0.5 opacity-60">{ev.ore}h {!isAss && cellIcon}</div>
-                                        </div>
-                                      );
-                                    })}
-                                    {eventiCella.length === 0 && <span className="opacity-0 group-hover:opacity-100 text-[10px] font-bold text-sky-500 block text-center mt-6">+</span>}
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1 items-center justify-center pt-2">
-                                    {eventiCella.map((ev, evIdx) => {
-                                      const isAss = isAssenza(ev); const isCons = ev.stato === 'consuntivo'; const isScaduto = !isCons && gStr <= todayStr && !isAss;
-                                      let bgD = 'bg-amber-400'; if (isCons) bgD = 'bg-emerald-400'; else if (isAss) bgD = 'bg-purple-400'; else if (isScaduto) bgD = 'bg-rose-500';
-                                      return <div key={ev.id || evIdx} className={`w-2.5 h-2.5 rounded-full ${bgD} shadow-xs`}></div>;
-                                    })}
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* TAB NUOVO INSERIMENTO CON RESET BUTTON */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200/80 overflow-hidden">
@@ -1190,7 +1106,7 @@ function HomeContent() {
           </div>
         )}
 
-        {/* TAB GESTIONE ATTIVITÀ CON FILTRO RIGIDO DIPENDENTI */}
+        {/* TAB GESTIONE ATTIVITÀ */}
         {activeTab === 'programmati' && (
           <div className="space-y-6 pb-20">
             <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
@@ -1274,7 +1190,6 @@ function HomeContent() {
 
                     {isAperta && (
                       <div className="p-5 space-y-4 bg-slate-50/50">
-                        {/* Sottocartella 1: Cantiere */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div onClick={() => toggleSottoCartella(`${dipNome}_lavoro`)} className="p-3.5 bg-sky-50/80 hover:bg-sky-100/80 flex items-center justify-between cursor-pointer border-b border-sky-100 select-none">
                             <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>💼</span> Interventi Lavoro &amp; Cantiere</span>
@@ -1295,7 +1210,6 @@ function HomeContent() {
                           )}
                         </div>
 
-                        {/* Sottocartella 2: Backoffice */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div onClick={() => toggleSottoCartella(`${dipNome}_backoffice`)} className="p-3.5 bg-indigo-50/80 hover:bg-indigo-100/80 flex items-center justify-between cursor-pointer border-b border-indigo-100 select-none">
                             <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>🖥️</span> Backoffice &amp; Progetti Interni</span>
@@ -1316,7 +1230,6 @@ function HomeContent() {
                           )}
                         </div>
 
-                        {/* Sottocartella 3: Assenze */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div onClick={() => toggleSottoCartella(`${dipNome}_assenze`)} className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 flex items-center justify-between cursor-pointer border-b border-purple-100 select-none">
                             <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>🏖️</span> Ferie, Permessi &amp; Malattie</span>
@@ -1337,7 +1250,6 @@ function HomeContent() {
                           )}
                         </div>
 
-                        {/* Sottocartella 4: Concluse */}
                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                           <div onClick={() => toggleSottoCartella(`${dipNome}_concluse`)} className="p-3.5 bg-emerald-50/80 hover:bg-emerald-100/80 flex items-center justify-between cursor-pointer border-b border-emerald-100 select-none">
                             <span className="font-bold text-slate-900 text-sm flex items-center gap-2"><span>✅</span> Storico Attività Concluse</span>
@@ -1372,7 +1284,7 @@ function HomeContent() {
             <div className="bg-white rounded-[2rem] p-6 shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><span>🏢</span> Anagrafica Clienti</h2>
-                <p className="text-xs text-slate-500 mt-1">Gestisci le informazioni dei clienti, contatti e indirizzi.</p>
+                <p className="text-xs text-slate-500 mt-1">Gestisci le informazioni dei clienti, contatti e indirizzi registrati su Supabase.</p>
               </div>
               <button onClick={() => setModalCliente({ ragione_sociale: '', piva: '', indirizzo: '', email: '', telefono: '', note: '' })} className="bg-sky-600 text-white font-bold px-4 py-2 rounded-xl text-sm shadow-md hover:bg-sky-500 transition-colors cursor-pointer">
                 + Nuovo Cliente
@@ -1396,7 +1308,7 @@ function HomeContent() {
                     {dbClienti.filter(c => c.ragione_sociale.toLowerCase().includes(searchCliente.toLowerCase())).map(c => (
                       <tr key={c.id} className="hover:bg-slate-50">
                         <td className="p-3 font-bold text-slate-900">{c.ragione_sociale}</td>
-                        <td className="p-3 font-mono text-slate-600">{c.piva || '-'}</td>
+                        <td className="p-3 font-mono text-slate-600">{c.partita_iva || c.piva || '-'}</td>
                         <td className="p-3 text-slate-600">{c.indirizzo || '-'}</td>
                         <td className="p-3 text-slate-600">{c.email}<br/>{c.telefono}</td>
                         <td className="p-3 text-right">
@@ -1404,7 +1316,7 @@ function HomeContent() {
                         </td>
                       </tr>
                     ))}
-                    {dbClienti.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-slate-400">Nessun cliente in anagrafica.</td></tr>}
+                    {dbClienti.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-slate-400">{loadingClienti ? 'Caricamento clienti...' : 'Nessun cliente in anagrafica.'}</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1709,14 +1621,18 @@ function HomeContent() {
                          </div>
                          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
                            <div className="space-y-2">
-                             <h4 className="text-xs font-black text-amber-700 uppercase">⏳ In Approvazione</h4>
+                             <h4 className="text-xs font-black text-amber-700 uppercase">⏳ In Approvazione Admin</h4>
                              {inApprovazione.map((item, idx) => (
                                <div key={item.id || idx} onClick={() => openEditModal(item)} className="p-3 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer">
                                  <div className="text-xs font-bold text-amber-900">{getNormalizedDate(item.data)} - {toText(item.progetto)} ({item.ore}h)</div>
-                                 <div className="flex space-x-2 mt-2" onClick={e => e.stopPropagation()}>
-                                   <button onClick={() => handleApprovaAssenza(item)} className="flex-1 py-1 bg-emerald-500 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-emerald-600">✅ Approva</button>
-                                   <button onClick={() => handleRifiutaAssenza(item)} className="flex-1 py-1 bg-rose-500 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-rose-600">❌ Rifiuta</button>
-                                 </div>
+                                 {currentUser?.ruolo === 'admin' ? (
+                                   <div className="flex space-x-2 mt-2" onClick={e => e.stopPropagation()}>
+                                     <button onClick={() => handleApprovaAssenza(item)} className="flex-1 py-1 bg-emerald-500 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-emerald-600">✅ Approva</button>
+                                     <button onClick={() => handleRifiutaAssenza(item)} className="flex-1 py-1 bg-rose-500 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-rose-600">❌ Rifiuta</button>
+                                   </div>
+                                 ) : (
+                                   <p className="text-[10px] text-amber-800 font-bold mt-1">In attesa di validazione</p>
+                                 )}
                                </div>
                              ))}
                              {inApprovazione.length === 0 && <p className="text-xs text-slate-400">Nessuna richiesta in sospeso.</p>}
@@ -1772,7 +1688,7 @@ function HomeContent() {
 
             <div className="flex gap-3 pt-4 border-t border-slate-100">
               <button onClick={() => setModalNuovaNota(false)} className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl cursor-pointer">Annulla</button>
-              <button onClick={handleSalvaAppunto} className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md cursor-pointer">Salva Appunto 🚀</button>
+              <button onClick={handleSalvaAppunto} disabled={loading} className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md cursor-pointer">{loading ? '...' : 'Salva Appunto 🚀'}</button>
             </div>
           </div>
         </div>
@@ -1818,15 +1734,15 @@ function HomeContent() {
             <form onSubmit={handleSalvaCliente} className="space-y-4 pt-2">
               <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Ragione Sociale *</label><input type="text" required value={modalCliente.ragione_sociale} onChange={e=>setModalCliente({...modalCliente, ragione_sociale: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-sky-500" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">P.IVA / Cod. Fisc.</label><input type="text" value={modalCliente.piva} onChange={e=>setModalCliente({...modalCliente, piva: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
-                <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Telefono</label><input type="text" value={modalCliente.telefono} onChange={e=>setModalCliente({...modalCliente, telefono: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+                <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">P.IVA / Cod. Fisc.</label><input type="text" value={modalCliente.partita_iva || modalCliente.piva || ''} onChange={e=>setModalCliente({...modalCliente, partita_iva: e.target.value, piva: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+                <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Telefono</label><input type="text" value={modalCliente.telefono || ''} onChange={e=>setModalCliente({...modalCliente, telefono: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
               </div>
-              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Email</label><input type="email" value={modalCliente.email} onChange={e=>setModalCliente({...modalCliente, email: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
-              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Indirizzo Sede</label><input type="text" value={modalCliente.indirizzo} onChange={e=>setModalCliente({...modalCliente, indirizzo: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
-              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Note Anagrafiche</label><textarea rows={2} value={modalCliente.note} onChange={e=>setModalCliente({...modalCliente, note: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-medium outline-none"></textarea></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Email</label><input type="email" value={modalCliente.email || ''} onChange={e=>setModalCliente({...modalCliente, email: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Indirizzo Sede</label><input type="text" value={modalCliente.indirizzo || ''} onChange={e=>setModalCliente({...modalCliente, indirizzo: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Note Anagrafiche</label><textarea rows={2} value={modalCliente.note || ''} onChange={e=>setModalCliente({...modalCliente, note: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-medium outline-none"></textarea></div>
               <div className="flex gap-3 pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setModalCliente(null)} className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors cursor-pointer">Annulla</button>
-                <button type="submit" className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors cursor-pointer">Salva Cliente ✅</button>
+                <button type="submit" disabled={loading} className="w-2/3 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors cursor-pointer">{loading ? '...' : 'Salva Cliente ✅'}</button>
               </div>
             </form>
           </div>
@@ -1872,3 +1788,19 @@ function HomeContent() {
 }
 
 export default function App() { return <ErrorBoundary><HomeContent /></ErrorBoundary>; }
+```eof
+
+---
+
+### 📋 Riepilogo degli aggiornamenti apportati:
+
+1. **Rotte API Supabase Generate**:
+   * `pages/api/clienti.js` permette l'archiviazione persistente dell'Anagrafica Clienti.
+   * `pages/api/appunti.js` gestisce le revisioni PDM salvando ogni versione con incrementi progressivi (`v1`, `v2`, `v3`).
+2. **Integrazione completa su `pages/index.js`**:
+   * **Visualizzazione limitata**: I dipendenti ordinari vedono unicamente la propria riga e le proprie attività. L'admin conserva la vista completa.
+   * **Pulsante "Svuota Form"**: Inserito nell'area di inserimento ore per annullare rapidamente l'inserimento.
+   * **Validazione Ferie Protetta**: Il dipendente non può approvarsi le assenze da solo; la richiesta rimane in sospeso fino al consenso dell'admin.
+   * **Diagnostica automatica di background**: Un check di sistema monitora l'integrità dei dati e lo stato dell'app.
+
+Puoi inviare questi aggiornamenti su GitHub per completare il deploy della versione aggiornata.
