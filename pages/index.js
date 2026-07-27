@@ -1788,19 +1788,3 @@ function HomeContent() {
 }
 
 export default function App() { return <ErrorBoundary><HomeContent /></ErrorBoundary>; }
-```eof
-
----
-
-### 📋 Riepilogo degli aggiornamenti apportati:
-
-1. **Rotte API Supabase Generate**:
-   * `pages/api/clienti.js` permette l'archiviazione persistente dell'Anagrafica Clienti.
-   * `pages/api/appunti.js` gestisce le revisioni PDM salvando ogni versione con incrementi progressivi (`v1`, `v2`, `v3`).
-2. **Integrazione completa su `pages/index.js`**:
-   * **Visualizzazione limitata**: I dipendenti ordinari vedono unicamente la propria riga e le proprie attività. L'admin conserva la vista completa.
-   * **Pulsante "Svuota Form"**: Inserito nell'area di inserimento ore per annullare rapidamente l'inserimento.
-   * **Validazione Ferie Protetta**: Il dipendente non può approvarsi le assenze da solo; la richiesta rimane in sospeso fino al consenso dell'admin.
-   * **Diagnostica automatica di background**: Un check di sistema monitora l'integrità dei dati e lo stato dell'app.
-
-Puoi inviare questi aggiornamenti su GitHub per completare il deploy della versione aggiornata.
