@@ -4,7 +4,7 @@ import Head from 'next/head';
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React:", error, errorInfo); }
+  componentDidCatch(error, errorInfo) { this.setState({ errorInfo }); console.error("Errore React intercettato:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
@@ -48,7 +48,7 @@ const AFORISMI = [
   "“L'eccellenza non è un atto, ma un'abitudine.” – Aristotele",
   "“Ciò che facciamo ogni giorno plasma ciò che diventiamo.” – Eraclito",
   "“L'ingegneria è l'arte di dirigere le grandi fonti di energia della natura per l'uso dell'uomo.” – Thomas Tredgold",
-  "“Il lavoro di squadra divide i compiti e moltiplica il successo.”",
+  "“Il lavoro di squadra divide i compiti e multiplies il successo.”",
   "“La precisione e la passione trasformano un’idea in un capolavoro.”"
 ];
 
@@ -466,7 +466,7 @@ function HomeContent() {
         </div>
       </aside>
 
-      {}
+      {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-4 md:p-8 w-full max-w-6xl mx-auto space-y-6 relative">
         {activeTab === 'home' && (
           <div className="space-y-6">
@@ -516,7 +516,7 @@ function HomeContent() {
         )}
       </main>
 
-      {}
+      {/* MODALE EDITING ATTIVITA */}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -546,7 +546,7 @@ function HomeContent() {
         </div>
       )}
 
-      {}
+      {/* MODALE STAMPA RAPPORTINO PDF */}
       {modalRapportino && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 text-slate-900 my-auto printable-area">
