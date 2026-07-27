@@ -89,7 +89,6 @@ function isFerie(item) { return toText(item?.progetto).toLowerCase().includes('f
 function isPermesso(item) { return toText(item?.progetto).toLowerCase().includes('permesso') || toText(item?.progetto).toLowerCase().includes('rol'); }
 function isMalattia(item) { return toText(item?.progetto).toLowerCase().includes('malattia'); }
 function isAssenza(item) { return isFerie(item) || isPermesso(item) || isMalattia(item) || toText(item?.cliente).toLowerCase().includes('assenze'); }
-function getFeedbackKey(fb) { if (!fb || !fb.id) return null; return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`; }
 function getParentPath(path) { if (!path) return ''; const cleanPath = String(path).replace(/^\/+|\/+$/g, ''); const parts = cleanPath.split('/').filter(Boolean); if (parts.length <= 1) return ''; parts.pop(); return parts.join('/'); }
 
 function getMondayOfCurrentWeek(dateInput = new Date()) {
@@ -169,12 +168,11 @@ function HomeContent() {
     Object.values(UTENTI).forEach(u => init[u.nome] = true);
     return init;
   });
-  const togglePlannerRow = (dipNome) => setPlannerEspansi(prev => ({ ...prev, [dipNome]: !prev[dipNome] }));
 
   const [selectedItems, setSelectedItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
-  const [confirmModal, setConfirmModal] = useState(null); // Custom modal instead of confirm()
+  const [confirmModal, setConfirmModal] = useState(null);
 
   const [storicoCompleto, setStoricoCompleto] = useState([]);
   const [loadingProgrammati, setLoadingProgrammati] = useState(false);
@@ -323,7 +321,6 @@ function HomeContent() {
     }
   }, [currentUser]);
 
-  // Gestione dinamica stato consuntivo/pianificato
   useEffect(() => {
     setFormData(prev => {
       const today = getTodayStr();
@@ -634,6 +631,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB PLANNER */}
         {activeTab === 'planner' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-4">
@@ -685,6 +683,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB INSERISCI ORE */}
         {activeTab === 'nuovo' && (
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200 p-6 space-y-6">
             <h2 className="text-xl font-bold text-slate-900">📝 Nuova Registrazione Attività</h2>
@@ -749,6 +748,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB COMMESSE */}
         {activeTab === 'commesse' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 flex justify-between items-center">
@@ -779,6 +779,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB ANAGRAFICHE */}
         {activeTab === 'anagrafiche' && (
           <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
             <div className="flex justify-between items-center">
@@ -810,6 +811,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB APPUNTI PDM */}
         {activeTab === 'appunti' && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 flex justify-between items-center">
@@ -828,6 +830,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB CLOUD DOCUMENTI */}
         {activeTab === 'documenti' && (
           <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
             <h2 className="text-xl font-bold text-slate-900">📂 Documenti Cloud Aruba / Nextcloud</h2>
@@ -835,6 +838,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB FEEDBACK */}
         {activeTab === 'feedback' && (
           <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
             <h2 className="text-xl font-bold text-slate-900">💡 Feedback &amp; Suggerimenti App</h2>
@@ -845,6 +849,7 @@ function HomeContent() {
           </div>
         )}
 
+        {/* TAB REPORTISTICA */}
         {activeTab === 'cruscotto' && currentUser?.ruolo === 'admin' && (
           <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200 space-y-4">
             <div className="flex justify-between items-center">
@@ -855,7 +860,7 @@ function HomeContent() {
         )}
       </main>
 
-      {/* MODALE NUOVO CLIENTE */}
+      {/* MODALE CLIENTE */}
       {modalCliente && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4">
@@ -873,7 +878,7 @@ function HomeContent() {
         </div>
       )}
 
-      {/* MODALE NUOVA COMMESSA */}
+      {/* MODALE COMMESSA */}
       {modalCommessa && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4">
