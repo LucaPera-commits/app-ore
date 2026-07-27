@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component } from 'react';
+import React, { useState, useEffect, Component, useMemo } from 'react';
 import Head from 'next/head';
 
 class ErrorBoundary extends Component {
@@ -144,7 +144,7 @@ function HomeContent() {
   const [pathNC, setPathNC] = useState('');
   const [navHistory, setNavHistory] = useState([]);
 
-  // DIAGNOSTICA DI SISTEMA IN TEMPO REALE
+  // DIAGNOSTICA DI SISTEMA
   const [diagnosticaStato, setDiagnosticaStato] = useState({ ok: true, anomalie: [] });
 
   const [aforismaGiorno, setAforismaGiorno] = useState('');
@@ -153,18 +153,18 @@ function HomeContent() {
   const [aiMessages, setAiMessages] = useState([{role: 'ai', text: 'Ciao! Sono l\'assistente virtuale di BW Solutions. Come posso aiutarti oggi?'}]);
   const [isAiTyping, setIsAiTyping] = useState(false);
 
-  // ANAGRAFICA CLIENTI REALE DA SUPABASE
+  // ANAGRAFICA CLIENTI
   const [dbClienti, setDbClienti] = useState([]);
   const [loadingClienti, setLoadingClienti] = useState(false);
   const [modalCliente, setModalCliente] = useState(null);
   const [searchCliente, setSearchCliente] = useState('');
 
-  // COMMESSE & BUDGET REALI DA SUPABASE
+  // COMMESSE & BUDGET
   const [dbCommesse, setDbCommesse] = useState([]);
   const [loadingCommesse, setLoadingCommesse] = useState(false);
   const [modalCommessa, setModalCommessa] = useState(null);
 
-  // APPUNTI / PDM REALI DA SUPABASE
+  // APPUNTI / PDM
   const [dbAppunti, setDbAppunti] = useState([]);
   const [loadingAppunti, setLoadingAppunti] = useState(false);
   const [appuntiClienteSel, setAppuntiClienteSel] = useState('');
@@ -229,7 +229,9 @@ function HomeContent() {
   const safeStorico = Array.isArray(storicoCompleto) ? storicoCompleto : [];
   const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
 
-  const listaClientiCompleta = Array.from(new Set([...LISTA_CLIENTI_BASE, ...dbClienti.map(c => c.ragione_sociale)])).sort();
+  const listaClientiCompleta = useMemo(() => {
+    return Array.from(new Set([...LISTA_CLIENTI_BASE, ...dbClienti.map(c => c.ragione_sociale)])).sort();
+  }, [dbClienti]);
 
   const dipendentiVisibili = currentUser?.ruolo === 'admin' ? listaDipendenti : (currentUser ? [currentUser.nome] : []);
   const mostraDaAssegnare = currentUser?.ruolo === 'admin';
@@ -353,18 +355,18 @@ function HomeContent() {
   const handleLogin = (e) => {
     e.preventDefault(); const user = UTENTI[loginForm.username.toLowerCase().trim()];
     if (user && user.pass === loginForm.password) { setCurrentUser(user); localStorage.setItem('bw_user', JSON.stringify(user)); setFormData(prev => ({ ...prev, dipendente: user.ruolo === 'admin' ? 'Da Assegnare' : user.nome })); navigateTo('home'); } 
-    else { alert("Credenziali non valide."); }
+    else { setStatusMessage({ type: 'error', text: 'Credenziali non valide.' }); }
   };
 
   const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('bw_user'); setLoginForm({ username: '', password: '' }); setShowPassword(false); };
 
   const handleConfermaChiudi = async () => {
     if (!modalItem) return;
-    if (!clienteEffettivo || !clienteEffettivo.trim()) { alert("⚠️ Campo Cliente obbligatorio!"); return; }
-    if (!progettoEffettivo || !progettoEffettivo.trim()) { alert("⚠️ Campo Progetto obbligatorio!"); return; }
+    if (!clienteEffettivo || !clienteEffettivo.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Campo Cliente obbligatorio!' }); return; }
+    if (!progettoEffettivo || !progettoEffettivo.trim()) { setStatusMessage({ type: 'error', text: '⚠️ Campo Progetto obbligatorio!' }); return; }
 
     if (isAssenza(modalItem) && currentUser?.ruolo !== 'admin') {
-      alert("⚠️ Solo l'amministratore può approvare e validare le ferie o i permessi.");
+      setStatusMessage({ type: 'error', text: "⚠️ Solo l'amministratore può approvare e validare le ferie o i permessi." });
       return;
     }
 
@@ -380,26 +382,19 @@ function HomeContent() {
         })
       });
       if (res.ok) { setModalItem(null); fetchProgrammati(); }
-    } catch (e) { alert("Errore"); } finally { setLoading(false); }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const openEditModal = (item) => {
     if (!item) return;
-    if (!canEditItem(item)) { alert(`Sola lettura per l'attività di ${toText(item.dipendente)}.`); return; }
+    if (!canEditItem(item)) { setStatusMessage({ type: 'error', text: `Sola lettura per l'attività di ${toText(item.dipendente)}.` }); return; }
     setModalItem(item);
     setOreEffettive(item.ore || 0); setOreBackofficeEffettive(item.ore_backoffice || 0); setOreTrasfertaEffettive(item.ore_trasferta || 0); setOreStraordinarioEffettive(item.ore_straordinario || 0);
     setDipendenteEffettivo(isItemDaAssegnare(item) ? (currentUser?.ruolo === 'admin' ? 'Da Assegnare' : currentUser?.nome) : item.dipendente);
     setClienteEffettivo(item.cliente || ''); setProgettoEffettivo(item.progetto || ''); setNoteEffettive(item.note || '');
   };
 
-  const isAlessandro = formData.dipendente === 'Alessandro Ciule';
   const todayStr = getTodayStr();
-
-  const daAssegnareItems = safeStorico.filter(isItemDaAssegnare);
-  const giorniMancantiUtente = currentUser?.nome ? getGiorniLavorativiMancanti(safeStorico, currentUser.nome) : [];
-  const assenzeDaApprovareAdmin = safeStorico.filter(s => s && s.stato === 'in_approvazione');
-  const mieAttivitaArretrato = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) <= todayStr);
-  const mieAttivitaProssime = safeStorico.filter(s => s && currentUser?.nome && matchNomeDipendente(s.dipendente, currentUser.nome) && s.stato !== 'consuntivo' && s.stato !== 'annullato' && getNormalizedDate(s.data) > todayStr);
 
   if (!isMounted) return null;
 
@@ -428,6 +423,7 @@ function HomeContent() {
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg hover:text-slate-600 transition-colors cursor-pointer">{showPassword ? '👁️' : '🙈'}</button>
               </div>
             </div>
+            {statusMessage && <div className="p-3 bg-rose-50 text-rose-600 rounded-xl text-xs font-bold">{statusMessage.text}</div>}
             <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-xl shadow-slate-900/20 transition-all text-sm mt-2 cursor-pointer">Accedi alla Piattaforma</button>
           </form>
         </div>
@@ -459,7 +455,6 @@ function HomeContent() {
             <button onClick={() => navigateTo('nuovo')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'nuovo' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📝 Inserisci Ore</button>
             <button onClick={() => navigateTo('programmati')} className={`w-full px-4 py-3 rounded-xl flex items-center justify-between transition-all cursor-pointer ${activeTab === 'programmati' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
               <div className="flex gap-3">⏳ Attività</div>
-              {(mostraDaAssegnare && daAssegnareItems.length > 0) && <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-full text-[10px]">{daAssegnareItems.length}</span>}
             </button>
             <button onClick={() => navigateTo('anagrafiche')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'anagrafiche' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>🏢 Anagrafiche</button>
             <button onClick={() => navigateTo('appunti')} className={`w-full px-4 py-3 rounded-xl flex items-center gap-3 transition-all cursor-pointer ${activeTab === 'appunti' ? 'bg-sky-500 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>📓 Appunti/PDM</button>
@@ -494,7 +489,7 @@ function HomeContent() {
         )}
 
         {/* SUBTAB FATTURAZIONE E RAPPROTINO PDF */}
-        {activeTab === 'cruscotto' && subTabReport === 'fatturazione' && (
+        {activeTab === 'cruscotto' && (
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200 p-6 space-y-4">
             <h3 className="font-bold text-slate-900 text-base">🧾 Report Ore da Fatturare</h3>
             <div className="overflow-x-auto">
