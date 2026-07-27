@@ -48,20 +48,13 @@ const AFORISMI = [
   "“L'eccellenza non è un atto, ma un'abitudine.” – Aristotele",
   "“Ciò che facciamo ogni giorno plasma ciò che diventiamo.” – Eraclito",
   "“L'ingegneria è l'arte di dirigere le grandi fonti di energia della natura per l'uso dell'uomo.” – Thomas Tredgold",
-  "“Il lavoro di squadra divide i compiti e multiplies il successo.”",
+  "“Il lavoro di squadra divide i compiti e moltiplica il successo.”",
   "“La precisione e la passione trasformano un’idea in un capolavoro.”"
 ];
 
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 function getCurrentMonthStr() { return new Date().toISOString().slice(0, 7); }
 function getFirstDayOfCurrentMonthStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
-function getNextMonthStr() { const d = new Date(); let year = d.getFullYear(); let month = d.getMonth() + 2; if (month > 12) { month = 1; year += 1; } return `${year}-${String(month).padStart(2, '0')}`; }
-
-function getNomeMeseText(annoMeseStr) {
-  if (!annoMeseStr) return '';
-  try { const [year, month] = annoMeseStr.split('-').map(Number); const date = new Date(year, month - 1, 1); return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }); } 
-  catch (e) { return String(annoMeseStr); }
-}
 
 function getNormalizedDate(d) {
   if (!d) return getTodayStr();
@@ -99,15 +92,6 @@ function isAssenza(item) { return isFerie(item) || isPermesso(item) || isMalatti
 function getFeedbackKey(fb) { if (!fb || !fb.id) return null; return fb.risposta ? `${fb.id}_ans_${fb.risposta_at || ''}` : `${fb.id}`; }
 function getParentPath(path) { if (!path) return ''; const cleanPath = String(path).replace(/^\/+|\/+$/g, ''); const parts = cleanPath.split('/').filter(Boolean); if (parts.length <= 1) return ''; parts.pop(); return parts.join('/'); }
 
-function getGiorniLavorativiMese(annoMeseStr) {
-  if (!annoMeseStr) return 22;
-  try {
-    const [year, month] = annoMeseStr.split('-').map(Number); let count = 0; const date = new Date(year, month - 1, 1);
-    while (date.getMonth() === month - 1) { const day = date.getDay(); if (day !== 0 && day !== 6) count++; date.setDate(date.getDate() + 1); }
-    return count;
-  } catch (e) { return 22; }
-}
-
 function getMondayOfCurrentWeek(dateInput = new Date()) {
   const d = new Date(dateInput); const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -144,9 +128,7 @@ function HomeContent() {
   const [pathNC, setPathNC] = useState('');
   const [navHistory, setNavHistory] = useState([]);
 
-  // DIAGNOSTICA DI SISTEMA
   const [diagnosticaStato, setDiagnosticaStato] = useState({ ok: true, anomalie: [] });
-
   const [aforismaGiorno, setAforismaGiorno] = useState('');
 
   const [aiInput, setAiInput] = useState('');
@@ -162,7 +144,6 @@ function HomeContent() {
   // COMMESSE & BUDGET
   const [dbCommesse, setDbCommesse] = useState([]);
   const [loadingCommesse, setLoadingCommesse] = useState(false);
-  const [modalCommessa, setModalCommessa] = useState(null);
 
   // APPUNTI / PDM
   const [dbAppunti, setDbAppunti] = useState([]);
@@ -427,7 +408,6 @@ function HomeContent() {
         <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230ea5e9'/><text x='50' y='55' font-family='Arial, sans-serif' font-size='50' fill='white' font-weight='bold' text-anchor='middle' alignment-baseline='middle'>bw</text></svg>" />
       </Head>
 
-      {/* SIDEBAR NAVIGATION */}
       <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex-shrink-0 flex flex-col justify-between p-5 md:h-screen sticky top-0 z-40 border-r border-slate-800 shadow-2xl">
         <div className="space-y-6">
           <div className="flex items-center space-x-3 cursor-pointer pb-6 border-b border-slate-800" onClick={() => navigateTo('home')}>
@@ -466,7 +446,7 @@ function HomeContent() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
+      {}
       <main className="flex-1 p-4 md:p-8 w-full max-w-6xl mx-auto space-y-6 relative">
         {activeTab === 'home' && (
           <div className="space-y-6">
@@ -516,7 +496,7 @@ function HomeContent() {
         )}
       </main>
 
-      {/* MODALE EDITING ATTIVITA */}
+      {}
       {modalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -546,7 +526,7 @@ function HomeContent() {
         </div>
       )}
 
-      {/* MODALE STAMPA RAPPORTINO PDF */}
+      {}
       {modalRapportino && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 text-slate-900 my-auto printable-area">
